@@ -8,6 +8,7 @@ import pandas as pd
 import typing
 
 from tqdm import tqdm
+from copy import deepcopy
 from itertools import chain
 from torch.utils.data import Dataset
 from torchtext.vocab import vocab
@@ -91,36 +92,31 @@ class GenotypeDataset(Dataset):
         self.vocab_size = len(self.vocab)
         self.vocab.set_default_index(self.vocab[self.UNK])
     
-    def mask_dataset(self, mask_prob = 0.15):
+    def mask_dataset(self, mask_prob = 0.8):
         # masking
         # RoBERTa: 80% -> [MASK], 10% -> original token, 10% -> random token
-        genotype_sequences = self.ds['genotypes'].tolist()
-        masked_sequences = list()
-        target_indices = list()
-        token_masks = list()
-        indices_masked = list()
-
-        special_tokens = [0, 1, 2, 3, 4]
-
-        for seq in genotype_sequences:
-            print(seq)
-            target_indices.append(self.vocab.lookup_indices(seq)) 
+        self.genotype_sequences = self.ds['genotypes'].tolist()
+        self.masked_sequences = list()
+        self.target_indices = list()
+        self.token_masks = list()
+        self.indices_masked = list()
+        for seq in deepcopy(self.genotype_sequences.copy()):
+            self.target_indices.append(self.vocab.lookup_indices(seq)) 
             seq_len = len(seq)
             token_mask = [False] * seq_len
             for i in range(seq_len):
                 if np.random.rand() < mask_prob:
                     r = np.random.rand()
                     if r < 0.8: 
-                        seq[i] = ['MASK']
+                        seq[i] = self.MASK
                     elif r < 0.9:
-                        j = np.random.randint(len(special_tokens), self.ds.vocab_size) # select random token, excluding specials
+                        j = np.random.randint(len(self.SPECIAL_TOKENS), self.vocab_size) # select random token, excluding specials
                         seq[i] = self.vocab.lookup_token(j)
                     # else: do nothing, since r > 0.9 and we keep the same token
                     token_mask[i] = True 
-            masked_sequences.append(seq)
-            print(seq)
-            indices_masked.append(self.vocab.lookup_indices(seq)) 
-            token_masks.append(token_mask)
+            self.masked_sequences.append(seq)
+            self.indices_masked.append(self.vocab.lookup_indices(seq))
+            self.token_masks.append(token_mask)      
 
 # %%
 path = 'data/NCBI/genotype_parsed.pkl'
@@ -128,3 +124,4 @@ dataset = GenotypeDataset(path=path)
     
 dataset.mask_dataset()
 print("Done")
+# %%
