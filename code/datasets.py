@@ -9,6 +9,7 @@ import typing
 
 from tqdm import tqdm
 from copy import deepcopy
+from datetime import datetime
 from itertools import chain
 from torch.utils.data import Dataset
 from torchtext.vocab import vocab
@@ -17,8 +18,10 @@ from collections import Counter
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # set the base directory
+base_dir = Path(__file__).resolve().parent
 # base_dir = Path(os.path.abspath('')).parent # for notebooks
-base_dir = Path(__file__).resolve().parent.parent 
+# base_dir = Path(__file__).resolve().parent.parent 
+time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 os.chdir(base_dir)
 print("base directory:", base_dir)
 
