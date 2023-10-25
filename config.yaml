@@ -1,0 +1,16 @@
+emb_dim: 128 
+dropout_prob: 0.1
+num_heads: 4
+num_encoder_layers: 6
+hidden_dim: 256
+batch_size: 32
+epochs: 20
+# learning_rate: 0.00005 # for BS 16
+learning_rate: 0.0001 # for BS 32
+# learning_rate: 0.0005 # for BS 64
+mask_prob: 0.5
+print_progress_every: 1500
+report_every: 500
+save_vocab: True 
+save_every: 5
+save_after: 10

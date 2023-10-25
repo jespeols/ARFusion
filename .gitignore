@@ -3,3 +3,6 @@ data/NCBI/genotype_parsed.csv
 results
 code/__pycache__
 data/NCBI/genotype_parsed.pkl
+checkpoints
+logs
+data/NCBI/geno_vocab.pt

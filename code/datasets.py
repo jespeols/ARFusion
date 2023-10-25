@@ -18,6 +18,7 @@ from collections import Counter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 class GenotypeDataset(Dataset):
     CLS = '[CLS]'
     # SEP = '[SEP]'
@@ -38,14 +39,19 @@ class GenotypeDataset(Dataset):
     def __init__(self,
                  ds_path: Path = None,
                  include_sequences: bool = False,
-                 savepath_vocab: bool = True,
-                 base_dir: Path = None
+                 savepath_vocab: Path = None,
+                 base_dir: Path = None,
+                 subset_share: float = 1.0,
                  ):
         assert ds_path is not None, "Provide a data path"
+        assert base_dir is not None, "Provide a base directory"
+        
+        os.chdir(base_dir)
         
         self.ds = pd.read_pickle(ds_path).reset_index(drop=True) # reset index to avoid problems with torch methods
+        self.ds = self.ds.sample(frac=subset_share, random_state=42).reset_index(drop=True) # subset of data
         self.num_samples = self.ds.shape[0]
-        self.counter = Counter()
+        self.token_counter = Counter()
         self.sequences = list()
         self.vocab = None
         self.savepath_vocab = savepath_vocab
@@ -79,22 +85,21 @@ class GenotypeDataset(Dataset):
         
         input = torch.tensor(item[self.INDICES_MASKED], dtype=torch.long, device=device)
         token_mask = torch.tensor(item[self.TOKEN_MASK], dtype=torch.bool, device=device)
-        mask_target = torch.tensor(item[self.TARGET_INDICES], dtype=torch.long, device=device)
-        mask_target = mask_target.masked_fill(~token_mask, -100) # -100 is default ignored index for NLLLoss
+        token_target = torch.tensor(item[self.TARGET_INDICES], dtype=torch.long, device=device)
+        token_target = token_target.masked_fill_(~token_mask, -100) # -100 is default ignored index for NLLLoss
         attn_mask = (input == self.vocab[self.PAD]).unsqueeze(0).unsqueeze(1) # one dim for batch, one for heads
         
         if self.include_sequences:
             original_sequence = item[self.ORIGINAL_SEQUENCE]
             masked_sequence = item[self.MASKED_SEQUENCE]
-            return input, token_mask, mask_target, attn_mask, original_sequence, masked_sequence
+            return input, token_target, token_mask, attn_mask, original_sequence, masked_sequence
         else:
-            return input, token_mask, mask_target, attn_mask
+            return input, token_target, token_mask, attn_mask
 
     
     def _prepare_dataset(self): # will be called at the start of each epoch (dynamic masking)
         self._mask_dataset()
         self._construct_sequences()
-        # 4. convert sequences to indices
         self.target_indices = [self.vocab.lookup_indices(seq) for seq in self.sequences]
         self.indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in self.masked_sequences]
         
@@ -106,7 +111,7 @@ class GenotypeDataset(Dataset):
         return df
     
     
-    def get_loaders(self, batch_size: int, mask_prob: float = 0.15, val_share: float = 0.1, test_share: float = 0.1):
+    def get_loaders(self, batch_size:int, mask_prob:float=0.15, val_share:float=0.1, test_share: float=0.1, split:bool=False):
         self.mask_prob = mask_prob
         self.train_share, self.val_share, self.test_share = 1 - val_share - test_share, val_share, test_share
         self.train_size = int(self.train_share * self.num_samples)
@@ -114,8 +119,8 @@ class GenotypeDataset(Dataset):
         self.test_size = int(self.test_share * self.num_samples)
         self.df = self._prepare_dataset() # prepare dataset that will be split into train, val, test
         # self.train_df, self.val_df, self.test_df = random_split(self.df, [self.train_share, self.val_share, self.test_share])        
-        self._split_dataset()
         
+        self._split_dataset() if split else None
         self.train_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.train_indices))
         self.val_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.val_indices))
         self.test_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.test_indices))
@@ -141,7 +146,7 @@ class GenotypeDataset(Dataset):
         year = self.ds['year'].astype('Int16')
         # year_range = [str(p)[:-12] for p in pd.date_range(start=str(year.min()), end=(year.max()), freq='M')] # for monthly
         year_range = range(year.min(), year.max()+1)
-        self.counter.update([str(y) for y in year_range]) # make sure all years are included in the vocab
+        self.token_counter.update([str(y) for y in year_range]) # make sure all years are included in the vocab
         
         # replace missing values with PAD token -> will not be included in vocabulary or in self-attention
         self.ds.fillna(self.PAD, inplace=True)
@@ -150,16 +155,16 @@ class GenotypeDataset(Dataset):
         # self.ds.fillna(NA, inplace=True)
         
         # update counter
-        self.counter.update(list(chain(*self.ds['genotypes'])))
-        self.counter.update(self.ds[self.ds['year'] != 'PAD]']['year'].tolist()) # count tokens that are not [PAD] (missing values)
-        self.counter.update(self.ds[self.ds['country'] != 'PAD]']['country'].tolist())
+        self.token_counter.update(list(chain(*self.ds['genotypes'])))
+        self.token_counter.update(self.ds[self.ds['year'] != 'PAD]']['year'].tolist()) # count tokens that are not [PAD] (missing values)
+        self.token_counter.update(self.ds[self.ds['country'] != 'PAD]']['country'].tolist())
         
-        self.vocab = vocab(self.counter, specials=self.SPECIAL_TOKENS)
+        self.vocab = vocab(self.token_counter, specials=self.SPECIAL_TOKENS)
         self.vocab_size = len(self.vocab)
         self.vocab.set_default_index(self.vocab[self.UNK])
         torch.save(self.vocab, self.savepath_vocab) if self.savepath_vocab else None
     
-    def _mask_dataset(self): # MASK_PROB OUGHT TO BE DEFINED IN THE TRAINING SCRIPT
+    def _mask_dataset(self):
         # masking                               
         # RoBERTa: 80% -> [MASK], 10% -> original token, 10% -> random token
         self.sequences = self.ds['genotypes'].tolist()
@@ -181,7 +186,7 @@ class GenotypeDataset(Dataset):
             self.masked_sequences.append(seq)
             self.token_masks.append(token_mask)
     
-    def _construct_sequences(self): # CONVERT TO '_create_sequences' FUNCTION THAT COMBINES MASKED GENOTYPE SEQUENCES WITH YEAR & COUNTRY (& CLS) 
+    def _construct_sequences(self):  
         self.token_masks = [[False]*3 + mask for mask in self.token_masks] # always False for CLS, year, country
         for i in range(len(self.sequences)):
             seq_start = [self.CLS, self.ds['year'].iloc[i], self.ds['country'].iloc[i]]
@@ -198,33 +203,13 @@ class GenotypeDataset(Dataset):
                 self.sequences[i] = self.sequences[i][:self.max_seq_len]
                 self.masked_sequences[i] = self.masked_sequences[i][:self.max_seq_len]
                 self.token_masks[i] = self.token_masks[i][:self.max_seq_len]      
-
-# %%
-# set the base directory
-base_dir = Path(__file__).resolve().parent.parent
-time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-os.chdir(base_dir)
-print("base directory:", base_dir)
-
-ds_path = 'data/NCBI/genotype_parsed.pkl'
-savepath_vocab = 'data/NCBI/geno_vocab.pt'
-dataset = GenotypeDataset(ds_path=ds_path, base_dir=base_dir, savepath_vocab=savepath_vocab, include_sequences=True)
     
-train_loader, val_loader, test_loader = dataset.get_loaders(batch_size=2, mask_prob=0.5, val_share=0.1, test_share=0.1)
-
-print("train size:", len(train_loader))
-print("val size:", len(val_loader))
-print("test size:", len(test_loader))
-batches = [batch for batch in val_loader]
-# input, token_mask, mask_target, attn_mask = batches[0]
-input, token_mask, mask_target, attn_mask, sequence, masked_sequence = batches[0]
-print("input shape:", input.shape)
-print(input)
-print("token_mask shape:", token_mask.shape)
-print(token_mask)
-print("mask_target shape:", mask_target.shape)
-print(mask_target)
-print("attn_mask shape:", attn_mask.shape)
-print(attn_mask)
-print("sequence:", sequence)
-print("masked_sequence:", masked_sequence)
+    def reconstruct_seq_from_batch(self, seq_from_batch):
+        tuple_len = len(seq_from_batch[0])
+        sequences = list()
+        for j in range(tuple_len):
+            sequence = list()
+            for i in range(self.max_seq_len):
+                sequence.append(seq_from_batch[i][j])
+            sequences.append(sequence)
+        return sequences

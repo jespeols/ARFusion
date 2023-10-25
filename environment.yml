@@ -7,6 +7,7 @@ dependencies:
   - python=3.11
   - pip
   - pytorch
+  - tensorboard
   - torchtext
   - pytorch-cuda=12.1
   - pandas
