@@ -1,16 +1,17 @@
 name: ARFusion
 channels:
-  - nvidia
   - pytorch
+  - nvidia
   - defaults
 dependencies:
   - python=3.11
   - pip
   - pytorch
+  - pytorch-cuda=12.1
   - tensorboard
   - torchtext
-  - pytorch-cuda=12.1
   - pandas
   - jupyter
   - matplotlib
   - scikit-learn
+  - conda-forge::wandb

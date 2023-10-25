@@ -14,12 +14,13 @@ class JointEmbedding(nn.Module):
         self.emb_dim = config['emb_dim']
         self.vocab_size = vocab_size
         self.max_seq_len = None # Can be set later
+        self.dropout_prob = config['dropout_prob']
         
         self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
         # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
         self.position_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
         
-        self.dropout = nn.Dropout(config['dropout_prob'])
+        self.dropout = nn.Dropout(self.dropout_prob)
         self.layer_norm = nn.LayerNorm(self.emb_dim)
         
     def forward(self, input_tensor):
@@ -58,17 +59,19 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, config):
         super(MultiHeadAttention, self).__init__()
         
-        self.num_heads = config['num_heads']
         self.emb_dim = config['emb_dim']
+        self.num_heads = config['num_heads']
+        self.dropout_prob = config['dropout_prob']
+        
         self.head_dim = self.emb_dim // self.num_heads
         
-        assert self.head_dim * self.num_heads == self.emb_dim, "Embedding dimension must be divisible by number of heads"
+        # assert self.head_dim * self.num_heads == self.emb_dim, "Embedding dimension must be divisible by number of heads"
         
         self.q = nn.Linear(self.emb_dim, self.emb_dim)
         self.k = nn.Linear(self.emb_dim, self.emb_dim)
         self.v = nn.Linear(self.emb_dim, self.emb_dim)
         
-        self.dropout = nn.Dropout(config['dropout_prob'])
+        self.dropout = nn.Dropout(self.dropout_prob)
     
     def forward(self, input_emb: torch.Tensor, attn_mask:torch.Tensor = None):
         B, L, D = input_emb.size() # (L=batch_size, L=seq_len, D=emb_dim)
@@ -96,6 +99,7 @@ class EncoderLayer(nn.Module):
         super(EncoderLayer, self).__init__()
         
         self.emb_dim = config['emb_dim']
+        self.num_heads = config['num_heads']
         self.hidden_dim = config['hidden_dim']
         self.dropout_prob = config['dropout_prob']
         
@@ -127,8 +131,14 @@ class BERT(nn.Module):
         super(BERT, self).__init__()
                 
         self.vocab_size = vocab_size
+        
         self.emb_dim = config['emb_dim']
+        self.vocab_size = vocab_size
+        self.max_seq_len = None # Can be set later
+        self.num_heads = config['num_heads']
         self.num_encoder_layers = config['num_encoder_layers']
+        self.hidden_dim = config['hidden_dim']
+        self.dropout_prob = config['dropout_prob']
         
         self.embedding = JointEmbedding(config, vocab_size)
         self.encoder = nn.ModuleList([EncoderLayer(config) for _ in range(self.num_encoder_layers)])

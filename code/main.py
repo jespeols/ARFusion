@@ -17,7 +17,6 @@ if torch.cuda.is_available():
 
 time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-CHECKPOINT_DIR = Path(os.path.join(BASE_DIR / "checkpoints", "experiment_" + str(time_str)))
 # LOG_DIR = Path(os.path.join(BASE_DIR / "logs"))
 LOG_DIR = Path(os.path.join(BASE_DIR / "logs", "experiment_" + str(time_str)))
 RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_str)))
@@ -38,7 +37,7 @@ if __name__ == "__main__":
     print("Loading dataset...")
     ds_path = BASE_DIR / "data" / "NCBI" / "genotype_parsed.pkl"
     savepath_vocab = 'data/NCBI/geno_vocab.pt'
-    ds = GenotypeDataset(ds_path, subset_share=0.1, savepath_vocab=savepath_vocab, base_dir=BASE_DIR)
+    ds = GenotypeDataset(ds_path, subset_share=1, savepath_vocab=savepath_vocab, base_dir=BASE_DIR)
             
     max_seq_len = ds.max_seq_len
     vocab_size = len(ds.vocab)
@@ -49,11 +48,12 @@ if __name__ == "__main__":
         model=bert,
         dataset=ds,
         log_dir=LOG_DIR,
-        checkpoint_dir=CHECKPOINT_DIR,
         results_dir=RESULTS_DIR,
         epochs=config["epochs"],
+        early_stopping_patience=config["early_stopping_patience"],
         batch_size=config["batch_size"],
         learning_rate=config["learning_rate"],
+        weight_decay=config["weight_decay"],
         mask_prob=config["mask_prob"],
         report_every=config["report_every"],
         print_progress_every=config["print_progress_every"]

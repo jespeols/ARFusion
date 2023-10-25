@@ -39,12 +39,13 @@ def token_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask:
     print("correct predictions:", s) if debug else None
     tot = (token_mask).sum().item()
     print("total predictions:", tot) if debug else None
-    return round(s / tot, 2)
+    acc = round(s / tot, 2) if tot > 0 else 1, # if tot == 0, then all tokens are masked
+    return acc
 
 
 class BertMLMTrainer(nn.Module):
     
-    def __init__(self,  
+    def __init__(self,
                  model: BERT,
                  dataset: GenotypeDataset,
                  log_dir: Path,
@@ -54,11 +55,10 @@ class BertMLMTrainer(nn.Module):
                  mask_prob: float = 0.15,
                  report_every: int = 5,
                  print_progress_every: int = 50,
-                 save_after: int = 5,
-                 save_every: int = 3,
+                 early_stopping_patience: int = 3,
                  learning_rate: float = 5e-3,
+                 weight_decay: float = 0.01,
                  results_dir: Path = None,
-                 checkpoint_dir: Path = None,
                  ):
         super(BertMLMTrainer, self).__init__()
         
@@ -70,7 +70,9 @@ class BertMLMTrainer(nn.Module):
         
         self.batch_size = batch_size
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.epochs = epochs
+        self.patience = early_stopping_patience
         self.current_epoch = 0
         
         self.train_share = train_share
@@ -83,22 +85,19 @@ class BertMLMTrainer(nn.Module):
         
         self.mask_prob = mask_prob
         self.criterion = nn.NLLLoss(ignore_index=-100).to(device) # value -100 are ignored in NLLLoss
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.learning_rate)
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
                  
         self.losses = []
         self.val_losses = []
         self.val_accuracies = []
         self.train_accuracies = []
         
-        self.save_after = save_after
-        self.save_every = save_every
         self.report_every = report_every
         self.print_progress_every = print_progress_every
         self._splitter_size = 70
         self.log_dir = log_dir
-        # os.makedirs(self.log_dir) if not os.path.exists(self.log_dir) else None
-        self.writer = SummaryWriter(log_dir=str(self.log_dir))
-        self.checkpoint_dir = checkpoint_dir
+        os.makedirs(self.log_dir) if not os.path.exists(self.log_dir) else None
+        # self.writer = SummaryWriter(log_dir=str(self.log_dir))
         self.results_dir = results_dir
         os.makedirs(self.results_dir) if not os.path.exists(self.results_dir) else None
         
@@ -106,6 +105,9 @@ class BertMLMTrainer(nn.Module):
     def print_model_summary(self):        
         print("Model summary:")
         print("="*self._splitter_size)
+        print(f"Embedding dim: {self.model.emb_dim}")
+        print(f"Number of heads: {self.model.num_heads}")
+        print(f"Number of encoder layers: {self.model.num_encoder_layers}")
         print(f"Max sequence length: {self.dataset.max_seq_len}")
         print(f"Vocab size: {len(self.dataset.vocab):,}")
         print(f"Number of parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
@@ -120,12 +122,16 @@ class BertMLMTrainer(nn.Module):
         print(f"Number of epochs: {self.epochs}")
         print(f"Batch size: {self.batch_size}")
         print(f"Number of batches: {self.num_batches:,}")
+        print(f"Dropout probability: {self.model.dropout_prob:.0%}")
         print(f"Learning rate: {self.learning_rate}")
+        print(f"Weight decay: {self.weight_decay}")
         print("="*self._splitter_size)
         
         
     def __call__(self):
         start_time = time.time()
+        self.best_val_loss = float('inf')
+        self.best_epoch = 0
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
             self.train_loader, self.val_loader, self.test_loader = self.dataset.get_loaders(
@@ -140,18 +146,19 @@ class BertMLMTrainer(nn.Module):
             self.losses.append(loss) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
-            if self.current_epoch % self.save_every == 0 and self.current_epoch > self.save_after:
-                self.save_checkpoint(self.current_epoch, loss=loss)
-            print("Evaluating on training set...")
-            _, train_acc = self.evaluate(self.train_loader)
-            self.train_accuracies.append(train_acc)
+            # print("Evaluating on training set...")
+            # _, train_acc = self.evaluate(self.train_loader)
+            # self.train_accuracies.append(train_acc)
             print("Evaluating on validation set...")
             val_loss, val_acc = self.evaluate(self.val_loader)
             self.val_losses.append(val_loss)
             self.val_accuracies.append(val_acc)
             self.writer.add_scalar("Validation loss", val_loss, global_step=self.current_epoch)
             self.writer.add_scalar("Validation accuracy", val_acc, global_step=self.current_epoch)
-            
+            if self.early_stopping():
+                break
+        
+        self.save_model(self.results_dir / "model_state.pt")
         train_time = (time.time() - start_time)/60
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
@@ -159,6 +166,7 @@ class BertMLMTrainer(nn.Module):
         self.test_loss, self.test_acc = self.evaluate(self.test_loader)
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
+        print("Done!")
        
         
     def train(self, epoch: int):
@@ -202,8 +210,28 @@ class BertMLMTrainer(nn.Module):
                 printing_loss = 0           
         avg_epoch_loss = epoch_loss / self.num_batches
         return avg_epoch_loss # return loss for saving checkpoint
-       
-       
+    
+    
+    def early_stopping(self):
+        if self.val_losses[-1] < self.best_val_loss:
+            self.best_val_loss = self.val_losses[-1]
+            self.best_epoch = self.current_epoch
+            self.best_model_state = self.model.state_dict()
+            self.early_stopping_counter = 0
+            return False
+        else:
+            self.early_stopping_counter += 1
+            if self.early_stopping_counter >= self.patience:
+                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
+                print(f"Best validation loss: {self.best_val_loss:.3f} at epoch {self.best_epoch+1}")
+                print("="*self._splitter_size)
+                self.model.load_state_dict(self.best_model_state)
+                self.current_epoch = self.best_epoch
+                return True
+            else:
+                return False
+        
+            
     def evaluate(self, loader: DataLoader, print_mode: bool = True):
         self.model.eval()
         loss = 0
@@ -254,7 +282,7 @@ class BertMLMTrainer(nn.Module):
         
     
     def _visualize_accuracy(self, savepath: Path = None):
-        plt.plot(range(len(self.train_accuracies)), self.train_accuracies, '-o', label='Training')
+        # plt.plot(range(len(self.train_accuracies)), self.train_accuracies, '-o', label='Training')
         plt.plot(range(len(self.val_accuracies)), self.val_accuracies, '-o', label='Validation')
         plt.axhline(y=self.test_acc, color='r', linestyle='--', label='Test')
         plt.title('MLM accuracy')
@@ -272,36 +300,46 @@ class BertMLMTrainer(nn.Module):
         self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
     
     
-    def save_checkpoint(self, epoch, loss):
-        if not self.checkpoint_dir: # if checkpoint_dir is None
-            return
+    def save_model(self, savepath: Path):
+        torch.save(self.model.state_dict(), savepath)
+        print(f"Model saved to {savepath}")
+        print("="*self._splitter_size)
         
-        time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-        use_time_str = False
-        if use_time_str:
-            name = f"bert_epoch{epoch+1}_loss{loss:.3f}_{time_str}.pt"            
-        else:
-            name = f"bert_epoch{epoch+1}_loss{loss:.3f}.pt"
+        
+    def load_model(self, savepath: Path):
+        print("="*self._splitter_size)
+        print(f"Loading model from {savepath}")
+        self.model.load_state_dict(torch.load(savepath))
+        print("Model loaded")
+        print("="*self._splitter_size)
+    
+    ######################### Function to load and save training checkpoints ###########################
+    
+    # def save_checkpoint(self, epoch, loss):
+    #     if not self.checkpoint_dir: # if checkpoint_dir is None
+    #         return
+        
+    #     name = f"bert_epoch{epoch+1}_loss{loss:.2f}.pt"
 
-        if not self.checkpoint_dir.exists(): 
-            self.checkpoint_dir.mkdir()
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'loss': loss
-            }, self.checkpoint_dir / name)
+    #     if not self.checkpoint_dir.exists(): 
+    #         self.checkpoint_dir.mkdir()
+    #     torch.save({
+    #         'epoch': epoch,
+    #         'model_state_dict': self.model.state_dict(),
+    #         'optimizer_state_dict': self.optimizer.state_dict(),
+    #         'loss': loss
+    #         }, self.checkpoint_dir / name)
         
-        print(f"Checkpoint saved to {self.checkpoint_dir / name}")
-        print("="*self._splitter_size)
+    #     print(f"Checkpoint saved to {self.checkpoint_dir / name}")
+    #     print("="*self._splitter_size)
         
         
-    def load_checkpoint(self, path: Path):
-        print("="*self._splitter_size)
-        print(f"Loading model checkpoint from {path}")
-        checkpoint = torch.load(path)
-        self.current_epoch = checkpoint['epoch']
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        print(f"Loaded checkpoint from epoch {self.current_epoch}")
-        print("="*self._splitter_size)
+    # def load_checkpoint(self, path: Path):
+    #     print("="*self._splitter_size)
+    #     print(f"Loading model checkpoint from {path}")
+    #     checkpoint = torch.load(path)
+    #     self.current_epoch = checkpoint['epoch']
+    #     self.model.load_state_dict(checkpoint['model_state_dict'])
+    #     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #     print(f"Loaded checkpoint from epoch {self.current_epoch}")
+    #     print("="*self._splitter_size)
