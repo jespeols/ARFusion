@@ -64,8 +64,7 @@ class MultiHeadAttention(nn.Module):
         self.dropout_prob = config['dropout_prob']
         
         self.head_dim = self.emb_dim // self.num_heads
-        
-        # assert self.head_dim * self.num_heads == self.emb_dim, "Embedding dimension must be divisible by number of heads"
+        assert self.head_dim * self.num_heads == self.emb_dim, f"Embedding dimension must be divisible by number of heads, got {self.emb_dim} and {self.num_heads}"
         
         self.q = nn.Linear(self.emb_dim, self.emb_dim)
         self.k = nn.Linear(self.emb_dim, self.emb_dim)

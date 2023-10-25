@@ -1,11 +1,12 @@
-emb_dim: 128 
-hidden_dim: 256
+wandb_name: test_run
+emb_dim: 256 
+hidden_dim: 512
 num_heads: 8
-num_encoder_layers: 8
+num_encoder_layers: 12
 dropout_prob: 0.1
-mask_prob: 0.5
+mask_prob: 0.15
 batch_size: 32
-epochs: 30
+epochs: 5
 early_stopping_patience: 3
 # learning_rate: 0.00005 # for BS 16
 learning_rate: 0.0001 # for BS 32

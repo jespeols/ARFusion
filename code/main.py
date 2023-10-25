@@ -3,13 +3,12 @@ import os
 from datetime import datetime
 import torch
 import yaml
+import wandb
 
 from pathlib import Path
 from model import BERT
 from datasets import GenotypeDataset
 from trainers import BertMLMTrainer
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
@@ -17,12 +16,15 @@ if torch.cuda.is_available():
 
 time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
+BASE_DIR = Path(__file__).resolve().parent.parent
 # LOG_DIR = Path(os.path.join(BASE_DIR / "logs"))
 LOG_DIR = Path(os.path.join(BASE_DIR / "logs", "experiment_" + str(time_str)))
 RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_str)))
 
-
 if __name__ == "__main__":
+    
+    wandb.login() 
+    
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
         torch.cuda.empty_cache()
@@ -37,7 +39,7 @@ if __name__ == "__main__":
     print("Loading dataset...")
     ds_path = BASE_DIR / "data" / "NCBI" / "genotype_parsed.pkl"
     savepath_vocab = 'data/NCBI/geno_vocab.pt'
-    ds = GenotypeDataset(ds_path, subset_share=1, savepath_vocab=savepath_vocab, base_dir=BASE_DIR)
+    ds = GenotypeDataset(ds_path, savepath_vocab=savepath_vocab, subset_share=1, base_dir=BASE_DIR)
             
     max_seq_len = ds.max_seq_len
     vocab_size = len(ds.vocab)
@@ -47,7 +49,7 @@ if __name__ == "__main__":
     trainer = BertMLMTrainer(
         model=bert,
         dataset=ds,
-        log_dir=LOG_DIR,
+        wandb_name=config["wandb_name"],
         results_dir=RESULTS_DIR,
         epochs=config["epochs"],
         early_stopping_patience=config["early_stopping_patience"],
@@ -62,3 +64,4 @@ if __name__ == "__main__":
     trainer.print_model_summary()
     trainer.print_trainer_summary()
     trainer()
+    print("Done!")

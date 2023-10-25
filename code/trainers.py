@@ -3,8 +3,9 @@ import torch
 import torch.nn as nn
 import time 
 import matplotlib.pyplot as plt
+import wandb
 
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 from pathlib import Path
 
@@ -39,7 +40,7 @@ def token_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask:
     print("correct predictions:", s) if debug else None
     tot = (token_mask).sum().item()
     print("total predictions:", tot) if debug else None
-    acc = round(s / tot, 2) if tot > 0 else 1, # if tot == 0, then all tokens are masked
+    acc = round(s / tot, 2) if tot > 0 else 1 # if tot == 0, then all tokens are masked
     return acc
 
 
@@ -48,7 +49,7 @@ class BertMLMTrainer(nn.Module):
     def __init__(self,
                  model: BERT,
                  dataset: GenotypeDataset,
-                 log_dir: Path,
+                 wandb_name: str = None,
                  epochs: int = 5,
                  batch_size: int = 32,
                  train_share: float = 0.8,
@@ -64,7 +65,8 @@ class BertMLMTrainer(nn.Module):
         
         self.model = model 
         self.dataset = dataset 
-        self.dataset_size = len(self.dataset)        
+        self.dataset_size = len(self.dataset)      
+        self.wandb_name = wandb_name if wandb_name else datetime.now().strftime("%Y%m%d-%H%M%S")  
         
         self.model.max_seq_len = self.dataset.max_seq_len # transfer max seq length from dataset to model
         
@@ -95,8 +97,8 @@ class BertMLMTrainer(nn.Module):
         self.report_every = report_every
         self.print_progress_every = print_progress_every
         self._splitter_size = 70
-        self.log_dir = log_dir
-        os.makedirs(self.log_dir) if not os.path.exists(self.log_dir) else None
+        # self.log_dir = log_dir
+        # os.makedirs(self.log_dir) if not os.path.exists(self.log_dir) else None
         # self.writer = SummaryWriter(log_dir=str(self.log_dir))
         self.results_dir = results_dir
         os.makedirs(self.results_dir) if not os.path.exists(self.results_dir) else None
@@ -129,6 +131,9 @@ class BertMLMTrainer(nn.Module):
         
         
     def __call__(self):
+        
+        self._init_wandb()
+        
         start_time = time.time()
         self.best_val_loss = float('inf')
         self.best_epoch = 0
@@ -153,8 +158,9 @@ class BertMLMTrainer(nn.Module):
             val_loss, val_acc = self.evaluate(self.val_loader)
             self.val_losses.append(val_loss)
             self.val_accuracies.append(val_acc)
-            self.writer.add_scalar("Validation loss", val_loss, global_step=self.current_epoch)
-            self.writer.add_scalar("Validation accuracy", val_acc, global_step=self.current_epoch)
+            self._report_epoch_results()
+            # self.writer.add_scalar("Validation loss", val_loss, global_step=self.current_epoch)
+            # self.writer.add_scalar("Validation accuracy", val_acc, global_step=self.current_epoch)
             if self.early_stopping():
                 break
         
@@ -164,10 +170,20 @@ class BertMLMTrainer(nn.Module):
         print(f"Training completed in {disp_time}")
         print("Evaluating on test set...")
         self.test_loss, self.test_acc = self.evaluate(self.test_loader)
+        wandb.log({"test_loss": self.test_loss, "test_acc": self.test_acc}, step=self.current_epoch)
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
-        print("Done!")
-       
+    
+
+    def _report_epoch_results(self):
+        wandb_dict = {
+            "epoch_step": self.current_epoch,
+            "train_loss": self.losses[-1],
+            "val_loss": self.val_losses[-1],
+            "val_acc": self.val_accuracies[-1]
+        }
+        wandb.log(wandb_dict)
+    
         
     def train(self, epoch: int):
         print(f"Epoch {epoch+1}/{self.epochs}")
@@ -257,6 +273,41 @@ class BertMLMTrainer(nn.Module):
         
         return loss, acc
             
+     
+    def _init_wandb(self):
+        wandb.init(
+            project="test_project",
+            name=self.wandb_name, # name of the run
+            
+            config={
+                "dataset": "NCBI",
+                "epochs": self.epochs,
+                "batch_size": self.batch_size,
+                "model": "BERT",
+                "hidden_dim": self.model.hidden_dim,
+                "num_encoder_layers": self.model.num_encoder_layers,
+                "num_heads": self.model.num_heads,
+                "embedding_dim": self.model.emb_dim,
+                "learning_rate": self.learning_rate,
+                "weight_decay": self.weight_decay,
+                "mask_prob": self.mask_prob,
+                "max_seq_len": self.dataset.max_seq_len,
+                "vocab_size": len(self.dataset.vocab),
+                "train_size": self.train_size,
+                "val_size": self.val_size,
+                "test_size": self.test_size,
+                "early_stopping_patience": self.patience,
+                "dropout_prob": self.model.dropout_prob,
+            }
+        )
+        wandb.watch(self.model) # watch the model for gradients and parameters
+        wandb.define_metric("batch_step")
+        wandb.define_metric("epoch_step")
+        wandb.define_metric("reporting_loss", step_metric="batch_step")
+        wandb.define_metric("train_loss", summary="min", step_metric="epoch_step")
+        wandb.define_metric("val_loss", summary="min", step_metric="epoch_step")
+        wandb.define_metric("val_acc", summary="max", step_metric="epoch_step")
+     
         
     def _print_loss_summary(self, time_elapsed, batch_index, tot_loss):
         progress = batch_index / self.num_batches
@@ -278,7 +329,7 @@ class BertMLMTrainer(nn.Module):
         plt.ylabel('Loss')
         plt.legend()
         plt.savefig(savepath, dpi=300) if savepath else None
-        plt.show()
+        wandb.log({"losses": plt})
         
     
     def _visualize_accuracy(self, savepath: Path = None):
@@ -290,14 +341,15 @@ class BertMLMTrainer(nn.Module):
         plt.ylabel('Accuracy')
         plt.legend()
         plt.savefig(savepath, dpi=300) if savepath else None
-        plt.show()
+        wandb.log({"accuracy": plt})
     
     
     def _report_loss_results(self, batch_index, tot_loss):
         avg_loss = tot_loss / self.report_every
         
-        global_step = self.current_epoch * self.num_batches + batch_index # global step for tensorboard, total #batches seen
-        self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
+        global_step = self.current_epoch * self.num_batches + batch_index # global step, total #batches seen
+        wandb.log({"batch_step": global_step, "reporting_loss": avg_loss})
+        # self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
     
     
     def save_model(self, savepath: Path):
