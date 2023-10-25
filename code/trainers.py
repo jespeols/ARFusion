@@ -125,7 +125,7 @@ class BertMLMTrainer(nn.Module):
         
         
     def __call__(self):
-        start_time = time.time() x
+        start_time = time.time()
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
             self.train_loader, self.val_loader, self.test_loader = self.dataset.get_loaders(
