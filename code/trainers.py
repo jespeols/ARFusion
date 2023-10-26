@@ -117,7 +117,9 @@ class BertMLMTrainer(nn.Module):
         
     
     def print_trainer_summary(self):
+        print("="*self._splitter_size)
         print("Trainer summary:")
+        print("="*self._splitter_size)
         print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
         print(f"Training dataset size: {self.train_size:,}")
         print(f"Mask probability: {self.mask_prob:.0%}")
@@ -170,19 +172,9 @@ class BertMLMTrainer(nn.Module):
         print(f"Training completed in {disp_time}")
         print("Evaluating on test set...")
         self.test_loss, self.test_acc = self.evaluate(self.test_loader)
-        wandb.log({"test_loss": self.test_loss, "test_acc": self.test_acc}, step=self.current_epoch)
+        wandb.log({"test_loss": self.test_loss, "test_acc": self.test_acc})
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
-    
-
-    def _report_epoch_results(self):
-        wandb_dict = {
-            "epoch_step": self.current_epoch,
-            "train_loss": self.losses[-1],
-            "val_loss": self.val_losses[-1],
-            "val_acc": self.val_accuracies[-1]
-        }
-        wandb.log(wandb_dict)
     
         
     def train(self, epoch: int):
@@ -240,6 +232,10 @@ class BertMLMTrainer(nn.Module):
             if self.early_stopping_counter >= self.patience:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
                 print(f"Best validation loss: {self.best_val_loss:.3f} at epoch {self.best_epoch+1}")
+                wandb.log({"best_val_loss": self.best_val_loss, 
+                           "val_acc at best epoch":self.val_accuracies[self.best_epoch], 
+                           "best_epoch": self.best_epoch+1})
+                
                 print("="*self._splitter_size)
                 self.model.load_state_dict(self.best_model_state)
                 self.current_epoch = self.best_epoch
@@ -301,13 +297,23 @@ class BertMLMTrainer(nn.Module):
             }
         )
         wandb.watch(self.model) # watch the model for gradients and parameters
-        wandb.define_metric("batch_step")
-        wandb.define_metric("epoch_step")
-        wandb.define_metric("reporting_loss", step_metric="batch_step")
-        wandb.define_metric("train_loss", summary="min", step_metric="epoch_step")
-        wandb.define_metric("val_loss", summary="min", step_metric="epoch_step")
-        wandb.define_metric("val_acc", summary="max", step_metric="epoch_step")
+        wandb.define_metric("epoch")
+        wandb.define_metric("batch")
+        wandb.define_metric("reporting_loss", step_metric="batch")
+        wandb.define_metric("train_loss", summary="min", step_metric="epoch")
+        wandb.define_metric("val_loss", summary="min", step_metric="epoch")
+        wandb.define_metric("val_acc", summary="max", step_metric="epoch")
      
+     
+    def _report_epoch_results(self):
+        wandb_dict = {
+            "epoch": self.current_epoch+1,
+            "train_loss": self.losses[-1],
+            "val_loss": self.val_losses[-1],
+            "val_acc": self.val_accuracies[-1]
+        }
+        wandb.log(wandb_dict)
+        
         
     def _print_loss_summary(self, time_elapsed, batch_index, tot_loss):
         progress = batch_index / self.num_batches
@@ -348,7 +354,7 @@ class BertMLMTrainer(nn.Module):
         avg_loss = tot_loss / self.report_every
         
         global_step = self.current_epoch * self.num_batches + batch_index # global step, total #batches seen
-        wandb.log({"batch_step": global_step, "reporting_loss": avg_loss})
+        wandb.log({"batch": global_step, "reporting_loss": avg_loss})
         # self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
     
     
