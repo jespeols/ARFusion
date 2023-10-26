@@ -164,12 +164,21 @@ class BertMLMTrainer(nn.Module):
             # self.writer.add_scalar("Validation loss", val_loss, global_step=self.current_epoch)
             # self.writer.add_scalar("Validation accuracy", val_acc, global_step=self.current_epoch)
             if self.early_stopping():
+                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
+                print(f"Best validation loss: {self.best_val_loss:.3f} at epoch {self.best_epoch+1}")
+                wandb.log({"best_val_loss": self.best_val_loss, 
+                           "val_acc at best epoch":self.val_accuracies[self.best_epoch], 
+                           "best_epoch": self.best_epoch+1})
+                print("="*self._splitter_size)
+                self.model.load_state_dict(self.best_model_state) 
+                self.current_epoch = self.best_epoch
                 break
         
         self.save_model(self.results_dir / "model_state.pt")
         train_time = (time.time() - start_time)/60
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
+        
         print("Evaluating on test set...")
         self.test_loss, self.test_acc = self.evaluate(self.test_loader)
         wandb.log({"test_loss": self.test_loss, "test_acc": self.test_acc})
@@ -229,19 +238,7 @@ class BertMLMTrainer(nn.Module):
             return False
         else:
             self.early_stopping_counter += 1
-            if self.early_stopping_counter >= self.patience:
-                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
-                print(f"Best validation loss: {self.best_val_loss:.3f} at epoch {self.best_epoch+1}")
-                wandb.log({"best_val_loss": self.best_val_loss, 
-                           "val_acc at best epoch":self.val_accuracies[self.best_epoch], 
-                           "best_epoch": self.best_epoch+1})
-                
-                print("="*self._splitter_size)
-                self.model.load_state_dict(self.best_model_state)
-                self.current_epoch = self.best_epoch
-                return True
-            else:
-                return False
+            return True if self.early_stopping_counter >= self.patience else False
         
             
     def evaluate(self, loader: DataLoader, print_mode: bool = True):
@@ -313,7 +310,15 @@ class BertMLMTrainer(nn.Module):
             "val_acc": self.val_accuracies[-1]
         }
         wandb.log(wandb_dict)
+    
         
+    def _report_loss_results(self, batch_index, tot_loss):
+        avg_loss = tot_loss / self.report_every
+        
+        global_step = self.current_epoch * self.num_batches + batch_index # global step, total #batches seen
+        wandb.log({"batch": global_step, "reporting_loss": avg_loss})
+        # self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
+    
         
     def _print_loss_summary(self, time_elapsed, batch_index, tot_loss):
         progress = batch_index / self.num_batches
@@ -348,14 +353,6 @@ class BertMLMTrainer(nn.Module):
         plt.legend()
         plt.savefig(savepath, dpi=300) if savepath else None
         wandb.log({"accuracy": plt})
-    
-    
-    def _report_loss_results(self, batch_index, tot_loss):
-        avg_loss = tot_loss / self.report_every
-        
-        global_step = self.current_epoch * self.num_batches + batch_index # global step, total #batches seen
-        wandb.log({"batch": global_step, "reporting_loss": avg_loss})
-        # self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
     
     
     def save_model(self, savepath: Path):
