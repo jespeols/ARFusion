@@ -67,7 +67,7 @@ class BertMLMTrainer(nn.Module):
         self.mask_prob = config["mask_prob"] if config["mask_prob"] else 0.15
         self.criterion = nn.NLLLoss(ignore_index=-100).to(device) # value -100 are ignored in NLLLoss
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=2)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
                  
         self.current_epoch = 0
         self.losses = []
@@ -127,6 +127,7 @@ class BertMLMTrainer(nn.Module):
             self.model.train()
             # Dynamic masking: Mask training set each epoch
             self.train_loader, self.val_loader, self.test_loader = self.dataset.get_loaders(
+                batch_size=self.batch_size,
                 mask_prob=self.mask_prob,
                 split=True if self.current_epoch == 0 else False # split only once
             )
@@ -143,7 +144,6 @@ class BertMLMTrainer(nn.Module):
             self.val_losses.append(val_loss)
             self.val_accuracies.append(val_acc)
             self._report_epoch_results()
-            self.scheduler.step(val_loss)
             if self.early_stopping():
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
                 print(f"Best validation loss: {self.best_val_loss:.3f} at epoch {self.best_epoch+1}")
@@ -154,6 +154,7 @@ class BertMLMTrainer(nn.Module):
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
+            self.scheduler.step()
             
         self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
                    "Accuracies/final_val_acc":self.val_accuracies[-1], 
