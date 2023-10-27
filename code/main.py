@@ -4,6 +4,7 @@ from datetime import datetime
 import torch
 import yaml
 import wandb
+import argparse
 
 from pathlib import Path
 from model import BERT
@@ -22,6 +23,15 @@ LOG_DIR = Path(os.path.join(BASE_DIR / "logs", "experiment_" + str(time_str)))
 RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_str)))
 
 if __name__ == "__main__":
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("--name", type=str)
+    argparser.add_argument("--num_layers", type=int)
+    argparser.add_argument("--num_heads", type=int)
+    argparser.add_argument("--emb_dim", type=int)
+    # argparser.add_argument("--ff_dim", type=int)
+    argparser.add_argument("--batch_size", type=int)
+    argparser.add_argument("--epochs", type=int)
+    argparser.add_argument("--lr", type=float)
     
     wandb.login() 
     
@@ -29,17 +39,35 @@ if __name__ == "__main__":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
         torch.cuda.empty_cache()
     else:
-        print("Using CPU")
+        print("Using CPU")  
         
     print(f"\nCurrent working directory: {BASE_DIR}")
     print("Loading config file...")
-    with open(BASE_DIR / "config.yaml", "r") as config_file:
+    
+    config_path = BASE_DIR / "config.yaml"
+    with open(config_path, "r") as config_file:
         config = yaml.safe_load(config_file)
+    
+    # overwrite config with command line arguments
+    args = argparser.parse_args()
+    config['name'] = args.name if args.name else config['name']
+    config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
+    config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
+    config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
+    # config['ff_dim'] = args.ff_dim if args.ff_dim else config['ff_dim']
+    config['hidden_dim'] = config['emb_dim']        
+    config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
+    config['epochs'] = args.epochs if args.epochs else config['epochs']
+    config['lr'] = args.lr if args.lr else config['lr']
         
     print("Loading dataset...")
     ds_path = BASE_DIR / "data" / "NCBI" / "genotype_parsed.pkl"
     savepath_vocab = 'data/NCBI/geno_vocab.pt'
-    ds = GenotypeDataset(ds_path, savepath_vocab=savepath_vocab, subset_share=1, base_dir=BASE_DIR)
+    ds = GenotypeDataset(ds_path, 
+                         savepath_vocab=savepath_vocab, 
+                         base_dir=BASE_DIR,
+                         train_share=config['train_share'],
+                         test_share=config['test_share'])
             
     max_seq_len = ds.max_seq_len
     vocab_size = len(ds.vocab)
@@ -47,18 +75,10 @@ if __name__ == "__main__":
     print("Loading model...")
     bert = BERT(config, vocab_size).to(device)
     trainer = BertMLMTrainer(
+        config=config,
         model=bert,
         dataset=ds,
-        wandb_name=config["wandb_name"],
         results_dir=RESULTS_DIR,
-        epochs=config["epochs"],
-        early_stopping_patience=config["early_stopping_patience"],
-        batch_size=config["batch_size"],
-        learning_rate=config["learning_rate"],
-        weight_decay=config["weight_decay"],
-        mask_prob=config["mask_prob"],
-        report_every=config["report_every"],
-        print_progress_every=config["print_progress_every"]
     )
     
     trainer.print_model_summary()

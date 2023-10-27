@@ -1,17 +1,19 @@
-wandb_name: mask_prob=0.25
-emb_dim: 64
-hidden_dim: 128
-num_heads: 4
-num_encoder_layers: 4
+name: new_baseline
+emb_dim: 256
+hidden_dim: 256
+num_heads: 
+num_layers: 8
 dropout_prob: 0.1
 mask_prob: 0.25
 batch_size: 32
-epochs: 3
+train_share: 0.8
+test_share: 0.1
+do_testing: False
+epochs: 100
 early_stopping_patience: 3
-# learning_rate: 0.00005 # for BS 16
-learning_rate: 0.0001 # for BS 32
-# learning_rate: 0.0005 # for BS 64
-weight_decay: 0.001
+lr: 0.00005 
+weight_decay: 0.01
 print_progress_every: 1500
-report_every: 500
-save_vocab: True 
+report_every: 1000
+save_vocab: False   # True for fine-tuning or inference 
+save_model: False   # True for fine-tuning or inference

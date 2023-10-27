@@ -13,7 +13,6 @@ class JointEmbedding(nn.Module):
         
         self.emb_dim = config['emb_dim']
         self.vocab_size = vocab_size
-        self.max_seq_len = None # Can be set later
         self.dropout_prob = config['dropout_prob']
         
         self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
@@ -135,12 +134,12 @@ class BERT(nn.Module):
         self.vocab_size = vocab_size
         self.max_seq_len = None # Can be set later
         self.num_heads = config['num_heads']
-        self.num_encoder_layers = config['num_encoder_layers']
+        self.num_layers = config['num_layers']
         self.hidden_dim = config['hidden_dim']
         self.dropout_prob = config['dropout_prob']
         
         self.embedding = JointEmbedding(config, vocab_size)
-        self.encoder = nn.ModuleList([EncoderLayer(config) for _ in range(self.num_encoder_layers)])
+        self.encoder = nn.ModuleList([EncoderLayer(config) for _ in range(self.num_layers)])
         
         self.token_prediction_layer = nn.Linear(self.emb_dim, self.vocab_size) # MLM task
         self.softmax = nn.LogSoftmax(dim=-1) # log softmax improves numerical stability, we use NLLLoss later

@@ -42,19 +42,30 @@ class GenotypeDataset(Dataset):
                  savepath_vocab: Path = None,
                  base_dir: Path = None,
                  subset_share: float = 1.0,
+                 random_state: int = 42,
+                 train_share: float = 0.8,
+                 test_share: float = 0.1,
                  ):
         assert ds_path is not None, "Provide a data path"
         assert base_dir is not None, "Provide a base directory"
         
         os.chdir(base_dir)
+        self.random_state = random_state
+        np.random.seed(self.random_state)
         
         self.ds = pd.read_pickle(ds_path).reset_index(drop=True) # reset index to avoid problems with torch methods
-        self.ds = self.ds.sample(frac=subset_share, random_state=42).reset_index(drop=True) # subset of data
+        self.ds = self.ds.sample(frac=subset_share, random_state=self.random_state).reset_index(drop=True) # subset of data
         self.num_samples = self.ds.shape[0]
         self.token_counter = Counter()
         self.sequences = list()
         self.vocab = None
         self.savepath_vocab = savepath_vocab
+        self.train_share = train_share
+        self.train_size = int(self.train_share * self.num_samples)
+        self.test_share = test_share
+        self.test_size = int(self.test_share * self.num_samples)
+        self.val_share = 1 - train_share - test_share
+        self.val_size = int(self.val_share * self.num_samples)
         
         self._create_vocabulary()
         max_genotypes_len = max([self.ds['num_genotypes'].iloc[i] for i in range(self.ds.shape[0]) if  
@@ -96,10 +107,24 @@ class GenotypeDataset(Dataset):
         else:
             return input, token_target, token_mask, attn_mask
 
+       
+    def get_loaders(self, batch_size:int, mask_prob:float=0.15, split:bool=False, remask_all:bool=False):
+        self.mask_prob = mask_prob
+        self._split_dataset() if split else None
+        
+        self.df = self._prepare_dataset(remask_all=remask_all) # prepare dataset that will be split into train, val, test
+        
+        self.train_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.train_indices))
+        self.val_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.val_indices))
+        self.test_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.test_indices))
+        
+        return self.train_loader, self.val_loader, self.test_loader
+    
     
     def _prepare_dataset(self): # will be called at the start of each epoch (dynamic masking)
         self._mask_dataset()
         self._construct_sequences()
+    
         self.target_indices = [self.vocab.lookup_indices(seq) for seq in self.sequences]
         self.indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in self.masked_sequences]
         
@@ -109,23 +134,6 @@ class GenotypeDataset(Dataset):
             rows = zip(self.indices_masked, self.target_indices, self.token_masks)
         df = pd.DataFrame(rows, columns=self.columns)
         return df
-    
-    
-    def get_loaders(self, batch_size:int, mask_prob:float=0.15, val_share:float=0.1, test_share: float=0.1, split:bool=False):
-        self.mask_prob = mask_prob
-        self.train_share, self.val_share, self.test_share = 1 - val_share - test_share, val_share, test_share
-        self.train_size = int(self.train_share * self.num_samples)
-        self.val_size = int(self.val_share * self.num_samples)
-        self.test_size = int(self.test_share * self.num_samples)
-        self.df = self._prepare_dataset() # prepare dataset that will be split into train, val, test
-        # self.train_df, self.val_df, self.test_df = random_split(self.df, [self.train_share, self.val_share, self.test_share])        
-        
-        self._split_dataset() if split else None
-        self.train_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.train_indices))
-        self.val_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.val_indices))
-        self.test_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.test_indices))
-        
-        return self.train_loader, self.val_loader, self.test_loader
     
     
     def _split_dataset(self):
@@ -173,8 +181,10 @@ class GenotypeDataset(Dataset):
         for seq in deepcopy(self.sequences):
             seq_len = len(seq)
             token_mask = [False] * seq_len
+            tokens_masked = 0
             for i in range(seq_len):
-                if np.random.rand() < self.mask_prob:
+                if np.random.rand() < self.mask_prob: 
+                    tokens_masked += 1
                     r = np.random.rand()
                     if r < 0.8: 
                         seq[i] = self.MASK
@@ -183,6 +193,17 @@ class GenotypeDataset(Dataset):
                         seq[i] = self.vocab.lookup_token(j)
                     # else: do nothing, since r > 0.9 and we keep the same token
                     token_mask[i] = True 
+            if tokens_masked == 0: # mask at least one token
+                i = np.random.randint(seq_len)
+                r = np.random.rand()
+                if r < 0.8: 
+                    seq[i] = self.MASK
+                elif r < 0.9:
+                    j = np.random.randint(len(self.SPECIAL_TOKENS), self.vocab_size) # select random token, excluding specials
+                    seq[i] = self.vocab.lookup_token(j)
+                # else: do nothing, since r > 0.9 and we keep the same token
+                token_mask[i] = True
+                
             self.masked_sequences.append(seq)
             self.token_masks.append(token_mask)
     
