@@ -108,11 +108,10 @@ class GenotypeDataset(Dataset):
             return input, token_target, token_mask, attn_mask
 
        
-    def get_loaders(self, batch_size:int, mask_prob:float=0.15, split:bool=False, remask_all:bool=False):
+    def get_loaders(self, batch_size:int, mask_prob:float=0.15, split:bool=False):
         self.mask_prob = mask_prob
+        self.df = self._prepare_dataset() # prepare dataset that will be split into train, val, test
         self._split_dataset() if split else None
-        
-        self.df = self._prepare_dataset(remask_all=remask_all) # prepare dataset that will be split into train, val, test
         
         self.train_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.train_indices))
         self.val_loader = DataLoader(self, batch_size=batch_size, sampler=SubsetRandomSampler(self.val_indices))
