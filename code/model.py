@@ -82,7 +82,7 @@ class MultiHeadAttention(nn.Module):
         scale_factor = query.size(-1) ** 0.5
         attn_scores = torch.matmul(query, key.transpose(-1, -2)) / scale_factor # (B, num_heads, L, L)
         
-        attn_scores = attn_scores.masked_fill_(attn_mask, -1e9) if attn_mask is not None else attn_scores
+        attn_scores = attn_scores.masked_fill_(~attn_mask, -1e9) if attn_mask is not None else attn_scores 
         attn_weights = F.softmax(attn_scores, dim=-1) # (B, num_heads, L, L)
         attn_weights = self.dropout(attn_weights)
         

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import wandb
 
 # from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 from pathlib import Path
 
 from datetime import datetime
@@ -37,15 +37,24 @@ class BertMLMTrainer(nn.Module):
     def __init__(self,
                  config: dict,
                  model: BERT,
-                 dataset: GenotypeDataset,
+                 train_set: GenotypeDataset,
+                 val_set: GenotypeDataset,
+                 test_set: GenotypeDataset,
                  results_dir: Path = None,
                  ):
         super(BertMLMTrainer, self).__init__()
         
+        self.random_state = config["random_state"]
+        torch.manual_seed(self.random_state)
+        torch.cuda.manual_seed(self.random_state)
+        
         self.model = model 
-        self.dataset = dataset 
-        self.model.max_seq_len = self.dataset.max_seq_len # transfer max seq length from dataset to model
-        self.dataset_size = len(self.dataset)      
+        self.train_set, self.train_size = train_set, len(train_set)
+        self.train_size = len(self.train_set)      
+        self.model.max_seq_len = self.train_set.max_seq_len 
+        self.val_set, self.val_size = val_set, len(val_set)
+        self.test_set, self.test_size = test_set, len(test_set)
+        self.split = config["split"]
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
          
         self.batch_size = config["batch_size"]
@@ -55,19 +64,14 @@ class BertMLMTrainer(nn.Module):
         self.patience = config["early_stopping_patience"]
         self.save_model = config["save_model"] if config["save_model"] else False
         
-        self.train_share = config["train_share"] if config["train_share"] else 0.8
-        self.train_size = int(self.dataset_size * self.train_share)
-        self.test_share = config["test_share"] if config["test_share"] else 0.1
-        self.test_size = int(self.dataset_size * self.test_share)
-        self.val_share = 1 - self.train_share - self.test_share
-        self.val_size = int(self.dataset_size * self.val_share)
         self.do_testing = config["do_testing"] if config["do_testing"] else False
         self.num_batches = self.train_size // self.batch_size
         
         self.mask_prob = config["mask_prob"] if config["mask_prob"] else 0.15
         self.criterion = nn.NLLLoss(ignore_index=-100).to(device) # value -100 are ignored in NLLLoss
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
+        self.scheduler = None
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
                  
         self.current_epoch = 0
         self.losses = []
@@ -92,8 +96,8 @@ class BertMLMTrainer(nn.Module):
         print(f"Hidden dim: {self.model.hidden_dim}")
         print(f"Number of heads: {self.model.num_heads}")
         print(f"Number of encoder layers: {self.model.num_layers}")
-        print(f"Max sequence length: {self.dataset.max_seq_len}")
-        print(f"Vocab size: {len(self.dataset.vocab):,}")
+        print(f"Max sequence length: {self.model.max_seq_len}")
+        print(f"Vocab size: {len(self.train_set.vocab):,}")
         print(f"Number of parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
         print("="*self._splitter_size)
         
@@ -103,7 +107,7 @@ class BertMLMTrainer(nn.Module):
         print("="*self._splitter_size)
         print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
         print(f"Training dataset size: {self.train_size:,}")
-        print(f"Train-val-test split {self.train_share:.0%} - {self.val_share:.0%} - {self.test_share:.0%}")
+        print(f"Train-val-test split {self.split[0]:.0%} - {self.split[1]:.0%} - {self.split[2]:.0%}")
         print(f"Will test? {'Yes' if self.do_testing else 'No'}")
         print(f"Mask probability: {self.mask_prob:.0%}")
         print(f"Number of epochs: {self.epochs}")
@@ -116,21 +120,24 @@ class BertMLMTrainer(nn.Module):
         print("="*self._splitter_size)
         
         
-    def __call__(self):
-        
+    def __call__(self):      
         self.wandb_run = self._init_wandb()
+        
+        self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
+        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        if self.do_testing:
+            self.test_set.prepare_dataset(mask_prob=self.mask_prob) 
+            self.test_loader = DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False)
         
         start_time = time.time()
         self.best_val_loss = float('inf')
-        self.best_epoch = 0
+        
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
-            # Dynamic masking: Mask training set each epoch
-            self.train_loader, self.val_loader, self.test_loader = self.dataset.get_loaders(
-                batch_size=self.batch_size,
-                mask_prob=self.mask_prob,
-                split=True if self.current_epoch == 0 else False # split only once
-            )
+            # Dynamic masking: New mask for training set each epoch
+            self.train_set.prepare_dataset(mask_prob=self.mask_prob)
+            # self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, sampler=RandomSampler(self.train_set))
+            self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=False)
             epoch_start_time = time.time()
             loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(loss) 
@@ -154,7 +161,7 @@ class BertMLMTrainer(nn.Module):
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
-            self.scheduler.step()
+            self.scheduler.step() if self.scheduler else None
             
         self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
                    "Accuracies/final_val_acc":self.val_accuracies[-1], 
@@ -164,6 +171,7 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run.log({"Training time (min)": train_time})
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
+        print(f"Final validation loss: {self.val_losses[-1]:.3f} | Final validation accuracy: {self.val_accuracies[-1]:.2%}")
         
         if self.do_testing:
             print("Evaluating on test set...")
@@ -180,8 +188,7 @@ class BertMLMTrainer(nn.Module):
         epoch_loss = 0
         reporting_loss = 0
         printing_loss = 0
-        for i, batch in enumerate(self.train_loader): # iterate over batches
-            batch_index = i + 1
+        for i, batch in enumerate(self.train_loader):
             input, token_target, token_mask, attn_mask = batch
             
             self.optimizer.zero_grad() # zero out gradients
@@ -195,18 +202,18 @@ class BertMLMTrainer(nn.Module):
             reporting_loss += loss.item()
             printing_loss += loss.item()
             
-            loss.backward() # backpropagate
-            self.optimizer.step() # update parameters
+            loss.backward() 
+            self.optimizer.step() 
             if batch_index % self.report_every == 0:
                 self._report_loss_results(batch_index, reporting_loss)
                 reporting_loss = 0 
                 
             if batch_index % self.print_progress_every == 0:
-                time_elapsed = time.gmtime(time.time() - time_ref) # get time elapsed as a struct_time object 
+                time_elapsed = time.gmtime(time.time() - time_ref) 
                 self._print_loss_summary(time_elapsed, batch_index, printing_loss) 
                 printing_loss = 0           
         avg_epoch_loss = epoch_loss / self.num_batches
-        return avg_epoch_loss # return loss for saving checkpoint
+        return avg_epoch_loss 
     
     
     def early_stopping(self):
@@ -272,15 +279,15 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run.define_metric("epoch", hidden=True)
         self.wandb_run.define_metric("batch", hidden=True)
         
-        self.wandb_run.define_metric("Losses/live_loss", step_metric="batch")
-        self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
-        self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
-        self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("live_loss", step_metric="batch")
+        self.wandb_run.define_metric("train_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("val_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("val_acc", summary="max", step_metric="epoch")
         
-        self.wandb_run.define_metric("Losses/test_loss")
-        self.wandb_run.define_metric("Accuracies/test_acc")
-        self.wandb_run.define_metric("Losses/final_val_loss")
-        self.wandb_run.define_metric("Losses/final_val_acc")
+        self.wandb_run.define_metric("test_loss")
+        self.wandb_run.define_metric("test_acc")
+        self.wandb_run.define_metric("final_val_loss")
+        self.wandb_run.define_metric("final_val_acc")
         self.wandb_run.define_metric("final_epoch")
 
         return self.wandb_run
