@@ -137,7 +137,7 @@ class BertMLMTrainer(nn.Module):
             # Dynamic masking: New mask for training set each epoch
             self.train_set.prepare_dataset(mask_prob=self.mask_prob)
             # self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, sampler=RandomSampler(self.train_set))
-            self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=False)
+            self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
             epoch_start_time = time.time()
             loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(loss) 
@@ -189,6 +189,7 @@ class BertMLMTrainer(nn.Module):
         reporting_loss = 0
         printing_loss = 0
         for i, batch in enumerate(self.train_loader):
+            batch_index = i + 1
             input, token_target, token_mask, attn_mask = batch
             
             self.optimizer.zero_grad() # zero out gradients
