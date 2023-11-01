@@ -1,10 +1,8 @@
-data/NCBI/AMR_Ecoli_Shigella_20231005.tsv
-data/NCBI/genotype_parsed.csv
-results
 code/__pycache__
-data/NCBI/genotype_parsed.pkl
 logs
-data/NCBI/geno_vocab.pt
+results
 wandb
 runs
+data/raw
+data/NCBI_genotype_parsed.pkl
 ARFusion.def
