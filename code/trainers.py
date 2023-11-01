@@ -154,7 +154,8 @@ class BertMLMTrainer(nn.Module):
             early_stop = self.early_stopping()
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
-                print(f"Best validation loss: {self.best_val_loss:.3f} at epoch {self.best_epoch+1}")
+                print(f"Best validation loss: {self.best_val_loss:.3f} | validation accuracy 
+                      {self.val_accuracies[self.best_epoch]} at epoch {self.best_epoch+1}")
                 self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
                            "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch], 
                            "final_epoch": self.best_epoch+1})
@@ -269,9 +270,9 @@ class BertMLMTrainer(nn.Module):
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
                 "mask_prob": self.mask_prob,
-                # "max_seq_len": self.dataset.max_seq_len,
-                # "vocab_size": len(self.dataset.vocab),
-                # "train_size": self.train_size,
+                "max_seq_len": self.dataset.max_seq_len,
+                "vocab_size": len(self.dataset.vocab),
+                "train_size": self.train_size,
                 # "val_size": self.val_size,
                 # "test_size": self.test_size,
                 # "early_stopping_patience": self.patience,
@@ -282,15 +283,15 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run.define_metric("epoch", hidden=True)
         self.wandb_run.define_metric("batch", hidden=True)
         
-        self.wandb_run.define_metric("live_loss", step_metric="batch")
-        self.wandb_run.define_metric("train_loss", summary="min", step_metric="epoch")
-        self.wandb_run.define_metric("val_loss", summary="min", step_metric="epoch")
-        self.wandb_run.define_metric("val_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Losses/live_loss", step_metric="batch")
+        self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
         
-        self.wandb_run.define_metric("test_loss")
-        self.wandb_run.define_metric("test_acc")
-        self.wandb_run.define_metric("final_val_loss")
-        self.wandb_run.define_metric("final_val_acc")
+        self.wandb_run.define_metric("Losses/test_loss")
+        self.wandb_run.define_metric("Accuracies/test_acc")
+        self.wandb_run.define_metric("Losses/final_val_loss")
+        self.wandb_run.define_metric("Accuracies/final_val_acc")
         self.wandb_run.define_metric("final_epoch")
 
         return self.wandb_run

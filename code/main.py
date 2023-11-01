@@ -62,7 +62,6 @@ if __name__ == "__main__":
     config['name'] = args.name if args.name else config['name']
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
-
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
     # config['hidden_dim'] = args.hidden_dim if args.hidden_dim else config['hidden_dim']
     config['hidden_dim'] = config['emb_dim']        
@@ -72,8 +71,6 @@ if __name__ == "__main__":
     config['random_state'] = args.random_state if args.random_state else config['random_state']
         
     print("Loading dataset...")
-    # ds_path = BASE_DIR / "data" / "NCBI" / "genotype_parsed.pkl"
-    # ds = pd.read_pickle(ds_path).reset_index(drop=True)
     path = BASE_DIR / "data" / "raw" / "NCBI.tsv"
 
     ds = preprocess_NCBI(path, 

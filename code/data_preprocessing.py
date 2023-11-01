@@ -20,11 +20,6 @@ def preprocess_NCBI(path,
                     exclusion_chars: list = None,
                     ):
     os.chdir(base_dir)
-    if not save_path:
-        if include_phenotype:
-            save_path = base_dir / "data" / "NCBI" / "NCBI_parsed.pkl"
-        else:
-            save_path = base_dir / "data" / "NCBI" / "NCBI_genotype_parsed.pkl"
     
     NCBI_data = pd.read_csv(path, sep='\t', low_memory=False)
     cols = ['collection_date', 'geo_loc_name', 'AMR_genotypes_core']
@@ -85,13 +80,7 @@ def preprocess_NCBI(path,
     df = df[~((df['num_genotypes'] == 1) & (df['country'].isnull()) & (df['year'].isnull()))]
     print(f"Number of samples after parsing: {df.shape[0]}")
     
+    df.to_pickle(save_path) if save_path else None
+    
     return df
-
-# path = BASE_DIR / "data" / "raw" / "NCBI.tsv"
-
-# df = preprocess_NCBI(path, 
-#                      include_phenotype=False, 
-#                      threshold_year=1970,
-#                      exclude_assembly_variants=["=PARTIAL", "=MISTRANSLATION", "=HMM"],
-#                      exclusion_chars=['-'])
-                     
+            
