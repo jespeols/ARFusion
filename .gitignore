@@ -7,3 +7,4 @@ logs
 data/NCBI/geno_vocab.pt
 wandb
 runs
+ARFusion.def

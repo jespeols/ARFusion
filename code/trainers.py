@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import wandb
 
 # from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader
 from pathlib import Path
 
 from datetime import datetime

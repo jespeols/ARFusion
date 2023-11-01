@@ -40,6 +40,7 @@ if __name__ == "__main__":
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
+    argparser.add_argument("--random_state", type=int)
     
     # wandb.login() 
     
@@ -57,17 +58,18 @@ if __name__ == "__main__":
         config = yaml.safe_load(config_file)
     
     # overwrite config with command line arguments
-    # args = argparser.parse_args()
-    # config['name'] = args.name if args.name else config['name']
-    # config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
-    # config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
+    args = argparser.parse_args()
+    config['name'] = args.name if args.name else config['name']
+    config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
+    config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
 
-    # config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
-    # # config['hidden_dim'] = args.hidden_dim if args.hidden_dim else config['hidden_dim']
-    # config['hidden_dim'] = config['emb_dim']        
-    # config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
-    # config['epochs'] = args.epochs if args.epochs else config['epochs']
-    # config['lr'] = args.lr if args.lr else config['lr']
+    config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
+    # config['hidden_dim'] = args.hidden_dim if args.hidden_dim else config['hidden_dim']
+    config['hidden_dim'] = config['emb_dim']        
+    config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
+    config['epochs'] = args.epochs if args.epochs else config['epochs']
+    config['lr'] = args.lr if args.lr else config['lr']
+    config['random_state'] = args.random_state if args.random_state else config['random_state']
         
     print("Loading dataset...")
     # ds_path = BASE_DIR / "data" / "NCBI" / "genotype_parsed.pkl"
