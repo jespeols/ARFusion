@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 def get_split_indices(size_to_split, split:list, random_state:int=42):
     indices = np.arange(size_to_split)

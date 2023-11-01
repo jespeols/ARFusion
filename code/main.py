@@ -17,6 +17,7 @@ from trainers import BertMLMTrainer
 # user-defined functions
 from construct_vocab import construct_geno_vocab
 from utils import get_split_indices
+from data_preprocessing import preprocess_NCBI
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
@@ -69,8 +70,16 @@ if __name__ == "__main__":
     # config['lr'] = args.lr if args.lr else config['lr']
         
     print("Loading dataset...")
-    ds_path = BASE_DIR / "data" / "NCBI" / "genotype_parsed.pkl"
-    ds = pd.read_pickle(ds_path).reset_index(drop=True)
+    # ds_path = BASE_DIR / "data" / "NCBI" / "genotype_parsed.pkl"
+    # ds = pd.read_pickle(ds_path).reset_index(drop=True)
+    path = BASE_DIR / "data" / "raw" / "NCBI.tsv"
+
+    ds = preprocess_NCBI(path, 
+                        include_phenotype=False, 
+                        threshold_year=1970,
+                        exclude_assembly_variants=["=PARTIAL", "=MISTRANSLATION", "=HMM"],
+                        exclusion_chars=['-'],
+                        save_path=None)
     num_samples = ds.shape[0]
     
     # replace missing values with PAD token -> will not be included in vocabulary or in self-attention

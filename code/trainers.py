@@ -151,7 +151,8 @@ class BertMLMTrainer(nn.Module):
             self.val_losses.append(val_loss)
             self.val_accuracies.append(val_acc)
             self._report_epoch_results()
-            if self.early_stopping():
+            early_stop = self.early_stopping()
+            if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
                 print(f"Best validation loss: {self.best_val_loss:.3f} at epoch {self.best_epoch+1}")
                 self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
@@ -162,10 +163,11 @@ class BertMLMTrainer(nn.Module):
                 self.current_epoch = self.best_epoch
                 break
             self.scheduler.step() if self.scheduler else None
-            
-        self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
-                   "Accuracies/final_val_acc":self.val_accuracies[-1], 
-                   "final_epoch": self.current_epoch+1})
+        
+        if not early_stop:    
+            self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
+                    "Accuracies/final_val_acc":self.val_accuracies[-1], 
+                    "final_epoch": self.current_epoch+1})
         self.save_model(self.results_dir / "model_state.pt") if self.save_model else None
         train_time = (time.time() - start_time)/60
         self.wandb_run.log({"Training time (min)": train_time})
