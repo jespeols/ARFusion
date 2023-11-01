@@ -72,6 +72,7 @@ class BertMLMTrainer(nn.Module):
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
+        # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
         self.current_epoch = 0
         self.losses = []
@@ -82,9 +83,6 @@ class BertMLMTrainer(nn.Module):
         self.report_every = config["report_every"] if config["report_every"] else 100
         self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
         self._splitter_size = 70
-        # self.log_dir = log_dir
-        # os.makedirs(self.log_dir) if not os.path.exists(self.log_dir) else None
-        # self.writer = SummaryWriter(log_dir=str(self.log_dir))
         self.results_dir = results_dir
         os.makedirs(self.results_dir) if not os.path.exists(self.results_dir) else None
         
@@ -154,7 +152,7 @@ class BertMLMTrainer(nn.Module):
             early_stop = self.early_stopping()
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
-                print(f"Best validation loss: {self.best_val_loss:.3f} | validation accuracy 
+                print(f"Best validation loss: {self.best_val_loss:.3f} | validation accuracy \
                       {self.val_accuracies[self.best_epoch]} at epoch {self.best_epoch+1}")
                 self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
                            "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch], 
@@ -174,7 +172,9 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run.log({"Training time (min)": train_time})
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
-        print(f"Final validation loss: {self.val_losses[-1]:.3f} | Final validation accuracy: {self.val_accuracies[-1]:.2%}")
+        if not early_stop:
+            print(f"Final validation loss: {self.val_losses[-1]:.3f} | \
+                    Final validation accuracy: {self.val_accuracies[-1]:.2%}")
         
         if self.do_testing:
             print("Evaluating on test set...")
@@ -270,8 +270,8 @@ class BertMLMTrainer(nn.Module):
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
                 "mask_prob": self.mask_prob,
-                "max_seq_len": self.dataset.max_seq_len,
-                "vocab_size": len(self.dataset.vocab),
+                "max_seq_len": self.model.max_seq_len,
+                "vocab_size": len(self.train_set.vocab),
                 "train_size": self.train_size,
                 # "val_size": self.val_size,
                 # "test_size": self.test_size,
