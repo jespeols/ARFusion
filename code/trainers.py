@@ -273,6 +273,7 @@ class BertMLMTrainer(nn.Module):
                 "max_seq_len": self.model.max_seq_len,
                 "vocab_size": len(self.train_set.vocab),
                 "train_size": self.train_size,
+                "random_state": self.random_state,
                 # "val_size": self.val_size,
                 # "test_size": self.test_size,
                 # "early_stopping_patience": self.patience,
