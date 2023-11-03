@@ -144,7 +144,7 @@ class BERT(nn.Module):
         self.token_prediction_layer = nn.Linear(self.emb_dim, self.vocab_size) # MLM task
         self.softmax = nn.LogSoftmax(dim=-1) # log softmax improves numerical stability, we use NLLLoss later
         
-        self.classification_layer = None # set later for clas sification task
+        self.classification_layer = None # set later for classification task
         
     def forward(self, input_tensor: torch.Tensor, attn_mask:torch.Tensor = None): # None if we are not doing MLM
         embedded = self.embedding(input_tensor)
@@ -159,5 +159,26 @@ class BERT(nn.Module):
         else:
             token_prediction = self.token_prediction_layer(encoded) # (batch_size, seq_len, vocab_size)
             return self.softmax(token_prediction)
+
+################################################################################################################
+
+class AbPredictor(nn.Module):
+    def __init__(self, hidden_dim, num_ab, num_outputs=2):
+        super(AbPredictor, self).__init__()
         
+        self.hidden_dim = hidden_dim
+        self.num_ab = num_ab
+        self.num_outputs = num_outputs
+        
+        self.classifiers = nn.ModuleList(
+            [nn.Sequential(
+                nn.Linear(self.hidden_dim, self.hidden_dim),
+                nn.ReLU(),
+                nn.LayerNorm(self.hidden_dim),
+                nn.Linear(self.hidden_dim, self.num_outputs),
+            ) for _ in range(self.num_ab)]
+        )
+    
+    def forward(self, X, ab_idx):
+        return self.classifiers[ab_idx](X)
             

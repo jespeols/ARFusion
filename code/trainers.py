@@ -55,6 +55,7 @@ class BertMLMTrainer(nn.Module):
         self.val_set, self.val_size = val_set, len(val_set)
         self.test_set, self.test_size = test_set, len(test_set)
         self.split = config["split"]
+        self.project_name = config["project_name"]
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
          
         self.batch_size = config["batch_size"]
@@ -255,7 +256,7 @@ class BertMLMTrainer(nn.Module):
      
     def _init_wandb(self):
         self.wandb_run = wandb.init(
-            project="Genotype-MLM",
+            project=self.project_name, # name of the project
             name=self.wandb_name, # name of the run
             
             config={

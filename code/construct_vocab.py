@@ -1,3 +1,4 @@
+# %%
 import os
 import torch
 import pandas as pd
@@ -11,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 def construct_geno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: Path = None):
     token_counter = Counter()
-    ds = dataset.copy() # use this if you don't want to modify the original dataset
+    ds = dataset.copy()
     
     CLS, PAD, MASK, UNK = specials['CLS'], specials['PAD'], specials['MASK'], specials['UNK']
     special_tokens = specials.values() 
@@ -33,7 +34,42 @@ def construct_geno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: P
     token_counter.update(ds[ds['country'] != PAD]['country'].tolist())
     
     vocab = Vocab(token_counter, specials=special_tokens)
-    vocab_size = len(vocab)
     vocab.set_default_index(vocab[UNK])
     torch.save(vocab, savepath_vocab) if savepath_vocab else None
     return vocab
+
+def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: Path = None):
+    token_counter = Counter()
+    ds = dataset.copy() 
+    
+    CLS, PAD, MASK, UNK = specials['CLS'], specials['PAD'], specials['MASK'], specials['UNK']
+    special_tokens = specials.values() 
+    
+    year = ds['year'].astype('Int16')
+    year_range = range(year.min(), year.max()+1)
+    token_counter.update([str(y) for y in year_range]) 
+    
+    age = ds['age'].astype('Int16')
+    age_range = range(age.min(), age.max()+1)
+    token_counter.update([str(a) for a in age_range])
+    
+    country = ds['country'].unique().astype('str').tolist()
+    token_counter.update(country)
+    
+    gender = ds['gender'].unique().astype('str').tolist()
+    token_counter.update(gender)
+    
+    unique_antibiotics = ds['phenotypes'].apply(lambda x: [p.split('_')[0] for p in x]).explode().unique().tolist()
+    token_counter.update([ab+res for ab in unique_antibiotics for res in ('_S', '_R')])
+    
+    vocab = Vocab(token_counter, specials=special_tokens)
+    vocab.set_default_index(vocab[UNK])
+    torch.save(vocab, savepath_vocab) if savepath_vocab else None
+    return vocab
+    
+
+if __name__ == '__main__':
+    ds = pd.read_pickle(BASE_DIR / "data" / "TESSy_parsed.pkl")
+    specials = {'CLS': '<cls>', 'PAD': '<pad>', 'MASK': '<mask>', 'UNK': '<unk>'}
+    vocab = construct_pheno_vocab(ds, specials)
+    print([vocab.lookup_token(i) for i in range(len(vocab))])
