@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 
 from pathlib import Path
-from collections import Counter
-from itertools import chain
-from copy import deepcopy
+
+# user-defined functions
+from utils import filter_gene_counts
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -18,6 +18,7 @@ def preprocess_NCBI(path,
                     exclude_genotypes: list = None,
                     exclude_assembly_variants: list = None,
                     exclusion_chars: list = None,
+                    gene_count_threshold: int = None,
                     ):
     os.chdir(base_dir)
     
@@ -26,7 +27,8 @@ def preprocess_NCBI(path,
     cols += ['AST_phenotypes'] if include_phenotype else []
     df = NCBI_data[cols]
     df = df.rename(columns={'AMR_genotypes_core': 'genotypes'})
-    df = df.rename(columns={'AST_phenotypes': 'AST_phenotypes'}) if include_phenotype else df
+    if include_phenotype:
+        df = df.rename(columns={'AST_phenotypes': 'phenotypes'}) 
     df = df[df['genotypes'].notnull()] # filter missing genotypes
     
     #################################### PARSING ####################################
@@ -63,8 +65,7 @@ def preprocess_NCBI(path,
         
     if exclude_assembly_variants: # Examples: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
         print(f"Removing genotypes with assembly variants: {exclude_assembly_variants}")
-        df['genotypes'] = df['genotypes'].apply(
-            lambda x: [g for g in x if not any([variant in g for variant in exclude_assembly_variants])]) 
+        df['genotypes'] = df['genotypes'].apply(lambda x: [g for g in x if not x.endswith(tuple(exclude_assembly_variants))]) 
     df = df[df['genotypes'].apply(lambda x: len(x) > 0)] # Remove any rows where genotypes are empty
     
     if exclusion_chars:
@@ -72,9 +73,17 @@ def preprocess_NCBI(path,
         for char in exclusion_chars:
             print(f"Splitting genotypes by '{char}', removing it and everything after it")
             df['genotypes'] = df['genotypes'].apply(lambda x: list(set([g.split(char)[0] for g in x])))
+            
+    # Remove cases where there is both a genotype and an assembly variant
+    assembly_chars = ['=PARTIAL', '=MISTRANSLATION', '=HMM', '=PARTIAL_END_OF_CONTIG']
+    df['genotypes'] = df['genotypes'].apply(
+        lambda x: list(set(x) - set([g for g in x if g.endswith(tuple(assembly_chars)) and g.split("=")[0] in x])))
           
     df['num_genotypes'] = df['genotypes'].apply(lambda x: len(set(x)))
     df['num_point_mutations'] = df['genotypes'].apply(lambda x: len([g for g in x if '=POINT' in g]))
+    
+    if gene_count_threshold:
+        df = filter_gene_counts(df, gene_count_threshold)
 
     # Exclude cases where there is only one genotype and no other info
     df = df[~((df['num_genotypes'] == 1) & (df['country'].isnull()) & (df['year'].isnull()))]
@@ -83,4 +92,3 @@ def preprocess_NCBI(path,
     df.to_pickle(save_path) if save_path else None
     
     return df
-            

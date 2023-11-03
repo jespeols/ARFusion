@@ -78,6 +78,7 @@ if __name__ == "__main__":
                         threshold_year=1970,
                         exclude_assembly_variants=["=PARTIAL", "=MISTRANSLATION", "=HMM"],
                         exclusion_chars=['-'],
+                        gene_count_threshold=None,
                         save_path=None)
     num_samples = ds.shape[0]
     
