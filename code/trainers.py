@@ -174,8 +174,7 @@ class BertMLMTrainer(nn.Module):
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
         if not early_stop:
-            print(f"Final validation loss: {self.val_losses[-1]:.3f} | \
-                    Final validation accuracy: {self.val_accuracies[-1]:.2%}")
+            print(f"Final validation loss: {self.val_losses[-1]:.3f} | Final validation accuracy: {self.val_accuracies[-1]:.2%}")
         
         if self.do_testing:
             print("Evaluating on test set...")

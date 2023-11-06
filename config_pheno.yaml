@@ -1,20 +1,20 @@
 project_name: Phenotype-MLM
-name: remove
-emb_dim: 128
-hidden_dim: 128
-num_heads: 4
-num_layers: 4
+name: run
+emb_dim: 512
+hidden_dim: 512
+num_heads: 8
+num_layers: 8
 dropout_prob: 0.1
 mask_prob: 0.15
 batch_size: 32
 split: [0.8, 0.1, 0.1] # train, val, test
 do_testing: False
-epochs: 3
-early_stopping_patience: 3
+epochs: 50
+early_stopping_patience: 5
 lr: 0.00005 
 weight_decay: 0.01
-print_progress_every: 1000
-report_every: 500
+print_progress_every: 3000
+report_every: 1000
 save_vocab: False   # True for fine-tuning or inference 
 save_model: False   # True for fine-tuning or inference
 random_state: 42
