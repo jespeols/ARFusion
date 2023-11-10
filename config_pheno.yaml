@@ -22,8 +22,8 @@ save_model: False   # True for fine-tuning or inference
 random_state: 42
 data:
   prepare_data: True
-  path: 'data/raw/TESSy.csv'
-  save_path: 'data/TESSy_parsed.pkl'
+  path: 'data/raw/AMR_TEST.csv'
+  save_path: 'data/TESSy.pkl'
   exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC']
   pathogens: ['ESCCOL']
   impute_age: False
