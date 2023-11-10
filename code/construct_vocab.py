@@ -38,7 +38,7 @@ def construct_geno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: P
     torch.save(vocab, savepath_vocab) if savepath_vocab else None
     return vocab
 
-def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: Path = None):
+def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, separate_phenotypes: bool = False, savepath_vocab: Path = None):
     token_counter = Counter()
     ds = dataset.copy() 
     
@@ -60,8 +60,14 @@ def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: 
     token_counter.update(gender)
     
     unique_antibiotics = ds['phenotypes'].apply(lambda x: [p.split('_')[0] for p in x]).explode().unique().tolist()
-    token_counter.update([ab+res for ab in unique_antibiotics for res in ('_S', '_R')])
+    print("Antibiotics:", unique_antibiotics)
+    if separate_phenotypes:
+        token_counter.update(unique_antibiotics)
+        token_counter.update(['S', 'R'])
+    else:
+        token_counter.update([ab+res for ab in unique_antibiotics for res in ('_S', '_R')])
     
+    # print("Tokens in vocabulary:", token_counter.keys())
     vocab = Vocab(token_counter, specials=special_tokens)
     vocab.set_default_index(vocab[UNK])
     torch.save(vocab, savepath_vocab) if savepath_vocab else None
@@ -71,5 +77,5 @@ def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: 
 if __name__ == '__main__':
     ds = pd.read_pickle(BASE_DIR / "data" / "TESSy_parsed.pkl")
     specials = {'CLS': '<cls>', 'PAD': '<pad>', 'MASK': '<mask>', 'UNK': '<unk>'}
-    vocab = construct_pheno_vocab(ds, specials)
+    vocab = construct_pheno_vocab(ds, specials, separate_phenotypes=True)
     print([vocab.lookup_token(i) for i in range(len(vocab))])

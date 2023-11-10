@@ -31,19 +31,12 @@ def filter_gene_counts(df, threshold_num):
     return df
 
 
-def impute_col(df, col, print_examples=False, random_state=42):
+def impute_col(df, col, random_state=42):
     print(f"Imputing column {col} from the distribution of non-NaN values")
     indices = df[df[col].isnull()].index
-    examples_before = df.loc[indices, col][:5]
-    if print_examples:
-        print("Examples before imputation:")
-        print(examples_before) 
     np.random.seed(random_state)
     sample = np.random.choice(df[col].dropna(), size=len(indices))
     df.loc[indices, col] = sample
-    if print_examples:
-        examples_after = df.loc[indices, col][:5]
-        print(examples_after) 
     
     return df
     

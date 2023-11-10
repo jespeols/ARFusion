@@ -1,4 +1,5 @@
 # %%
+import yaml
 from pathlib import Path
 
 # user-defined functions
@@ -9,11 +10,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if __name__ == '__main__':
     path = 'data/raw/TESSy.csv'
     save_path = 'data/TESSy_parsed.pkl'
-
-    df_TESSy = preprocess_TESSy(path=path,
-                                pathogens=['ESCCOL'],
-                                save_path=save_path,
-                                except_antibiotics=['POL', 'DOR'],
-                                impute_age=True,
-                                impute_gender=True)
+    
+    config_path = BASE_DIR / "config_pheno.yaml"
+    with open(config_path, "r") as config_file:
+        config = yaml.safe_load(config_file)
+    config = config['data']
+    _ = preprocess_TESSy(path=path,
+                        pathogens=config['pathogens'],
+                        save_path=save_path,
+                        except_antibiotics=config['except_antibiotics'],
+                        impute_age=config['impute_age'],
+                        impute_gender=config['impute_gender'])
                             

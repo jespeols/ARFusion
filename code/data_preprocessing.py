@@ -65,7 +65,7 @@ def preprocess_NCBI(path,
         
     if exclude_assembly_variants: # Examples: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
         print(f"Removing genotypes with assembly variants: {exclude_assembly_variants}")
-        df['genotypes'] = df['genotypes'].apply(lambda x: [g for g in x if not x.endswith(tuple(exclude_assembly_variants))]) 
+        df['genotypes'] = df['genotypes'].apply(lambda x: [g for g in x if not g.endswith(tuple(exclude_assembly_variants))]) 
     df = df[df['genotypes'].apply(lambda x: len(x) > 0)] # Remove any rows where genotypes are empty
     
     if exclusion_chars:
@@ -113,23 +113,25 @@ def preprocess_TESSy(path,
     print(f"Isolating pathogens: {pathogens}")
     TESSy_data = TESSy_data[TESSy_data['Pathogen'].isin(pathogens)]
     print(f"Number of tests before parsing: {TESSy_data.shape[0]:,}")
+    TESSy_data['year'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO']).dt.year
+    TESSy_data['date'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO'], format='%Y-%m-%d')
+    TESSy_data.drop(columns=['DateUsedForStatisticsISO'], inplace=True)
+    TESSy_data = TESSy_data[TESSy_data['SIR'] != 'I']
     if len(pathogens) > 1:
-        cols = ['ReportingCountry', 'DateUsedForStatisticsISO', 'LaboratoryCode', 'PatientCounter',
+        cols = ['ReportingCountry', 'date', 'year', 'LaboratoryCode', 'PatientCounter',
                 'Gender', 'Age','IsolateId', 'Pathogen' 'Antibiotic', 'SIR']
         df = TESSy_data[cols]
         df = df.rename(columns={'ReportingCountry': 'country',
-                'DateUsedForStatisticsISO': 'date',
                 'Gender': 'gender',
                 'Age': 'age',
                 'Pathogen': 'pathogen',
                 'Antibiotic': 'antibiotic',
                 'SIR': 'phenotype'})
     else:
-            cols = ['ReportingCountry', 'DateUsedForStatisticsISO', 'LaboratoryCode', 'PatientCounter',
+            cols = ['ReportingCountry', 'date', 'year', 'LaboratoryCode', 'PatientCounter',
                     'Gender', 'Age','IsolateId', 'Antibiotic', 'SIR']
             df = TESSy_data[cols]
             df = df.rename(columns={'ReportingCountry': 'country',
-                    'DateUsedForStatisticsISO': 'date',
                     'Gender': 'gender',
                     'Age': 'age',
                     'Antibiotic': 'antibiotic',
@@ -146,25 +148,19 @@ def preprocess_TESSy(path,
         print(f"Filtering out antibiotics: {except_antibiotics}")
         df = df[~df['antibiotic'].isin(except_antibiotics)]
         print(f"Number of tests after filtering: {df.shape[0]:,}")
-        print(f"Number of unique antibiotics: {df['antibiotic'].nunique():,}")
-    # drop tests with 'I' phenotype
-    I_indices = df[df['phenotype'] == 'I'].index
-    print(f"Dropping {len(I_indices):,} tests with 'I' phenotype")  
-    df.drop(I_indices, inplace=True)
+        print(f"Number of antibiotics: {df['antibiotic'].nunique():,}")
     
-    df['year'] = df['date'].str.split('-').str[0]
-    # df.drop(columns=['date'], inplace=True)
-    print("Create new ID of the form: country_lab_patientID_year_IsolateID")
-    df['ID'] = df['country'].astype(str) + '_' + df['LaboratoryCode'].astype(str) + '_' + df['PatientCounter'].astype(str) + '_' + df['year'].astype(str) + '_' + df['IsolateId'].astype(str)
+    print("Create new ID of the form: country_year_labID_patientID_IsolateID")
+    id_cols = ['country', 'year', 'LaboratoryCode', 'PatientCounter', 'IsolateId']
+    df['ID'] = df[id_cols].apply(lambda x: '_'.join(x.astype(str)), axis=1)
     print(f"Number of unique IDs: {df['ID'].nunique():,}")
     
     print(f"Are there any ID-antibiotic combinations with more than one date? {'Yes' if any(df.groupby(['ID', 'antibiotic'])['date'].nunique() > 1) else 'No'}")
-    duplicates = df.duplicated(subset=['ID', 'antibiotic'])
-    print(f"Are there duplicates of ID-antibiotic combination? {'Yes' if duplicates.any() else 'No'}")
+    duplicates = df.duplicated(subset=['ID', 'antibiotic', 'phenotype'])
+    print(f"Are there duplicates of ID-antibiotic-phenotype combination? {'Yes' if duplicates.any() else 'No'}")
     if duplicates.any():
         print(f"Dropping {duplicates.sum():,} duplicates")
-
-        df.drop_duplicates(subset=['ID', 'antibiotic'], inplace=True)
+        df.drop_duplicates(subset=['ID', 'antibiotic', 'phenotype'], inplace=True, keep='first')
     
     ## Code to look more deeply at duplicates, seeing if there is an antibiotic with different phenotypes. 
     # num_unique_phenotypes = df.groupby(['ID', 'antibiotic'])['phenotype'].nunique().sort_values(ascending=False)
@@ -194,11 +190,25 @@ def preprocess_TESSy(path,
     df_pheno = df_pheno[df_pheno['num_phenotypes'] > 0]
     
     if impute_age:
-        df_pheno = impute_col(df_pheno, 'age', print_examples=True, random_state=42)
+        df_pheno = impute_col(df_pheno, 'age', random_state=42)
+    else:
+        print(f"Dropping {df_pheno['age'].isnull().sum():,} tests with missing value in the 'age' column")
+        df_pheno.dropna(subset=['age'], inplace=True)
+        
+    alternative_nan = ["UNK", "O"]
+    df_pheno['gender'].replace(alternative_nan, np.nan, inplace=True)
     if impute_gender:
-        df_pheno = impute_col(df_pheno, 'gender', print_examples=True, random_state=42)
+        df_pheno = impute_col(df_pheno, 'gender', random_state=42)
+    else:
+        print(f"Dropping {df_pheno['gender'].isnull().sum():,} tests with missing value in the 'gender' column")
+        df_pheno.dropna(subset=['gender'], inplace=True)
+
+    if not any([impute_age, impute_gender]):
+        print(f"Number of tests after dropping tests with missing values: {df.shape[0]:,}")
+    else:
+        print(f"Final number of samples: {df_pheno.shape[0]:,}")
     
-    print(f"Final number of samples: {df_pheno.shape[0]:,}")
+    df_pheno.reset_index(drop=True, inplace=True)
     if save_path:
         print(f"Saving to {save_path}")
         df_pheno.to_pickle(save_path)

@@ -5,18 +5,21 @@ import yaml
 import wandb
 import argparse
 import pandas as pd
+import time
 
 from datetime import datetime
 from pathlib import Path
 
 # user-defined modules
 from model import BERT
-from datasets import PhenotypeDataset
+from datasets import PhenotypeDataset, SimplePhenotypeDataset
 from trainers import BertMLMTrainer
 
 # user-defined functions
 from construct_vocab import construct_pheno_vocab
 from utils import get_split_indices
+from data_preprocessing import preprocess_TESSy
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
@@ -41,7 +44,7 @@ if __name__ == "__main__":
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
     
-    # wandb.login() 
+    # os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
     
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -69,10 +72,21 @@ if __name__ == "__main__":
     config['lr'] = args.lr if args.lr else config['lr']
     config['random_state'] = args.random_state if args.random_state else config['random_state']
         
-    print("Loading dataset...")
     path = BASE_DIR / "data" / "TESSy_parsed.pkl"
 
-    ds = pd.read_pickle(path)
+    if config['data']['prepare_data']:
+        print("Preprocessing dataset...")
+        start = time.time()
+        ds = preprocess_TESSy(path=config['data']['path'],
+                              pathogens=config['data']['pathogens'],
+                              save_path=config['data']['save_path'],
+                              except_antibiotics=config['data']['exclude_antibiotics'],
+                              impute_age=config['data']['impute_age'],
+                              impute_gender=config['data']['impute_gender'])
+        print(f"Preprocessing took {(time.time()-start)/60:.1f} min.")
+    else:
+        print("Loading dataset...")
+        ds = pd.read_pickle(path)
     num_samples = ds.shape[0]
     
     ### If gender and age are not imputed, their missing values must be handled, both here and when constructing the vocabulary
@@ -86,18 +100,30 @@ if __name__ == "__main__":
     
     print("Constructing vocabulary...")
     savepath_vocab = BASE_DIR / "data" / "pheno_vocab.pt" if config['save_vocab'] else None
-    vocab = construct_pheno_vocab(ds, specials, savepath_vocab)
+    vocab = construct_pheno_vocab(ds, specials, 
+                                  separate_phenotypes=config['separate_phenotypes'], 
+                                  savepath_vocab=savepath_vocab)
     vocab_size = len(vocab)
     
     max_phenotypes_len = ds['num_phenotypes'].max()    
-    max_seq_len = max_phenotypes_len + 4 + 1 # +4 for year, country, age & gender, +1 for CLS token
+    if config['max_seq_len'] == 'auto':
+        if config['separate_phenotypes']: 
+            max_seq_len = 2*max_phenotypes_len + 4 + 1 # +4 for year, country, age & gender, +1 for CLS token
+        else:
+            max_seq_len = max_phenotypes_len + 4 + 1 
+    else:
+        max_seq_len = config['max_seq_len']
     
     train_indices, val_indices, test_indices = get_split_indices(num_samples, config['split'], 
                                                                  random_state=config['random_state'])
-
-    train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-    val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-    test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    if config['separate_phenotypes']:
+        train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+        val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+        test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    else:
+        train_set = SimplePhenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+        val_set = SimplePhenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+        test_set = SimplePhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
     
     print("Loading model...")
     bert = BERT(config, vocab_size).to(device)

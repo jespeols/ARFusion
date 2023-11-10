@@ -21,14 +21,24 @@ os.chdir(BASE_DIR)
 
 ############################################ Trainer for MLM task ############################################
     
-    
 def token_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor):
     r = tokens.argmax(-1).masked_select(token_mask) # select the indices of the predicted tokens
     t = token_target.masked_select(token_mask)
-        
-    s = (r == t).sum().item()
+    
+    c = torch.eq(r, t).sum().item()
     tot = (token_mask).sum().item()
-    acc = round(s / tot, 2) if tot > 0 else 1 # if tot == 0, then all tokens are masked (currently not possible)
+    acc = c / tot if tot > 0 else 1 # if tot == 0, then all tokens are masked (currently not possible)
+    return acc
+
+
+def seq_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor):
+    r = tokens.argmax(-1) # each row is a seq
+    r_ = torch.mul(r, token_mask) # element-wise multiplication, non-masked tokens become 0
+    t_ = torch.mul(token_target, token_mask)
+    
+    c = torch.eq(r_, t_).all(dim=1).sum().item() # count the number of correctly classified sequences
+    tot = token_mask.shape[0] # total number of seqs (batch size)
+    acc = c / tot if tot > 0 else 1 # if tot == 0, then all seqs are masked (currently not possible)
     return acc
 
 
@@ -76,11 +86,6 @@ class BertMLMTrainer(nn.Module):
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
         self.current_epoch = 0
-        self.losses = []
-        self.val_losses = []
-        self.val_accuracies = []
-        self.train_accuracies = []
-        
         self.report_every = config["report_every"] if config["report_every"] else 100
         self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
         self._splitter_size = 70
@@ -121,7 +126,6 @@ class BertMLMTrainer(nn.Module):
         
     def __call__(self):      
         self.wandb_run = self._init_wandb()
-        
         self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
         if self.do_testing:
@@ -131,11 +135,15 @@ class BertMLMTrainer(nn.Module):
         start_time = time.time()
         self.best_val_loss = float('inf')
         
+        self.losses = []
+        self.val_losses = []
+        self.val_accuracies = []
+        self.train_accuracies = []
+        self.val_seq_accuracies = []
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
             # Dynamic masking: New mask for training set each epoch
             self.train_set.prepare_dataset(mask_prob=self.mask_prob)
-            # self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, sampler=RandomSampler(self.train_set))
             self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
             epoch_start_time = time.time()
             loss = self.train(self.current_epoch) # returns loss, averaged over batches
@@ -146,17 +154,22 @@ class BertMLMTrainer(nn.Module):
             # _, train_acc = self.evaluate(self.train_loader)
             # self.train_accuracies.append(train_acc)
             print("Evaluating on validation set...")
-            val_loss, val_acc = self.evaluate(self.val_loader)
+            val_loss, val_acc, val_seq_acc = self.evaluate(self.val_loader)
             self.val_losses.append(val_loss)
             self.val_accuracies.append(val_acc)
+            self.val_seq_accuracies.append(val_seq_acc)
             self._report_epoch_results()
             early_stop = self.early_stopping()
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
-                print(f"Best validation loss: {self.best_val_loss:.3f} | validation accuracy \
-                      {self.val_accuracies[self.best_epoch]} at epoch {self.best_epoch+1}")
+                s = f"Best validation loss {self.best_val_loss:.3f}"
+                s += f" | Validation accuracy {self.val_accuracies[self.best_epoch]:.2%}"
+                s += f" | Validation sequence accuracy {self.val_seq_accuracies[self.best_epoch]:.2%}"
+                s += f" at epoch {self.best_epoch+1}"
+                print(s)
                 self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
-                           "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch], 
+                           "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch],
+                           "Accuracies/final_val_seq_acc": self.val_seq_accuracies[self.best_epoch],
                            "final_epoch": self.best_epoch+1})
                 print("="*self._splitter_size)
                 self.model.load_state_dict(self.best_model_state) 
@@ -166,7 +179,8 @@ class BertMLMTrainer(nn.Module):
         
         if not early_stop:    
             self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
-                    "Accuracies/final_val_acc":self.val_accuracies[-1], 
+                    "Accuracies/final_val_acc":self.val_accuracies[-1],
+                    "Accuracies/final_val_seq_acc": self.val_seq_accuracies[-1],
                     "final_epoch": self.current_epoch+1})
         self.save_model(self.results_dir / "model_state.pt") if self.save_model else None
         train_time = (time.time() - start_time)/60
@@ -174,7 +188,10 @@ class BertMLMTrainer(nn.Module):
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
         if not early_stop:
-            print(f"Final validation loss: {self.val_losses[-1]:.3f} | Final validation accuracy: {self.val_accuracies[-1]:.2%}")
+            s = f"Final validation loss {self.val_losses[-1]:.3f}"
+            s += f" | Final validation accuracy {self.val_accuracies[-1]:.2%}"
+            s += f" | Final validation sequence accuracy {self.val_seq_accuracies[-1]:.2%}"
+            print(s)
         
         if self.do_testing:
             print("Evaluating on test set...")
@@ -236,21 +253,24 @@ class BertMLMTrainer(nn.Module):
         self.model.eval()
         loss = 0
         acc = 0
+        seq_acc = 0
         for batch in loader:
             input, token_target, token_mask, attn_mask = batch
             tokens = self.model(input, attn_mask)
             
             loss += self.criterion(tokens.transpose(-1, -2), token_target).item()
             acc += token_accuracy(tokens, token_target, token_mask)
+            seq_acc += seq_accuracy(tokens, token_target, token_mask)
             
         loss /= len(loader) 
         acc /= len(loader)
+        seq_acc /= len(loader)
         
         if print_mode:
-            print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%}")
+            print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%} | Sequence accuracy: {seq_acc:.2%}")
             print("="*self._splitter_size)
         
-        return loss, acc
+        return loss, acc, seq_acc
             
      
     def _init_wandb(self):
@@ -288,11 +308,13 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Accuracies/val_seq_acc", summary="max", step_metric="epoch")
         
         self.wandb_run.define_metric("Losses/test_loss")
         self.wandb_run.define_metric("Accuracies/test_acc")
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
+        self.wandb_run.define_metric("Accuracies/final_val_seq_acc")
         self.wandb_run.define_metric("final_epoch")
 
         return self.wandb_run

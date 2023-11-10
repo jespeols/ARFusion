@@ -1,5 +1,5 @@
 project_name: Genotype-MLM
-name: baseline
+name: baseline_seq_acc
 emb_dim: 256
 hidden_dim: 256
 num_heads: 4
@@ -8,6 +8,7 @@ dropout_prob: 0.1
 mask_prob: 0.15
 batch_size: 32
 split: [0.8, 0.1, 0.1] # train, val, test
+max_seq_len: 'auto'
 do_testing: False
 epochs: 100
 early_stopping_patience: 3

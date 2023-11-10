@@ -42,7 +42,7 @@ if __name__ == "__main__":
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
     
-    # wandb.login() 
+    os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
     
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     print(f"\nCurrent working directory: {BASE_DIR}")
     print("Loading config file...")
     
-    config_path = BASE_DIR / "config.yaml"
+    config_path = BASE_DIR / "config_geno.yaml"
     with open(config_path, "r") as config_file:
         config = yaml.safe_load(config_file)
     
@@ -80,6 +80,7 @@ if __name__ == "__main__":
                         exclusion_chars=['-'],
                         gene_count_threshold=None,
                         save_path=None)
+    ds = ds.iloc[:2000]
     num_samples = ds.shape[0]
     
     # replace missing values with PAD token -> will not be included in vocabulary or in self-attention
@@ -95,9 +96,12 @@ if __name__ == "__main__":
     vocab = construct_geno_vocab(ds, specials, savepath_vocab)
     vocab_size = len(vocab)
     
-    max_genotypes_len = max([ds['num_genotypes'].iloc[i] for i in range(ds.shape[0]) if  
+    if config['max_seq_len'] == 'auto':
+        max_genotypes_len = max([ds['num_genotypes'].iloc[i] for i in range(ds.shape[0]) if  
                                  ds['year'].iloc[i] != PAD and ds['country'].iloc[i] != PAD])
-    max_seq_len = max_genotypes_len + 2 + 1 # +2 for year & country, +1 for CLS token
+        max_seq_len = max_genotypes_len + 2 + 1 # +2 for year & country, +1 for CLS token
+    else:
+        max_seq_len = config['max_seq_len']
     
     # split dataset into train, test, val
     train_indices, val_indices, test_indices = get_split_indices(num_samples, config['split'], 
