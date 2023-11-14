@@ -8,7 +8,7 @@ dropout_prob: 0.1
 mask_prob: 0.25
 batch_size: 32
 split: [0.8, 0.1, 0.1] # train, val, test
-separate_phenotypes: True
+separate_phenotypes: False
 max_seq_len: 'auto'
 do_testing: False
 epochs: 20

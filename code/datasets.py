@@ -231,7 +231,7 @@ class SimplePhenotypeDataset(Dataset):
        
     def prepare_dataset(self, mask_prob: float = 0.15): # will be called at the start of each epoch (dynamic masking)
         sequences, masked_sequences, token_masks = self._construct_masked_sequences(mask_prob)
-
+        
         target_indices = [self.vocab.lookup_indices(seq) for seq in sequences]
         indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in masked_sequences]
         
@@ -281,7 +281,7 @@ class SimplePhenotypeDataset(Dataset):
         token_masks = [[False]*5 + mask for mask in token_masks] # always False for CLS, year, country, gender & age
         for i in range(len(sequences)):
             seq_start = [self.CLS, 
-                         self.ds['year'].iloc[i], 
+                         str(self.ds['year'].iloc[i]), 
                          self.ds['country'].iloc[i], 
                          self.ds['gender'].iloc[i], 
                          str(self.ds['age'].iloc[i])]
@@ -381,18 +381,7 @@ class PhenotypeDataset(Dataset):
        
     def prepare_dataset(self, mask_prob: float = 0.15): # will be called at the start of each epoch (dynamic masking)
         sequences, masked_sequences, token_masks = self._construct_masked_sequences(mask_prob)
-        # target_indices = []
-        # indices_masked = []
-        # for i in range(len(sequences)):
-        #     for j in range(len(sequences[i])):
-        #         print("target token:", sequences[i][j])
-        #         print("masked token:", masked_sequences[i][j])
-        #         target_indices.append(self.vocab[sequences[i][j]])
-        #         indices_masked.append(self.vocab[masked_sequences[i][j]])
-        #     # target_indices.append([self.vocab[token] for token in sequences[i]])
-        #     # indices_masked.append([self.vocab[token] for token in masked_sequences[i]])
-        # print(target_indices[0:5])
-        # print(indices_masked[0:5])
+   
         target_indices = [self.vocab.lookup_indices(seq) for seq in sequences]
         indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in masked_sequences]
         

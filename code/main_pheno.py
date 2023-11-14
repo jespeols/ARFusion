@@ -45,7 +45,7 @@ if __name__ == "__main__":
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
     
-    # os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
+    os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
     
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -81,7 +81,7 @@ if __name__ == "__main__":
         ds = preprocess_TESSy(path=config['data']['path'],
                               pathogens=config['data']['pathogens'],
                               save_path=config['data']['save_path'],
-                              except_antibiotics=config['data']['exclude_antibiotics'],
+                              exclude_antibiotics=config['data']['exclude_antibiotics'],
                               impute_age=config['data']['impute_age'],
                               impute_gender=config['data']['impute_gender'])
         print(f"Preprocessing took {(time.time()-start)/60:.1f} min.")

@@ -148,7 +148,6 @@ def preprocess_TESSy(path,
         print(f"Filtering out antibiotics: {exclude_antibiotics}")
         df = df[~df['antibiotic'].isin(exclude_antibiotics)]
         print(f"Number of antibiotics: {df['antibiotic'].nunique():,}")
-        print(f"Number of tests after filtering: {df.shape[0]:,}")
     
     print("Creating new ID of the form: country_year_labID_patientID_IsolateID")
     id_cols = ['country', 'year', 'LaboratoryCode', 'PatientCounter', 'IsolateId']
