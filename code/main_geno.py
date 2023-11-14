@@ -33,7 +33,7 @@ RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_s
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--name", type=str)
-    argparser.add_argument("--mask_prob", type=int)
+    argparser.add_argument("--mask_prob", type=float)
     argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--num_heads", type=int)
     argparser.add_argument("--emb_dim", type=int)

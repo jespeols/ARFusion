@@ -78,7 +78,7 @@ class BertMLMTrainer(nn.Module):
         self.do_testing = config["do_testing"] if config["do_testing"] else False
         self.num_batches = self.train_size // self.batch_size
         
-        self.mask_prob = config["mask_prob"] if config["mask_prob"] else 0.15
+        self.mask_prob = config["mask_prob"]
         self.criterion = nn.NLLLoss(ignore_index=-100).to(device) # value -100 are ignored in NLLLoss
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
