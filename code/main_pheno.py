@@ -45,7 +45,7 @@ if __name__ == "__main__":
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
     
-    os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
+    # os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
     
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
