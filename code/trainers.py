@@ -324,7 +324,8 @@ class BertMLMTrainer(nn.Module):
             "epoch": self.current_epoch+1,
             "Losses/train_loss": self.losses[-1],
             "Losses/val_loss": self.val_losses[-1],
-            "Accuracies/val_acc": self.val_accuracies[-1]
+            "Accuracies/val_acc": self.val_accuracies[-1],
+            "Accuracies/val_seq_acc": self.val_seq_accuracies[-1]
         }
         self.wandb_run.log(wandb_dict)
     

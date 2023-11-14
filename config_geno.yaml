@@ -1,5 +1,5 @@
 project_name: Genotype-MLM
-name: baseline_seq_acc
+name: baseline
 emb_dim: 256
 hidden_dim: 256
 num_heads: 4
@@ -19,6 +19,13 @@ report_every: 500
 save_vocab: False   # True for fine-tuning or inference 
 save_model: False   # True for fine-tuning or inference
 random_state: 42
+data:
+  threshold_year: 1970
+  exclude_genotypes:
+  # exclude_assembly_variants: 
+  exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
+  # exclusion_chars: 
+  exclusion_chars: ['-']  
 specials:   
   CLS: '[CLS]'
   PAD: '[PAD]'

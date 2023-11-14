@@ -33,6 +33,7 @@ RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_s
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--name", type=str)
+    argparser.add_argument("--mask_prob", type=int)
     argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--num_heads", type=int)
     argparser.add_argument("--emb_dim", type=int)
@@ -42,7 +43,7 @@ if __name__ == "__main__":
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
     
-    os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
+    # os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
     
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -60,6 +61,7 @@ if __name__ == "__main__":
     # overwrite config with command line arguments
     args = argparser.parse_args()
     config['name'] = args.name if args.name else config['name']
+    config['mask_prob'] = args.mask_prob if args.mask_prob else config['mask_prob']
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
@@ -75,12 +77,12 @@ if __name__ == "__main__":
 
     ds = preprocess_NCBI(path, 
                         include_phenotype=False, 
-                        threshold_year=1970,
-                        exclude_assembly_variants=["=PARTIAL", "=MISTRANSLATION", "=HMM"],
-                        exclusion_chars=['-'],
+                        threshold_year=config['data']['threshold_year'],
+                        exclude_genotypes=config['data']['exclude_genotypes'],
+                        exclude_assembly_variants=config['data']['exclude_assembly_variants'],
+                        exclusion_chars=config['data']['exclusion_chars'],
                         gene_count_threshold=None,
                         save_path=None)
-    ds = ds.iloc[:2000]
     num_samples = ds.shape[0]
     
     # replace missing values with PAD token -> will not be included in vocabulary or in self-attention

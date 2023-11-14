@@ -35,6 +35,7 @@ RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_s
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--name", type=str)
+    argparser.add_argument("--mask_prob", type=float)
     argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--num_heads", type=int)
     argparser.add_argument("--emb_dim", type=int)
@@ -51,7 +52,8 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
     else:
         print("Using CPU")  
-        
+    
+    os.chdir(BASE_DIR)
     print(f"\nCurrent working directory: {BASE_DIR}")
     print("Loading config file...")
     
@@ -62,6 +64,7 @@ if __name__ == "__main__":
     # overwrite config with command line arguments
     args = argparser.parse_args()
     config['name'] = args.name if args.name else config['name']
+    config['mask_prob'] = args.mask_prob if args.mask_prob else config['mask_prob']
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
@@ -72,8 +75,6 @@ if __name__ == "__main__":
     config['lr'] = args.lr if args.lr else config['lr']
     config['random_state'] = args.random_state if args.random_state else config['random_state']
         
-    path = BASE_DIR / "data" / "TESSy_parsed.pkl"
-
     if config['data']['prepare_data']:
         print("Preprocessing dataset...")
         start = time.time()
@@ -86,7 +87,7 @@ if __name__ == "__main__":
         print(f"Preprocessing took {(time.time()-start)/60:.1f} min.")
     else:
         print("Loading dataset...")
-        ds = pd.read_pickle(path)
+        ds = pd.read_pickle(config['data']['load_path'])
     num_samples = ds.shape[0]
     
     ### If gender and age are not imputed, their missing values must be handled, both here and when constructing the vocabulary

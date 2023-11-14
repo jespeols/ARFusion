@@ -62,7 +62,7 @@ def preprocess_NCBI(path,
     if exclude_genotypes: 
         print(f"Removing genotypes: {exclude_genotypes}")
         df['genotypes'] = df['genotypes'].apply(lambda x: [g for g in x if g not in exclude_genotypes]) 
-        
+    
     if exclude_assembly_variants: # Examples: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
         print(f"Removing genotypes with assembly variants: {exclude_assembly_variants}")
         df['genotypes'] = df['genotypes'].apply(lambda x: [g for g in x if not g.endswith(tuple(exclude_assembly_variants))]) 
@@ -102,7 +102,7 @@ def preprocess_TESSy(path,
                      pathogens: list,
                      base_dir: Path = BASE_DIR, 
                      save_path = None,
-                     except_antibiotics: list = None,
+                     exclude_antibiotics: list = None,
                      impute_gender: bool = False,
                      impute_age: bool = False,
                      ):
@@ -110,7 +110,7 @@ def preprocess_TESSy(path,
     
     print(f"Reading in TESSy data from '{path}'...")
     TESSy_data = pd.read_csv(path, low_memory=False)
-    print(f"Isolating pathogens: {pathogens}")
+    print(f"Pathogens: {pathogens}")
     TESSy_data = TESSy_data[TESSy_data['Pathogen'].isin(pathogens)]
     print(f"Number of tests before parsing: {TESSy_data.shape[0]:,}")
     TESSy_data['year'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO']).dt.year
@@ -144,13 +144,13 @@ def preprocess_TESSy(path,
     df = df[df['IsolateId'].notnull()] 
     
     # filter out antibiotics
-    if except_antibiotics:
-        print(f"Filtering out antibiotics: {except_antibiotics}")
-        df = df[~df['antibiotic'].isin(except_antibiotics)]
-        print(f"Number of tests after filtering: {df.shape[0]:,}")
+    if exclude_antibiotics:
+        print(f"Filtering out antibiotics: {exclude_antibiotics}")
+        df = df[~df['antibiotic'].isin(exclude_antibiotics)]
         print(f"Number of antibiotics: {df['antibiotic'].nunique():,}")
+        print(f"Number of tests after filtering: {df.shape[0]:,}")
     
-    print("Create new ID of the form: country_year_labID_patientID_IsolateID")
+    print("Creating new ID of the form: country_year_labID_patientID_IsolateID")
     id_cols = ['country', 'year', 'LaboratoryCode', 'PatientCounter', 'IsolateId']
     df['ID'] = df[id_cols].apply(lambda x: '_'.join(x.astype(str)), axis=1)
     print(f"Number of unique IDs: {df['ID'].nunique():,}")
@@ -163,10 +163,10 @@ def preprocess_TESSy(path,
         df.drop_duplicates(subset=['ID', 'antibiotic', 'phenotype'], inplace=True, keep='first')
     
     ## Code to look more deeply at duplicates, seeing if there is an antibiotic with different phenotypes. 
-    # num_unique_phenotypes = df.groupby(['ID', 'antibiotic'])['phenotype'].nunique().sort_values(ascending=False)
-    # print(f"Are there IDs with more than one phenotype per antibiotic? {'Yes' if any(num_unique_phenotypes > 1) else 'No'}")
-    # if any(num_unique_phenotypes > 1):
-    #     df = df.groupby(['ID', 'antibiotic']).first().reset_index()
+    num_unique_phenotypes = df.groupby(['ID', 'antibiotic'])['phenotype'].nunique().sort_values(ascending=False)
+    print(f"Are there IDs with more than one phenotype per antibiotic? {'Yes' if any(num_unique_phenotypes > 1) else 'No'}")
+    if any(num_unique_phenotypes > 1):
+        df = df.groupby(['ID', 'antibiotic']).first().reset_index()
     
     print(f"Number of tests after parsing: {df.shape[0]:,}")
     print(f"Aggregating phenotypes for each ID...")
@@ -192,7 +192,7 @@ def preprocess_TESSy(path,
     if impute_age:
         df_pheno = impute_col(df_pheno, 'age', random_state=42)
     else:
-        print(f"Dropping {df_pheno['age'].isnull().sum():,} tests with missing value in the 'age' column")
+        print(f"Dropping {df_pheno['age'].isnull().sum():,} samples with missing value in the 'age' column")
         df_pheno.dropna(subset=['age'], inplace=True)
         
     alternative_nan = ["UNK", "O"]
@@ -200,11 +200,11 @@ def preprocess_TESSy(path,
     if impute_gender:
         df_pheno = impute_col(df_pheno, 'gender', random_state=42)
     else:
-        print(f"Dropping {df_pheno['gender'].isnull().sum():,} tests with missing value in the 'gender' column")
+        print(f"Dropping {df_pheno['gender'].isnull().sum():,} samples with missing value in the 'gender' column")
         df_pheno.dropna(subset=['gender'], inplace=True)
 
     if not any([impute_age, impute_gender]):
-        print(f"Number of tests after dropping tests with missing values: {df.shape[0]:,}")
+        print(f"Number of samples after dropping samples with missing values: {df_pheno.shape[0]:,}")
     else:
         print(f"Final number of samples: {df_pheno.shape[0]:,}")
     
