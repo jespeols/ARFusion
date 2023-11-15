@@ -177,7 +177,7 @@ def preprocess_TESSy(path,
     df_others = df.drop(columns=['antibiotic', 'phenotype']).groupby('ID').first().reset_index() 
     df_pheno = df_agg.merge(df_others, on='ID')
     
-    cols_in_order = ['year', 'country', 'gender', 'age', 'phenotypes'] # can change to date 
+    cols_in_order = ['year', 'country', 'gender', 'age', 'phenotypes'] # can change to date or year-month here
     if len(pathogens) > 1:
         df_pheno = df_pheno[['pathogen'] + cols_in_order]
     else:
