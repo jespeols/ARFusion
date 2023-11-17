@@ -5,7 +5,6 @@ import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 class JointEmbedding(nn.Module):
     
     def __init__(self, config, vocab_size):
@@ -182,3 +181,50 @@ class AbPredictor(nn.Module):
     def forward(self, X, ab_idx):
         return self.classifiers[ab_idx](X)
             
+            
+################################################################################################################
+
+class PhenoEmbedding(nn.Module): 
+# uses a normal position embedding, an embedding for the antibiotic, and an embedding for the resistance (binary)
+    def __init__(self, config, vocab_size):
+        super(PhenoEmbedding, self).__init__()
+        
+        self.emb_dim = config['emb_dim']
+        self.vocab_size = vocab_size
+        self.dropout_prob = config['dropout_prob']
+        
+        self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
+        self.res_emb = nn.Embedding(2, self.emb_dim) # 2 possible values for resistance: 0 or 1
+        # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
+        self.position_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
+        
+        self.dropout = nn.Dropout(self.dropout_prob)
+        self.layer_norm = nn.LayerNorm(self.emb_dim)
+        
+    def forward(self, input_tensor, res_mask):
+        # input_tensor: (batch_size, seq_len)
+        # token_type_ids: (batch_size, seq_len)
+        # position_ids: (batch_size, seq_len)
+        # res_mask: (batch_size, seq_len) - determines resistance value for each token
+        
+        seq_len = input_tensor.size(-1)
+        
+        pos_tensor = self.numeric_position(seq_len, input_tensor)
+        # token_type not relevant for unimodal data
+        # token_type_tensor = torch.zeros_like(input_tensor).to(device) # (batch_size, seq_len)
+        # token_type_tensor[:, (seq_len//2 + 1):] = 1 # here, we assume that the sentence is split in half
+        
+        token_emb = self.token_emb(input_tensor) # (batch_size, seq_len, emb_dim)
+        # token_type_emb = self.token_type_emb(token_type_tensor) # (batch_size, seq_len, emb_dim)
+        position_emb = self.position_emb(pos_tensor) # (batch_size, seq_len, emb_dim)
+        
+        # emb = token_emb + token_type_emb + position_emb
+        emb = token_emb + position_emb
+        emb = self.dropout(emb)
+        emb = self.layer_norm(emb) 
+        return emb
+                
+    def numeric_position(self, dim, input_tensor): # input_tensor: (batch_size, seq_len)
+        # dim is the length of the sequence
+        position_ids = torch.arange(dim, dtype=torch.long, device=device) # create tensor of [0, 1, 2, ..., dim-1]
+        return position_ids.expand_as(input_tensor) # expand to (batch_size, seq_len)

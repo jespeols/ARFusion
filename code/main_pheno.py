@@ -101,30 +101,20 @@ if __name__ == "__main__":
     
     print("Constructing vocabulary...")
     savepath_vocab = BASE_DIR / "data" / "pheno_vocab.pt" if config['save_vocab'] else None
-    vocab = construct_pheno_vocab(ds, specials, 
-                                  separate_phenotypes=config['separate_phenotypes'], 
-                                  savepath_vocab=savepath_vocab)
+    vocab = construct_pheno_vocab(ds, specials, savepath_vocab=savepath_vocab)
     vocab_size = len(vocab)
     
     max_phenotypes_len = ds['num_phenotypes'].max()    
     if config['max_seq_len'] == 'auto':
-        if config['separate_phenotypes']: 
-            max_seq_len = 2*max_phenotypes_len + 4 + 1 # +4 for year, country, age & gender, +1 for CLS token
-        else:
-            max_seq_len = max_phenotypes_len + 4 + 1 
+        max_seq_len = 2*max_phenotypes_len + 4 + 1 # +4 for year, country, age & gender, +1 for CLS token
     else:
         max_seq_len = config['max_seq_len']
     
     train_indices, val_indices, test_indices = get_split_indices(num_samples, config['split'], 
                                                                  random_state=config['random_state'])
-    if config['separate_phenotypes']:
-        train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-        val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-        test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-    else:
-        train_set = SimplePhenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-        val_set = SimplePhenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-        test_set = SimplePhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
     
     print("Loading model...")
     bert = BERT(config, vocab_size).to(device)
