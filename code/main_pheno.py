@@ -12,7 +12,7 @@ from pathlib import Path
 
 # user-defined modules
 from model import BERT
-from datasets import PhenotypeDataset, SimplePhenotypeDataset
+from datasets import PhenotypeDataset
 from trainers import BertMLMTrainer
 
 # user-defined functions
@@ -20,10 +20,7 @@ from construct_vocab import construct_pheno_vocab
 from utils import get_split_indices
 from data_preprocessing import preprocess_TESSy
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if torch.cuda.is_available():
-    torch.cuda.empty_cache()
 
 time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -93,7 +90,7 @@ if __name__ == "__main__":
     ### If gender and age are not imputed, their missing values must be handled, both here and when constructing the vocabulary
     # replace missing values with PAD token -> will not be included in vocabulary or in self-attention
     specials = config['specials']
-    PAD = specials['PAD']
+    # PAD = specials['PAD']
     # ds.fillna(PAD, inplace=True)
     # replace missing values with [NA] token -> will be included in vocabulary and in self-attention
     # NA = '[NA]' # not available, missing values
@@ -101,12 +98,19 @@ if __name__ == "__main__":
     
     print("Constructing vocabulary...")
     savepath_vocab = BASE_DIR / "data" / "pheno_vocab.pt" if config['save_vocab'] else None
-    vocab = construct_pheno_vocab(ds, specials, savepath_vocab=savepath_vocab)
+    vocab, antibiotics = construct_pheno_vocab(ds, 
+                                               specials, 
+                                               savepath_vocab=savepath_vocab, 
+                                               separate_phenotypes=config['separate_phenotypes'])
+    print("Antibiotics:", antibiotics)
     vocab_size = len(vocab)
     
     max_phenotypes_len = ds['num_phenotypes'].max()    
     if config['max_seq_len'] == 'auto':
-        max_seq_len = 2*max_phenotypes_len + 4 + 1 # +4 for year, country, age & gender, +1 for CLS token
+        if config['separate_phenotypes']:
+            max_seq_len = 2*max_phenotypes_len + 4 + 1 # +4 for year, country, age & gender, +1 for CLS token
+        else:
+            max_seq_len = max_phenotypes_len + 4 + 1
     else:
         max_seq_len = config['max_seq_len']
     
@@ -114,7 +118,10 @@ if __name__ == "__main__":
                                                                  random_state=config['random_state'])
     train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
     val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-    test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    if config['do_testing']:
+        test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    else:
+        test_set = None
     
     print("Loading model...")
     bert = BERT(config, vocab_size).to(device)

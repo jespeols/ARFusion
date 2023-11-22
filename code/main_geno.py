@@ -20,8 +20,6 @@ from utils import get_split_indices
 from data_preprocessing import preprocess_NCBI
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if torch.cuda.is_available():
-    torch.cuda.empty_cache()
 
 time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 

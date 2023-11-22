@@ -47,9 +47,9 @@ class BertMLMTrainer(nn.Module):
     def __init__(self,
                  config: dict,
                  model: BERT,
-                 train_set: GenotypeDataset,
-                 val_set: GenotypeDataset,
-                 test_set: GenotypeDataset,
+                 train_set,
+                 val_set,
+                 test_set, # can be None
                  results_dir: Path = None,
                  ):
         super(BertMLMTrainer, self).__init__()
@@ -63,7 +63,8 @@ class BertMLMTrainer(nn.Module):
         self.train_size = len(self.train_set)      
         self.model.max_seq_len = self.train_set.max_seq_len 
         self.val_set, self.val_size = val_set, len(val_set)
-        self.test_set, self.test_size = test_set, len(test_set)
+        if test_set:
+            self.test_set, self.test_size = test_set, len(test_set)
         self.split = config["split"]
         self.project_name = config["project_name"]
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -195,8 +196,10 @@ class BertMLMTrainer(nn.Module):
         
         if self.do_testing:
             print("Evaluating on test set...")
-            self.test_loss, self.test_acc = self.evaluate(self.test_loader)
-            self.wandb_run.log({"Losses/test_loss": self.test_loss, "Accuracies/test_acc": self.test_acc})
+            self.test_loss, self.test_acc, test_seq_acc = self.evaluate(self.test_loader)
+            self.wandb_run.log({"Losses/test_loss": self.test_loss, 
+                                "Accuracies/test_acc": self.test_acc,
+                                "Accuracies/test_seq_acc": test_seq_acc})
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
     
@@ -292,6 +295,7 @@ class BertMLMTrainer(nn.Module):
                 "mask_prob": self.mask_prob,
                 "max_seq_len": self.model.max_seq_len,
                 "vocab_size": len(self.train_set.vocab),
+                "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "train_size": self.train_size,
                 "random_state": self.random_state,
                 # "val_size": self.val_size,
@@ -310,8 +314,10 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_seq_acc", summary="max", step_metric="epoch")
         
-        self.wandb_run.define_metric("Losses/test_loss")
-        self.wandb_run.define_metric("Accuracies/test_acc")
+        if self.do_testing:
+            self.wandb_run.define_metric("Losses/test_loss")
+            self.wandb_run.define_metric("Accuracies/test_acc")
+            self.wandb_run.define_metric("Accuracies/test_seq_acc")
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
         self.wandb_run.define_metric("Accuracies/final_val_seq_acc")

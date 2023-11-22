@@ -8,6 +8,7 @@ dropout_prob: 0.1
 mask_prob: 0.25
 batch_size: 32
 split: [0.8, 0.1, 0.1] # train, val, test
+separate_phenotypes: False
 max_seq_len: 'auto'
 do_testing: False
 epochs: 20
@@ -15,7 +16,7 @@ early_stopping_patience: 3
 lr: 0.00005 
 weight_decay: 0.01
 print_progress_every: 3000
-report_every: 1000
+report_every: 1500
 save_vocab: False   # True for fine-tuning or inference 
 save_model: False   # True for fine-tuning or inference
 random_state: 42
