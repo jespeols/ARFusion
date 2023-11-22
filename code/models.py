@@ -140,7 +140,6 @@ class BERT(nn.Module):
         self.num_heads = config['num_heads']
         self.num_layers = config['num_layers']
         self.ff_dim = config['ff_dim']
-        self.hidden_dim = config['hidden_dim'] # for the classification layer
         self.dropout_prob = config['dropout_prob']
         
         # embedding and encoder blocks
@@ -152,6 +151,7 @@ class BERT(nn.Module):
         self.softmax = nn.LogSoftmax(dim=-1) # log softmax improves numerical stability, we use NLLLoss later
         
         # classifier
+        self.hidden_dim = config['hidden_dim'] # for the classification layer
         if self.num_ab:
             self.classification_layer = [AbPredictor(self.emb_dim, self.hidden_dim).to(device) for _ in range(num_ab)] 
         else:

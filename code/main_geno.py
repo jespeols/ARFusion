@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 # user-defined modules
-from model import BERT
+from models import BERT
 from datasets import GenotypeDataset
 from trainers import BertMLMTrainer
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--num_heads", type=int)
     argparser.add_argument("--emb_dim", type=int)
-    # argparser.add_argument("--hidden_dim", type=int)
+    argparser.add_argument("--ff_dim", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
@@ -56,6 +56,8 @@ if __name__ == "__main__":
     with open(config_path, "r") as config_file:
         config = yaml.safe_load(config_file)
     
+    os.environ['WANDB_MODE'] = config['wandb_mode']
+    
     # overwrite config with command line arguments
     args = argparser.parse_args()
     config['name'] = args.name if args.name else config['name']
@@ -63,8 +65,8 @@ if __name__ == "__main__":
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
-    # config['hidden_dim'] = args.hidden_dim if args.hidden_dim else config['hidden_dim']
-    config['hidden_dim'] = config['emb_dim']        
+    config['ff_dim'] = args.ff_dim if args.ff_dim else config['ff_dim']
+    # config['ff_dim'] = config['emb_dim']        
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
@@ -112,7 +114,7 @@ if __name__ == "__main__":
     test_set = GenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
     
     print("Loading model...")
-    bert = BERT(config, vocab_size).to(device)
+    bert = BERT(config, vocab_size, max_seq_len).to(device)
     trainer = BertMLMTrainer(
         config=config,
         model=bert,

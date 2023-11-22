@@ -1,7 +1,9 @@
+wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
 project_name: Genotype-MLM
 name: baseline
 emb_dim: 256
 ff_dim: 256
+hidden_dim:  # for classifier, not used for MLM
 num_heads: 4
 num_layers: 6
 dropout_prob: 0.1
@@ -24,8 +26,8 @@ data:
   exclude_genotypes:
   # exclude_assembly_variants: 
   exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
-  # exclusion_chars: 
-  exclusion_chars: ['-']  
+  exclusion_chars: 
+  # exclusion_chars: ['-']  
 specials:   
   CLS: '[CLS]'
   PAD: '[PAD]'
