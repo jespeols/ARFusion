@@ -1,7 +1,7 @@
 project_name: Genotype-MLM
 name: baseline
 emb_dim: 256
-hidden_dim: 256
+ff_dim: 256
 num_heads: 4
 num_layers: 6
 dropout_prob: 0.1

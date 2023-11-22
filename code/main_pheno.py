@@ -11,9 +11,9 @@ from datetime import datetime
 from pathlib import Path
 
 # user-defined modules
-from model import BERT
-from datasets import PhenotypeDataset
-from trainers import BertMLMTrainer
+from models import BERT
+from datasets import PhenotypeMLMDataset, PhenotypeDataset
+from trainers import BertMLMTrainer, BertCLSTrainer
 
 # user-defined functions
 from construct_vocab import construct_pheno_vocab
@@ -36,11 +36,13 @@ if __name__ == "__main__":
     argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--num_heads", type=int)
     argparser.add_argument("--emb_dim", type=int)
-    # argparser.add_argument("--hidden_dim", type=int)
+    argparser.add_argument("--ff_dim", type=int)
+    argparser.add_argument("--hidden_dim", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
+    argparser.add_argument("--classifier_type", type=str)
     
     # os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
     
@@ -58,6 +60,8 @@ if __name__ == "__main__":
     with open(config_path, "r") as config_file:
         config = yaml.safe_load(config_file)
     
+    os.environ['WANDB_MODE'] = config['wandb_mode']
+    
     # overwrite config with command line arguments
     args = argparser.parse_args()
     config['name'] = args.name if args.name else config['name']
@@ -65,8 +69,10 @@ if __name__ == "__main__":
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
-    # config['hidden_dim'] = args.hidden_dim if args.hidden_dim else config['hidden_dim']
-    config['hidden_dim'] = config['emb_dim']        
+    config['ff_dim'] = args.ff_dim if args.ff_dim else config['ff_dim']
+    # config['ff_dim'] = config['emb_dim']        
+    config['classifier_type'] = args.classifier_type if args.classifier_type else config['classifier_type']
+    config['hidden_dim'] = args.hidden_dim if args.hidden_dim else config['hidden_dim']
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
@@ -116,24 +122,46 @@ if __name__ == "__main__":
     
     train_indices, val_indices, test_indices = get_split_indices(num_samples, config['split'], 
                                                                  random_state=config['random_state'])
-    train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-    val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-    if config['do_testing']:
-        test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    if config['classifier_type'] == "MLM":
+        train_set = PhenotypeMLMDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+        val_set = PhenotypeMLMDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+        if config['do_testing']:
+            test_set = PhenotypeMLMDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+        else:
+            test_set = None
+        bert = BERT(config, vocab_size).to(device)
+        trainer = BertMLMTrainer(
+            config=config,
+            model=bert,
+            train_set=train_set,
+            val_set=val_set,
+            test_set=test_set,
+            results_dir=RESULTS_DIR,
+        )
+    elif config['classifier_type'] == "CLS":
+        assert config['separate_phenotypes'] == False, "Separate phenotypes not supported for CLS classifier"
+        
+        train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, antibiotics, specials, max_seq_len, base_dir=BASE_DIR)
+        val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, antibiotics, specials, max_seq_len, base_dir=BASE_DIR)
+        if config['do_testing']:
+            test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, antibiotics, specials, max_seq_len, base_dir=BASE_DIR)
+        else:
+            test_set = None
+        bert = BERT(config, vocab_size, max_seq_len, num_ab=len(antibiotics)).to(device)
+        trainer = BertCLSTrainer(
+            config=config,
+            model=bert,
+            antibiotics=antibiotics,
+            train_set=train_set,
+            val_set=val_set,
+            test_set=test_set,
+            results_dir=RESULTS_DIR,
+        )
     else:
-        test_set = None
-    
+        raise ValueError("Classifier type not supported, must be 'MLM' or 'CLS'")
+        
     print("Loading model...")
-    bert = BERT(config, vocab_size).to(device)
-    trainer = BertMLMTrainer(
-        config=config,
-        model=bert,
-        train_set=train_set,
-        val_set=val_set,
-        test_set=test_set,
-        results_dir=RESULTS_DIR,
-    )
-    
+        
     trainer.print_model_summary()
     trainer.print_trainer_summary()
     trainer()
