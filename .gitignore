@@ -6,3 +6,4 @@ data/NCBI/genotype_parsed.pkl
 checkpoints
 logs
 data/NCBI/geno_vocab.pt
+wandb/
