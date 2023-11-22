@@ -694,7 +694,7 @@ class BertCLSTrainer(nn.Module):
                 pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits))
                 
-                num_correct_seq += get_num_correct_seq(pred_res, target_res, token_mask, ab_mask)
+                num_correct_seq += get_num_correct_seq(pred_res, target_res, ab_mask)
                 batch_loss = list()
                 for j in range(self.num_ab): # for each antibiotic
                     mask = ab_mask[:, j] 
