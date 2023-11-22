@@ -57,7 +57,8 @@ class BertMLMTrainer(nn.Module):
         torch.manual_seed(self.random_state)
         torch.cuda.manual_seed(self.random_state)
         
-        self.model = model 
+        self.model = model
+        self.classifier_type = config['classifier_type'] 
         self.train_set, self.train_size = train_set, len(train_set)
         self.train_size = len(self.train_set)      
         self.model.max_seq_len = self.train_set.max_seq_len 
@@ -97,7 +98,9 @@ class BertMLMTrainer(nn.Module):
         print("Model summary:")
         print("="*self._splitter_size)
         print(f"Embedding dim: {self.model.emb_dim}")
-        print(f"Hidden dim: {self.model.hidden_dim}")
+        print(f"Classifier type: {self.classifier_type}")
+        print(f"Feed-forward dim: {self.model.ff_dim}")
+        print(f"Dropout probability: {self.model.dropout_prob:.0%}")
         print(f"Number of heads: {self.model.num_heads}")
         print(f"Number of encoder layers: {self.model.num_layers}")
         print(f"Max sequence length: {self.model.max_seq_len}")
@@ -118,7 +121,6 @@ class BertMLMTrainer(nn.Module):
         print(f"Early stopping patience: {self.patience}")
         print(f"Batch size: {self.batch_size}")
         print(f"Number of batches: {self.num_batches:,}")
-        print(f"Dropout probability: {self.model.dropout_prob:.0%}")
         print(f"Learning rate: {self.lr}")
         print(f"Weight decay: {self.weight_decay}")
         print("="*self._splitter_size)
@@ -286,9 +288,11 @@ class BertMLMTrainer(nn.Module):
                 "batch_size": self.batch_size,
                 # "model": "BERT",
                 "hidden_dim": self.model.hidden_dim,
+                "classifier_type": self.classifier_type,
                 "num_layers": self.model.num_layers,
                 "num_heads": self.model.num_heads,
                 "emb_dim": self.model.emb_dim,
+                'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
                 "mask_prob": self.mask_prob,
@@ -464,6 +468,7 @@ class BertCLSTrainer(nn.Module):
         torch.cuda.manual_seed(self.random_state)
         
         self.model = model
+        self.classifier_type = config['classifier_type']
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics) 
         self.train_set, self.train_size = train_set, len(train_set)
@@ -504,9 +509,12 @@ class BertCLSTrainer(nn.Module):
         print("Model summary:")
         print("="*self._splitter_size)
         print(f"Embedding dim: {self.model.emb_dim}")
+        print(f"Classifier type: {self.classifier_type}")
+        print(f"Feed-forward dim: {self.model.ff_dim}")
         print(f"Hidden dim: {self.model.hidden_dim}")
         print(f"Number of heads: {self.model.num_heads}")
         print(f"Number of encoder layers: {self.model.num_layers}")
+        print(f"Dropout probability: {self.model.dropout_prob:.0%}")
         print(f"Max sequence length: {self.model.max_seq_len}")
         print(f"Vocab size: {len(self.train_set.vocab):,}")
         print(f"Number of parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
@@ -527,7 +535,6 @@ class BertCLSTrainer(nn.Module):
         print(f"Early stopping patience: {self.patience}")
         print(f"Batch size: {self.batch_size}")
         print(f"Number of batches: {self.num_batches:,}")
-        print(f"Dropout probability: {self.model.dropout_prob:.0%}")
         print(f"Learning rate: {self.lr}")
         print(f"Weight decay: {self.weight_decay}")
         print("="*self._splitter_size)
@@ -734,6 +741,7 @@ class BertCLSTrainer(nn.Module):
                 "num_layers": self.model.num_layers,
                 "num_heads": self.model.num_heads,
                 "emb_dim": self.model.emb_dim,
+                'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
                 "mask_prob": self.mask_prob,
@@ -741,6 +749,7 @@ class BertCLSTrainer(nn.Module):
                 "vocab_size": len(self.train_set.vocab),
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "train_size": self.train_size,
+                "classifier_type": self.classifier_type,
                 "random_state": self.random_state,
                 # "val_size": self.val_size,
                 # "test_size": self.test_size,

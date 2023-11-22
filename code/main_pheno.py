@@ -43,6 +43,8 @@ if __name__ == "__main__":
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--classifier_type", type=str)
+    argparser.add_argument("--separate_phenotypes", type=bool)
+    argparser.add_argument("--do_testing", type=bool)
     
     # os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
     
@@ -77,6 +79,8 @@ if __name__ == "__main__":
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
     config['random_state'] = args.random_state if args.random_state else config['random_state']
+    config['do_testing'] = args.do_testing if args.do_testing else config['do_testing']
+    config['separate_phenotypes'] = args.separate_phenotypes if args.separate_phenotypes else config['separate_phenotypes']
         
     if config['data']['prepare_data']:
         print("Preprocessing dataset...")
@@ -123,13 +127,15 @@ if __name__ == "__main__":
     train_indices, val_indices, test_indices = get_split_indices(num_samples, config['split'], 
                                                                  random_state=config['random_state'])
     if config['classifier_type'] == "MLM":
+        assert config['separate_phenotypes'] == True, "Separate phenotypes must be used for MLM classifier"
+        
         train_set = PhenotypeMLMDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
         val_set = PhenotypeMLMDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
         if config['do_testing']:
             test_set = PhenotypeMLMDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
         else:
             test_set = None
-        bert = BERT(config, vocab_size).to(device)
+        bert = BERT(config, vocab_size, max_seq_len).to(device)
         trainer = BertMLMTrainer(
             config=config,
             model=bert,

@@ -1,6 +1,6 @@
 wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
 project_name: Phenotype-MLM
-name: test_new_code_implemented
+name: baseline
 emb_dim: 256
 ff_dim: 256
 hidden_dim: 256 # for classifier
@@ -14,7 +14,7 @@ separate_phenotypes: False
 classifier_type: 'CLS' # 'CLS' or 'MLM'
 max_seq_len: 'auto'
 do_testing: False
-epochs: 5
+epochs: 20
 early_stopping_patience: 3
 lr: 0.00005 
 weight_decay: 0.01
