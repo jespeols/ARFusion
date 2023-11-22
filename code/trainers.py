@@ -3,14 +3,14 @@ import torch
 import torch.nn as nn
 import time 
 import matplotlib.pyplot as plt
+import wandb
 
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 from pathlib import Path
 
 from datetime import datetime
-from model import BERT
-from datasets import GenotypeDataset
+from models import BERT
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -20,85 +20,75 @@ os.chdir(BASE_DIR)
 
 ############################################ Trainer for MLM task ############################################
     
-    
-def token_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor, debug: bool = False):
+def token_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor):
     r = tokens.argmax(-1).masked_select(token_mask) # select the indices of the predicted tokens
     t = token_target.masked_select(token_mask)
-    if debug:
-        print("\nDebugging token accuracy:")
-        print("prediction shape:", tokens.shape)
-        print("target shape:", token_target.shape)
-        print("mask shape:", token_mask.shape)
-        print("argmax(-1) shape:", tokens.argmax(-1).shape)
-        print("predicted indices:")
-        print(r)
-        print("target indices:")
-        print(t)
-        
-    s = (r == t).sum().item()
-    print("correct predictions:", s) if debug else None
+    
+    c = torch.eq(r, t).sum().item()
     tot = (token_mask).sum().item()
-    print("total predictions:", tot) if debug else None
-    return round(s / tot, 2)
+    acc = c / tot if tot > 0 else 1 # if tot == 0, then all tokens are masked (currently not possible)
+    return acc
+
+
+def seq_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor):
+    r = tokens.argmax(-1) # each row is a seq
+    r_ = torch.mul(r, token_mask) # element-wise multiplication, non-masked tokens become 0
+    t_ = torch.mul(token_target, token_mask)
+    
+    c = torch.eq(r_, t_).all(dim=1).sum().item() # count the number of correctly classified sequences
+    tot = token_mask.shape[0] # total number of seqs (batch size)
+    acc = c / tot if tot > 0 else 1 # if tot == 0, then all seqs are masked (currently not possible)
+    return acc
 
 
 class BertMLMTrainer(nn.Module):
     
-    def __init__(self,  
+    def __init__(self,
+                 config: dict,
                  model: BERT,
-                 dataset: GenotypeDataset,
-                 log_dir: Path,
-                 epochs: int = 5,
-                 batch_size: int = 32,
-                 train_share: float = 0.8,
-                 mask_prob: float = 0.15,
-                 report_every: int = 5,
-                 print_progress_every: int = 50,
-                 save_after: int = 5,
-                 save_every: int = 3,
-                 learning_rate: float = 5e-3,
+                 train_set,
+                 val_set,
+                 test_set, # can be None
                  results_dir: Path = None,
-                 checkpoint_dir: Path = None,
                  ):
         super(BertMLMTrainer, self).__init__()
         
+        self.random_state = config["random_state"]
+        torch.manual_seed(self.random_state)
+        torch.cuda.manual_seed(self.random_state)
+        
         self.model = model 
-        self.dataset = dataset 
-        self.dataset_size = len(self.dataset)        
+        self.train_set, self.train_size = train_set, len(train_set)
+        self.train_size = len(self.train_set)      
+        self.model.max_seq_len = self.train_set.max_seq_len 
+        self.val_set, self.val_size = val_set, len(val_set)
+        if test_set:
+            self.test_set, self.test_size = test_set, len(test_set)
+        self.split = config["split"]
+        self.project_name = config["project_name"]
+        self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
+         
+        self.batch_size = config["batch_size"]
+        self.lr = config["lr"]
+        self.weight_decay = config["weight_decay"]
+        self.epochs = config["epochs"]
+        self.patience = config["early_stopping_patience"]
+        self.save_model = config["save_model"] if config["save_model"] else False
         
-        self.model.max_seq_len = self.dataset.max_seq_len # transfer max seq length from dataset to model
-        
-        self.batch_size = batch_size
-        self.learning_rate = learning_rate
-        self.epochs = epochs
-        self.current_epoch = 0
-        
-        self.train_share = train_share
-        self.train_size = int(self.dataset_size * train_share)
+        self.do_testing = config["do_testing"] if config["do_testing"] else False
         self.num_batches = self.train_size // self.batch_size
-        self.val_share = (1-self.train_share)/2
-        self.val_size = int(self.dataset_size * self.val_share)
-        self.test_share = self.val_share
-        self.test_size = self.val_size
         
-        self.mask_prob = mask_prob
+        self.mask_prob = config["mask_prob"]
         self.criterion = nn.NLLLoss(ignore_index=-100).to(device) # value -100 are ignored in NLLLoss
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.learning_rate)
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        self.scheduler = None
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
+        # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
-        self.losses = []
-        self.val_losses = []
-        self.val_accuracies = []
-        self.train_accuracies = []
-        
-        self.save_after = save_after
-        self.save_every = save_every
-        self.report_every = report_every
-        self.print_progress_every = print_progress_every
+        self.current_epoch = 0
+        self.report_every = config["report_every"] if config["report_every"] else 100
+        self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
         self._splitter_size = 70
-        self.log_dir = log_dir
-        # os.makedirs(self.log_dir) if not os.path.exists(self.log_dir) else None
-        self.writer = SummaryWriter(log_dir=str(self.log_dir))
-        self.checkpoint_dir = checkpoint_dir
         self.results_dir = results_dir
         os.makedirs(self.results_dir) if not os.path.exists(self.results_dir) else None
         
@@ -106,60 +96,112 @@ class BertMLMTrainer(nn.Module):
     def print_model_summary(self):        
         print("Model summary:")
         print("="*self._splitter_size)
-        print(f"Max sequence length: {self.dataset.max_seq_len}")
-        print(f"Vocab size: {len(self.dataset.vocab):,}")
+        print(f"Embedding dim: {self.model.emb_dim}")
+        print(f"Hidden dim: {self.model.hidden_dim}")
+        print(f"Number of heads: {self.model.num_heads}")
+        print(f"Number of encoder layers: {self.model.num_layers}")
+        print(f"Max sequence length: {self.model.max_seq_len}")
+        print(f"Vocab size: {len(self.train_set.vocab):,}")
         print(f"Number of parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
         print("="*self._splitter_size)
         
     
     def print_trainer_summary(self):
         print("Trainer summary:")
+        print("="*self._splitter_size)
         print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
         print(f"Training dataset size: {self.train_size:,}")
+        print(f"Train-val-test split {self.split[0]:.0%} - {self.split[1]:.0%} - {self.split[2]:.0%}")
+        print(f"Will test? {'Yes' if self.do_testing else 'No'}")
         print(f"Mask probability: {self.mask_prob:.0%}")
         print(f"Number of epochs: {self.epochs}")
+        print(f"Early stopping patience: {self.patience}")
         print(f"Batch size: {self.batch_size}")
         print(f"Number of batches: {self.num_batches:,}")
-        print(f"Learning rate: {self.learning_rate}")
+        print(f"Dropout probability: {self.model.dropout_prob:.0%}")
+        print(f"Learning rate: {self.lr}")
+        print(f"Weight decay: {self.weight_decay}")
         print("="*self._splitter_size)
         
         
-    def __call__(self):
-        start_time = time.time() x
+    def __call__(self):      
+        self.wandb_run = self._init_wandb()
+        self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
+        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        if self.do_testing:
+            self.test_set.prepare_dataset(mask_prob=self.mask_prob) 
+            self.test_loader = DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False)
+        
+        start_time = time.time()
+        self.best_val_loss = float('inf')
+        
+        self.losses = []
+        self.val_losses = []
+        self.val_accuracies = []
+        self.train_accuracies = []
+        self.val_seq_accuracies = []
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
-            self.train_loader, self.val_loader, self.test_loader = self.dataset.get_loaders(
-                batch_size=self.batch_size,
-                val_share=self.val_share,
-                test_share=self.test_share,
-                mask_prob=self.mask_prob,
-                split=True if self.current_epoch == 0 else False # split only once
-            )
+            # Dynamic masking: New mask for training set each epoch
+            self.train_set.prepare_dataset(mask_prob=self.mask_prob)
+            self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
             epoch_start_time = time.time()
             loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(loss) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
-            if self.current_epoch % self.save_every == 0 and self.current_epoch > self.save_after:
-                self.save_checkpoint(self.current_epoch, loss=loss)
-            print("Evaluating on training set...")
-            _, train_acc = self.evaluate(self.train_loader)
-            self.train_accuracies.append(train_acc)
+            # print("Evaluating on training set...")
+            # _, train_acc = self.evaluate(self.train_loader)
+            # self.train_accuracies.append(train_acc)
             print("Evaluating on validation set...")
-            val_loss, val_acc = self.evaluate(self.val_loader)
+            val_loss, val_acc, val_seq_acc = self.evaluate(self.val_loader)
             self.val_losses.append(val_loss)
             self.val_accuracies.append(val_acc)
-            self.writer.add_scalar("Validation loss", val_loss, global_step=self.current_epoch)
-            self.writer.add_scalar("Validation accuracy", val_acc, global_step=self.current_epoch)
-            
+            self.val_seq_accuracies.append(val_seq_acc)
+            self._report_epoch_results()
+            early_stop = self.early_stopping()
+            if early_stop:
+                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
+                s = f"Best validation loss {self.best_val_loss:.3f}"
+                s += f" | Validation accuracy {self.val_accuracies[self.best_epoch]:.2%}"
+                s += f" | Validation sequence accuracy {self.val_seq_accuracies[self.best_epoch]:.2%}"
+                s += f" at epoch {self.best_epoch+1}"
+                print(s)
+                self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
+                           "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch],
+                           "Accuracies/final_val_seq_acc": self.val_seq_accuracies[self.best_epoch],
+                           "final_epoch": self.best_epoch+1})
+                print("="*self._splitter_size)
+                self.model.load_state_dict(self.best_model_state) 
+                self.current_epoch = self.best_epoch
+                break
+            self.scheduler.step() if self.scheduler else None
+        
+        if not early_stop:    
+            self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
+                    "Accuracies/final_val_acc":self.val_accuracies[-1],
+                    "Accuracies/final_val_seq_acc": self.val_seq_accuracies[-1],
+                    "final_epoch": self.current_epoch+1})
+        self.save_model(self.results_dir / "model_state.pt") if self.save_model else None
         train_time = (time.time() - start_time)/60
+        self.wandb_run.log({"Training time (min)": train_time})
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
-        print("Evaluating on test set...")
-        self.test_loss, self.test_acc = self.evaluate(self.test_loader)
+        if not early_stop:
+            s = f"Final validation loss {self.val_losses[-1]:.3f}"
+            s += f" | Final validation accuracy {self.val_accuracies[-1]:.2%}"
+            s += f" | Final validation sequence accuracy {self.val_seq_accuracies[-1]:.2%}"
+            print(s)
+        
+        if self.do_testing:
+            print("Evaluating on test set...")
+            self.test_loss, self.test_acc, test_seq_acc = self.evaluate(self.test_loader)
+            self.wandb_run.log({"Losses/test_loss": self.test_loss, 
+                                "Accuracies/test_acc": self.test_acc,
+                                "Accuracies/test_seq_acc": test_seq_acc})
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
-       
+    
         
     def train(self, epoch: int):
         print(f"Epoch {epoch+1}/{self.epochs}")
@@ -168,16 +210,9 @@ class BertMLMTrainer(nn.Module):
         epoch_loss = 0
         reporting_loss = 0
         printing_loss = 0
-        for i, batch in enumerate(self.train_loader): # iterate over batches
+        for i, batch in enumerate(self.train_loader):
             batch_index = i + 1
             input, token_target, token_mask, attn_mask = batch
-            # print example
-            # if batch_index in [10]:
-            #     print(f"input: {input[0]}")
-            #     print(f"token_target: {token_target[0]}")
-            #     print(f"token_mask: {token_mask[0]}")
-            #     print(f"attn_mask: {attn_mask[0]}")
-            #     print("="*self._splitter_size)
             
             self.optimizer.zero_grad() # zero out gradients
             tokens = self.model(input, attn_mask) # get predictions
@@ -190,45 +225,123 @@ class BertMLMTrainer(nn.Module):
             reporting_loss += loss.item()
             printing_loss += loss.item()
             
-            loss.backward() # backpropagate
-            self.optimizer.step() # update parameters
+            loss.backward() 
+            self.optimizer.step() 
             if batch_index % self.report_every == 0:
                 self._report_loss_results(batch_index, reporting_loss)
                 reporting_loss = 0 
                 
             if batch_index % self.print_progress_every == 0:
-                time_elapsed = time.gmtime(time.time() - time_ref) # get time elapsed as a struct_time object 
+                time_elapsed = time.gmtime(time.time() - time_ref) 
                 self._print_loss_summary(time_elapsed, batch_index, printing_loss) 
                 printing_loss = 0           
         avg_epoch_loss = epoch_loss / self.num_batches
-        return avg_epoch_loss # return loss for saving checkpoint
-       
-       
+        return avg_epoch_loss 
+    
+    
+    def early_stopping(self):
+        if self.val_losses[-1] < self.best_val_loss:
+            self.best_val_loss = self.val_losses[-1]
+            self.best_epoch = self.current_epoch
+            self.best_model_state = self.model.state_dict()
+            self.early_stopping_counter = 0
+            return False
+        else:
+            self.early_stopping_counter += 1
+            return True if self.early_stopping_counter >= self.patience else False
+        
+            
     def evaluate(self, loader: DataLoader, print_mode: bool = True):
         self.model.eval()
         loss = 0
         acc = 0
-        i = 0
+        seq_acc = 0
         for batch in loader:
-            i+=1
             input, token_target, token_mask, attn_mask = batch
             tokens = self.model(input, attn_mask)
             
             loss += self.criterion(tokens.transpose(-1, -2), token_target).item()
-            if i in [] and print_mode:
-                acc += token_accuracy(tokens, token_target, token_mask, debug=True)
-            else:
-                acc += token_accuracy(tokens, token_target, token_mask)
+            acc += token_accuracy(tokens, token_target, token_mask)
+            seq_acc += seq_accuracy(tokens, token_target, token_mask)
             
         loss /= len(loader) 
         acc /= len(loader)
+        seq_acc /= len(loader)
         
         if print_mode:
-            print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%}")
+            print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%} | Sequence accuracy: {seq_acc:.2%}")
             print("="*self._splitter_size)
         
-        return loss, acc
+        return loss, acc, seq_acc
             
+     
+    def _init_wandb(self):
+        self.wandb_run = wandb.init(
+            project=self.project_name, # name of the project
+            name=self.wandb_name, # name of the run
+            
+            config={
+                # "dataset": "NCBI",
+                "epochs": self.epochs,
+                "batch_size": self.batch_size,
+                # "model": "BERT",
+                "hidden_dim": self.model.hidden_dim,
+                "num_layers": self.model.num_layers,
+                "num_heads": self.model.num_heads,
+                "emb_dim": self.model.emb_dim,
+                "lr": self.lr,
+                "weight_decay": self.weight_decay,
+                "mask_prob": self.mask_prob,
+                "max_seq_len": self.model.max_seq_len,
+                "vocab_size": len(self.train_set.vocab),
+                "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
+                "train_size": self.train_size,
+                "random_state": self.random_state,
+                # "val_size": self.val_size,
+                # "test_size": self.test_size,
+                # "early_stopping_patience": self.patience,
+                # "dropout_prob": self.model.dropout_prob,
+            }
+        )
+        self.wandb_run.watch(self.model) # watch the model for gradients and parameters
+        self.wandb_run.define_metric("epoch", hidden=True)
+        self.wandb_run.define_metric("batch", hidden=True)
+        
+        self.wandb_run.define_metric("Losses/live_loss", step_metric="batch")
+        self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Accuracies/val_seq_acc", summary="max", step_metric="epoch")
+        
+        if self.do_testing:
+            self.wandb_run.define_metric("Losses/test_loss")
+            self.wandb_run.define_metric("Accuracies/test_acc")
+            self.wandb_run.define_metric("Accuracies/test_seq_acc")
+        self.wandb_run.define_metric("Losses/final_val_loss")
+        self.wandb_run.define_metric("Accuracies/final_val_acc")
+        self.wandb_run.define_metric("Accuracies/final_val_seq_acc")
+        self.wandb_run.define_metric("final_epoch")
+
+        return self.wandb_run
+     
+    def _report_epoch_results(self):
+        wandb_dict = {
+            "epoch": self.current_epoch+1,
+            "Losses/train_loss": self.losses[-1],
+            "Losses/val_loss": self.val_losses[-1],
+            "Accuracies/val_acc": self.val_accuracies[-1],
+            "Accuracies/val_seq_acc": self.val_seq_accuracies[-1]
+        }
+        self.wandb_run.log(wandb_dict)
+    
+        
+    def _report_loss_results(self, batch_index, tot_loss):
+        avg_loss = tot_loss / self.report_every
+        
+        global_step = self.current_epoch * self.num_batches + batch_index # global step, total #batches seen
+        self.wandb_run.log({"batch": global_step, "Losses/live_loss": avg_loss})
+        # self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
+    
         
     def _print_loss_summary(self, time_elapsed, batch_index, tot_loss):
         progress = batch_index / self.num_batches
@@ -241,67 +354,490 @@ class BertMLMTrainer(nn.Module):
     
     
     def _visualize_losses(self, savepath: Path = None):
-        plt.plot(range(len(self.losses)), self.losses, '-o', label='Training')
-        plt.plot(range(len(self.val_losses)), self.val_losses, '-o', label='Validation')
-        plt.axhline(y=self.test_loss, color='r', linestyle='--', label='Test')
-        plt.title('MLM losses')
-        plt.xlabel('Epoch')
-        plt.xticks(range(len(self.losses))) if len(self.losses) < 10 else plt.xticks(range(0, len(self.losses), 5))
-        plt.ylabel('Loss')
-        plt.legend()
+        fig, ax = plt.subplots()
+        ax.plot(range(len(self.losses)), self.losses, '-o', label='Training')
+        ax.plot(range(len(self.val_losses)), self.val_losses, '-o', label='Validation')
+        ax.axhline(y=self.test_loss, color='r', linestyle='--', label='Test') if self.do_testing else None
+        ax.set_title('MLM losses')
+        ax.set_xlabel('Epoch')
+        ax.set_xticks(range(len(self.losses))) if len(self.losses) < 10 else ax.set_xticks(range(0, len(self.losses), 5))
+        ax.set_ylabel('Loss')
+        ax.legend()
         plt.savefig(savepath, dpi=300) if savepath else None
-        plt.show()
+        # self.wandb_run.log({"Losses/losses": wandb.log(ax)})
+        self.wandb_run.log({"Losses/losses": wandb.Image(ax)})
+        plt.close()
         
     
     def _visualize_accuracy(self, savepath: Path = None):
-        plt.plot(range(len(self.train_accuracies)), self.train_accuracies, '-o', label='Training')
-        plt.plot(range(len(self.val_accuracies)), self.val_accuracies, '-o', label='Validation')
-        plt.axhline(y=self.test_acc, color='r', linestyle='--', label='Test')
-        plt.title('MLM accuracy')
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
-        plt.legend()
+        fig, ax = plt.subplots()
+        ax.plot(range(len(self.val_accuracies)), self.val_accuracies, '-o', label='Validation')
+        ax.axhline(y=self.test_acc, color='r', linestyle='--', label='Test') if self.do_testing else None
+        ax.set_title('MLM accuracy')
+        ax.set_xlabel('Epoch')
+        ax.set_xticks(range(len(self.val_accuracies))) if len(self.val_accuracies) < 10 else ax.set_xticks(range(0, len(self.val_accuracies), 5))
+        ax.set_ylabel('Accuracy')
+        ax.legend()
         plt.savefig(savepath, dpi=300) if savepath else None
-        plt.show()
+        # self.wandb_run.log({"Accuracies/accuracy": wandb.log(ax)})
+        self.wandb_run.log({"Accuracies/accuracy": wandb.Image(ax)})
+        plt.close() 
     
     
+    def save_model(self, savepath: Path):
+        torch.save(self.model.state_dict(), savepath)
+        print(f"Model saved to {savepath}")
+        print("="*self._splitter_size)
+        
+        
+    def load_model(self, savepath: Path):
+        print("="*self._splitter_size)
+        print(f"Loading model from {savepath}")
+        self.model.load_state_dict(torch.load(savepath))
+        print("Model loaded")
+        print("="*self._splitter_size)
+    
+    ######################### Function to load and save training checkpoints ###########################
+    
+    # def save_checkpoint(self, epoch, loss):
+    #     if not self.checkpoint_dir: # if checkpoint_dir is None
+    #         return
+        
+    #     name = f"bert_epoch{epoch+1}_loss{loss:.2f}.pt"
+
+    #     if not self.checkpoint_dir.exists(): 
+    #         self.checkpoint_dir.mkdir()
+    #     torch.save({
+    #         'epoch': epoch,
+    #         'model_state_dict': self.model.state_dict(),
+    #         'optimizer_state_dict': self.optimizer.state_dict(),
+    #         'loss': loss
+    #         }, self.checkpoint_dir / name)
+        
+    #     print(f"Checkpoint saved to {self.checkpoint_dir / name}")
+    #     print("="*self._splitter_size)
+        
+        
+    # def load_checkpoint(self, path: Path):
+    #     print("="*self._splitter_size)
+    #     print(f"Loading model checkpoint from {path}")
+    #     checkpoint = torch.load(path)
+    #     self.current_epoch = checkpoint['epoch']
+    #     self.model.load_state_dict(checkpoint['model_state_dict'])
+    #     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #     print(f"Loaded checkpoint from epoch {self.current_epoch}")
+    #     print("="*self._splitter_size)
+    
+################################## Trainer for CLS task ##################################
+
+def get_num_correct(pred_res: torch.Tensor, target_res: torch.Tensor):
+    num_correct = torch.eq(pred_res, target_res).sum().item()
+    return num_correct
+
+
+def get_num_correct_seq(pred_res: torch.Tensor, target_res: torch.Tensor, ab_mask: torch.Tensor):
+    num_correct = 0
+    for i in range(pred_res.shape[0]): # for each sequence
+        sample_ab_mask = ab_mask[i]
+        sample_target_res = target_res[i][sample_ab_mask]
+        sample_pred_res = pred_res[i][sample_ab_mask]
+        eq = torch.eq(sample_pred_res, sample_target_res)
+        num_correct += eq.all().sum().item() 
+    return num_correct
+
+
+class BertCLSTrainer(nn.Module):
+    
+    def __init__(self,
+                 config: dict,
+                 model: BERT,
+                 antibiotics: list, # list of antibiotics in the dataset
+                 train_set,
+                 val_set,
+                 test_set, # can be None
+                 results_dir: Path = None,
+                 ):
+        super(BertCLSTrainer, self).__init__()
+        
+        self.random_state = config["random_state"]
+        torch.manual_seed(self.random_state)
+        torch.cuda.manual_seed(self.random_state)
+        
+        self.model = model
+        self.antibiotics = antibiotics
+        self.num_ab = len(self.antibiotics) 
+        self.train_set, self.train_size = train_set, len(train_set)
+        self.train_size = len(self.train_set)      
+        self.val_set, self.val_size = val_set, len(val_set)
+        if test_set:
+            self.test_set, self.test_size = test_set, len(test_set)
+        self.split = config["split"]
+        self.project_name = config["project_name"]
+        self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
+         
+        self.batch_size = config["batch_size"]
+        self.lr = config["lr"]
+        self.weight_decay = config["weight_decay"]
+        self.epochs = config["epochs"]
+        self.patience = config["early_stopping_patience"]
+        self.save_model = config["save_model"] if config["save_model"] else False
+        
+        self.do_testing = config["do_testing"] if config["do_testing"] else False
+        self.num_batches = self.train_size // self.batch_size
+        
+        self.mask_prob = config["mask_prob"]
+        self.criterions = [nn.BCEWithLogitsLoss() for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        self.scheduler = None
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
+        # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
+                 
+        self.current_epoch = 0
+        self.report_every = config["report_every"] if config["report_every"] else 100
+        self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
+        self._splitter_size = 70
+        self.results_dir = results_dir
+        os.makedirs(self.results_dir) if not os.path.exists(self.results_dir) else None
+        
+        
+    def print_model_summary(self):        
+        print("Model summary:")
+        print("="*self._splitter_size)
+        print(f"Embedding dim: {self.model.emb_dim}")
+        print(f"Hidden dim: {self.model.hidden_dim}")
+        print(f"Number of heads: {self.model.num_heads}")
+        print(f"Number of encoder layers: {self.model.num_layers}")
+        print(f"Max sequence length: {self.model.max_seq_len}")
+        print(f"Vocab size: {len(self.train_set.vocab):,}")
+        print(f"Number of parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
+        print("="*self._splitter_size)
+        
+    
+    def print_trainer_summary(self):
+        print("Trainer summary:")
+        print("="*self._splitter_size)
+        print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
+        print(f"Training dataset size: {self.train_size:,}")
+        print(f"Number of antibiotics: {self.num_ab}")
+        print(f"Antibiotics: {self.antibiotics}")
+        print(f"Train-val-test split {self.split[0]:.0%} - {self.split[1]:.0%} - {self.split[2]:.0%}")
+        print(f"Will test? {'Yes' if self.do_testing else 'No'}")
+        print(f"Mask probability: {self.mask_prob:.0%}")
+        print(f"Number of epochs: {self.epochs}")
+        print(f"Early stopping patience: {self.patience}")
+        print(f"Batch size: {self.batch_size}")
+        print(f"Number of batches: {self.num_batches:,}")
+        print(f"Dropout probability: {self.model.dropout_prob:.0%}")
+        print(f"Learning rate: {self.lr}")
+        print(f"Weight decay: {self.weight_decay}")
+        print("="*self._splitter_size)
+        
+        
+    def __call__(self):      
+        self.wandb_run = self._init_wandb()
+        self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
+        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        if self.do_testing:
+            self.test_set.prepare_dataset(mask_prob=self.mask_prob) 
+            self.test_loader = DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False)
+        
+        start_time = time.time()
+        self.best_val_loss = float('inf')
+        
+        self.losses = []
+        self.val_losses = []
+        self.val_accuracies = []
+        self.train_accuracies = []
+        self.val_seq_accuracies = []
+        for self.current_epoch in range(self.current_epoch, self.epochs):
+            self.model.train()
+            # Dynamic masking: New mask for training set each epoch
+            self.train_set.prepare_dataset(mask_prob=self.mask_prob)
+            self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
+            epoch_start_time = time.time()
+            loss = self.train(self.current_epoch) # returns loss, averaged over batches
+            self.losses.append(loss) 
+            print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
+            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
+            # print("Evaluating on training set...")
+            # _, train_acc = self.evaluate(self.train_loader)
+            # self.train_accuracies.append(train_acc)
+            print("Evaluating on validation set...")
+            val_loss, val_acc, val_seq_acc = self.evaluate(self.val_loader)
+            self.val_losses.append(val_loss)
+            self.val_accuracies.append(val_acc)
+            self.val_seq_accuracies.append(val_seq_acc)
+            self._report_epoch_results()
+            early_stop = self.early_stopping()
+            if early_stop:
+                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
+                s = f"Best validation loss {self.best_val_loss:.3f}"
+                s += f" | Validation accuracy {self.val_accuracies[self.best_epoch]:.2%}"
+                s += f" | Validation sequence accuracy {self.val_seq_accuracies[self.best_epoch]:.2%}"
+                s += f" at epoch {self.best_epoch+1}"
+                print(s)
+                self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
+                           "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch],
+                           "Accuracies/final_val_seq_acc": self.val_seq_accuracies[self.best_epoch],
+                           "final_epoch": self.best_epoch+1})
+                print("="*self._splitter_size)
+                self.model.load_state_dict(self.best_model_state) 
+                self.current_epoch = self.best_epoch
+                break
+            self.scheduler.step() if self.scheduler else None
+        
+        if not early_stop:    
+            self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
+                    "Accuracies/final_val_acc":self.val_accuracies[-1],
+                    "Accuracies/final_val_seq_acc": self.val_seq_accuracies[-1],
+                    "final_epoch": self.current_epoch+1})
+        self.save_model(self.results_dir / "model_state.pt") if self.save_model else None
+        train_time = (time.time() - start_time)/60
+        self.wandb_run.log({"Training time (min)": train_time})
+        disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
+        print(f"Training completed in {disp_time}")
+        if not early_stop:
+            s = f"Final validation loss {self.val_losses[-1]:.3f}"
+            s += f" | Final validation accuracy {self.val_accuracies[-1]:.2%}"
+            s += f" | Final validation sequence accuracy {self.val_seq_accuracies[-1]:.2%}"
+            print(s)
+        
+        if self.do_testing:
+            print("Evaluating on test set...")
+            self.test_loss, self.test_acc, test_seq_acc = self.evaluate(self.test_loader)
+            self.wandb_run.log({"Losses/test_loss": self.test_loss, 
+                                "Accuracies/test_acc": self.test_acc,
+                                "Accuracies/test_seq_acc": test_seq_acc})
+        self._visualize_losses(savepath=self.results_dir / "losses.png")
+        self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
+        
+    def train(self, epoch: int):
+        print(f"Epoch {epoch+1}/{self.epochs}")
+        time_ref = time.time()
+        
+        epoch_loss = 0
+        reporting_loss = 0
+        printing_loss = 0
+        for i, batch in enumerate(self.train_loader):
+            batch_index = i + 1
+            # input, target_res, token_mask, ab_mask, attn_mask, original_seq, masked_seq = batch
+            # original_seq = self.train_set.reconstruct_sequence(original_seq)
+            # masked_seq = self.train_set.reconstruct_sequence(masked_seq)
+            input, target_res, token_mask, ab_mask, attn_mask = batch
+            
+            # print("original sequence:", original_seq)
+            # print("masked sequence:", masked_seq)
+            
+            # print("input shape:", input.shape)
+            # print("input:", input)
+            # print("target_res shape:", target_res.shape)
+            # print("target_res:", target_res)
+            # print("attn_mask shape:", attn_mask.shape)
+            # print("attn_mask:", attn_mask)
+            # print("token_mask shape:", token_mask.shape)
+            # print("token_mask:", token_mask)
+            # print("ab_mask shape:", ab_mask.shape)
+            # print("ab_mask:", ab_mask)
+            
+            self.optimizer.zero_grad() # zero out gradients
+            pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
+            
+            # select only the antibtiotics present in the samples - to calculate loss
+            losses = list()
+            for j in range(self.num_ab): # for each antibiotic
+                mask = ab_mask[:, j] # (batch_size,), indicates which samples contain the antibiotic masked
+                if mask.any(): # if there is at least one masked sample for this antibiotic
+                    # isolate the predictions and targets for the antibiotic
+                    ab_pred_logits = pred_logits[mask, j] # (num_masked_samples,)
+                    ab_targets = target_res[mask, j] # (num_masked_samples,)
+                    ab_loss = self.criterions[j](ab_pred_logits, ab_targets)
+                    losses.append(ab_loss)
+            loss = sum(losses) / len(losses) # average loss over antibiotics
+            epoch_loss += loss.item() 
+            reporting_loss += loss.item()
+            printing_loss += loss.item()
+            
+            loss.backward() 
+            self.optimizer.step() 
+            if batch_index % self.report_every == 0:
+                self._report_loss_results(batch_index, reporting_loss)
+                reporting_loss = 0 
+                
+            if batch_index % self.print_progress_every == 0:
+                time_elapsed = time.gmtime(time.time() - time_ref) 
+                self._print_loss_summary(time_elapsed, batch_index, printing_loss) 
+                printing_loss = 0           
+        avg_epoch_loss = epoch_loss / self.num_batches
+        return avg_epoch_loss 
+    
+    def early_stopping(self):
+        if self.val_losses[-1] < self.best_val_loss:
+            self.best_val_loss = self.val_losses[-1]
+            self.best_epoch = self.current_epoch
+            self.best_model_state = self.model.state_dict()
+            self.early_stopping_counter = 0
+            return False
+        else:
+            self.early_stopping_counter += 1
+            return True if self.early_stopping_counter >= self.patience else False
+        
+            
+    def evaluate(self, loader: DataLoader, print_mode: bool = True):
+        self.model.eval()
+        with torch.no_grad():
+            loss = 0
+            num_preds = 0
+            num_correct = 0
+            num_correct_seq = 0
+            for batch in loader:
+                input, target_res, token_mask, ab_mask, attn_mask = batch
+                pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
+                pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits))
+                
+                num_correct_seq += get_num_correct_seq(pred_res, target_res, token_mask, ab_mask)
+                batch_loss = list()
+                for j in range(self.num_ab): # for each antibiotic
+                    mask = ab_mask[:, j] 
+                    if mask.any(): # if there is at least one masked sample for this antibiotic
+                        ab_pred_logits = pred_logits[mask, j] # (num_masked_samples,)
+                        ab_targets = target_res[mask, j] # (num_masked_samples,)
+                        
+                        ab_loss = self.criterions[j](ab_pred_logits, ab_targets)
+                        batch_loss.append(ab_loss.item())
+                        
+                        ab_pred_res = pred_res[mask, j] # (num_masked_samples,)
+                        num_preds += ab_targets.shape[0]
+                        num_correct += get_num_correct(ab_pred_res, ab_targets)    
+                loss += sum(batch_loss) / len(batch_loss) # average loss over antibiotics
+            loss /= len(loader) # average loss over batches
+            acc = num_correct / num_preds # accuracy over all predictions
+            seq_acc = num_correct_seq / (len(loader) * self.batch_size) # accuracy over all sequences
+            
+        if print_mode:
+            print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%} | Sequence accuracy: {seq_acc:.2%}")
+            print("="*self._splitter_size)
+        
+        return loss, acc, seq_acc
+            
+     
+    def _init_wandb(self):
+        self.wandb_run = wandb.init(
+            project=self.project_name, # name of the project
+            name=self.wandb_name, # name of the run
+            
+            config={
+                # "dataset": "NCBI",
+                "epochs": self.epochs,
+                "batch_size": self.batch_size,
+                # "model": "BERT",
+                "hidden_dim": self.model.hidden_dim,
+                "num_layers": self.model.num_layers,
+                "num_heads": self.model.num_heads,
+                "emb_dim": self.model.emb_dim,
+                "lr": self.lr,
+                "weight_decay": self.weight_decay,
+                "mask_prob": self.mask_prob,
+                "max_seq_len": self.model.max_seq_len,
+                "vocab_size": len(self.train_set.vocab),
+                "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
+                "train_size": self.train_size,
+                "random_state": self.random_state,
+                # "val_size": self.val_size,
+                # "test_size": self.test_size,
+                # "early_stopping_patience": self.patience,
+                # "dropout_prob": self.model.dropout_prob,
+            }
+        )
+        self.wandb_run.watch(self.model) # watch the model for gradients and parameters
+        self.wandb_run.define_metric("epoch", hidden=True)
+        self.wandb_run.define_metric("batch", hidden=True)
+        
+        self.wandb_run.define_metric("Losses/live_loss", step_metric="batch")
+        self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Accuracies/val_seq_acc", summary="max", step_metric="epoch")
+        
+        if self.do_testing:
+            self.wandb_run.define_metric("Losses/test_loss")
+            self.wandb_run.define_metric("Accuracies/test_acc")
+            self.wandb_run.define_metric("Accuracies/test_seq_acc")
+        self.wandb_run.define_metric("Losses/final_val_loss")
+        self.wandb_run.define_metric("Accuracies/final_val_acc")
+        self.wandb_run.define_metric("Accuracies/final_val_seq_acc")
+        self.wandb_run.define_metric("final_epoch")
+
+        return self.wandb_run
+     
+    def _report_epoch_results(self):
+        wandb_dict = {
+            "epoch": self.current_epoch+1,
+            "Losses/train_loss": self.losses[-1],
+            "Losses/val_loss": self.val_losses[-1],
+            "Accuracies/val_acc": self.val_accuracies[-1],
+            "Accuracies/val_seq_acc": self.val_seq_accuracies[-1]
+        }
+        self.wandb_run.log(wandb_dict)
+    
+        
     def _report_loss_results(self, batch_index, tot_loss):
         avg_loss = tot_loss / self.report_every
         
-        global_step = self.current_epoch * self.num_batches + batch_index # global step for tensorboard, total #batches seen
-        self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
+        global_step = self.current_epoch * self.num_batches + batch_index # global step, total #batches seen
+        self.wandb_run.log({"batch": global_step, "Losses/live_loss": avg_loss})
+        # self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
+    
+        
+    def _print_loss_summary(self, time_elapsed, batch_index, tot_loss):
+        progress = batch_index / self.num_batches
+        mlm_loss = tot_loss / self.print_progress_every
+          
+        s = f"{time.strftime('%H:%M:%S', time_elapsed)}" 
+        s += f" | Epoch: {self.current_epoch+1}/{self.epochs} | {batch_index}/{self.num_batches} ({progress:.2%}) | "\
+                f"Loss: {mlm_loss:.3f}"
+        print(s)
     
     
-    def save_checkpoint(self, epoch, loss):
-        if not self.checkpoint_dir: # if checkpoint_dir is None
-            return
+    def _visualize_losses(self, savepath: Path = None):
+        fig, ax = plt.subplots()
+        ax.plot(range(len(self.losses)), self.losses, '-o', label='Training')
+        ax.plot(range(len(self.val_losses)), self.val_losses, '-o', label='Validation')
+        ax.axhline(y=self.test_loss, color='r', linestyle='--', label='Test') if self.do_testing else None
+        ax.set_title('MLM losses')
+        ax.set_xlabel('Epoch')
+        ax.set_xticks(range(len(self.losses))) if len(self.losses) < 10 else ax.set_xticks(range(0, len(self.losses), 5))
+        ax.set_ylabel('Loss')
+        ax.legend()
+        plt.savefig(savepath, dpi=300) if savepath else None
+        # self.wandb_run.log({"Losses/losses": wandb.log(ax)})
+        self.wandb_run.log({"Losses/losses": wandb.Image(ax)})
+        plt.close()
         
-        time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-        use_time_str = False
-        if use_time_str:
-            name = f"bert_epoch{epoch+1}_loss{loss:.3f}_{time_str}.pt"            
-        else:
-            name = f"bert_epoch{epoch+1}_loss{loss:.3f}.pt"
-
-        if not self.checkpoint_dir.exists(): 
-            self.checkpoint_dir.mkdir()
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'loss': loss
-            }, self.checkpoint_dir / name)
-        
-        print(f"Checkpoint saved to {self.checkpoint_dir / name}")
+    
+    def _visualize_accuracy(self, savepath: Path = None):
+        fig, ax = plt.subplots()
+        ax.plot(range(len(self.val_accuracies)), self.val_accuracies, '-o', label='Validation')
+        ax.axhline(y=self.test_acc, color='r', linestyle='--', label='Test') if self.do_testing else None
+        ax.set_title('MLM accuracy')
+        ax.set_xlabel('Epoch')
+        ax.set_xticks(range(len(self.val_accuracies))) if len(self.val_accuracies) < 10 else ax.set_xticks(range(0, len(self.val_accuracies), 5))
+        ax.set_ylabel('Accuracy')
+        ax.legend()
+        plt.savefig(savepath, dpi=300) if savepath else None
+        # self.wandb_run.log({"Accuracies/accuracy": wandb.log(ax)})
+        self.wandb_run.log({"Accuracies/accuracy": wandb.Image(ax)})
+        plt.close() 
+    
+    
+    def save_model(self, savepath: Path):
+        torch.save(self.model.state_dict(), savepath)
+        print(f"Model saved to {savepath}")
         print("="*self._splitter_size)
         
         
-    def load_checkpoint(self, path: Path):
+    def load_model(self, savepath: Path):
         print("="*self._splitter_size)
-        print(f"Loading model checkpoint from {path}")
-        checkpoint = torch.load(path)
-        self.current_epoch = checkpoint['epoch']
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        print(f"Loaded checkpoint from epoch {self.current_epoch}")
+        print(f"Loading model from {savepath}")
+        self.model.load_state_dict(torch.load(savepath))
+        print("Model loaded")
         print("="*self._splitter_size)

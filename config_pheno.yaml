@@ -1,0 +1,39 @@
+wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
+project_name: Phenotype-MLM
+name: test_new_code_implemented
+emb_dim: 256
+ff_dim: 256
+hidden_dim: 256 # for classifier
+num_heads: 4
+num_layers: 6
+dropout_prob: 0.1
+mask_prob: 0.25
+batch_size: 32
+split: [0.8, 0.1, 0.1] # train, val, test
+separate_phenotypes: False
+classifier_type: 'CLS' # 'CLS' or 'MLM'
+max_seq_len: 'auto'
+do_testing: False
+epochs: 5
+early_stopping_patience: 3
+lr: 0.00005 
+weight_decay: 0.01
+print_progress_every: 3000
+report_every: 1500
+save_vocab: False   # True for fine-tuning or inference 
+save_model: False   # True for fine-tuning or inference
+random_state: 42
+data:
+  prepare_data: False
+  path: 'data/raw/AMR_TEST.csv'
+  save_path: 'data/TESSy.pkl'
+  load_path: 'data/TESSy.pkl'
+  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC']
+  pathogens: ['ESCCOL']
+  impute_age: False
+  impute_gender: False
+specials:   
+  CLS: '[CLS]'
+  PAD: '[PAD]'
+  MASK: '[MASK]'
+  UNK: '[UNK]'
