@@ -25,7 +25,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-# LOG_DIR = Path(os.path.join(BASE_DIR / "logs"))
 LOG_DIR = Path(os.path.join(BASE_DIR / "logs", "experiment_" + str(time_str)))
 RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_str)))
 
@@ -95,6 +94,7 @@ if __name__ == "__main__":
     else:
         print("Loading dataset...")
         ds = pd.read_pickle(config['data']['load_path'])
+    ds = ds.iloc[:100000]
     num_samples = ds.shape[0]
     
     ### If gender and age are not imputed, their missing values must be handled, both here and when constructing the vocabulary
@@ -126,6 +126,7 @@ if __name__ == "__main__":
     
     train_indices, val_indices, test_indices = get_split_indices(num_samples, config['split'], 
                                                                  random_state=config['random_state'])
+    print("Loading model...")
     if config['classifier_type'] == "MLM":
         assert config['separate_phenotypes'] == True, "Separate phenotypes must be used for MLM classifier"
         
@@ -166,9 +167,11 @@ if __name__ == "__main__":
     else:
         raise ValueError("Classifier type not supported, must be 'MLM' or 'CLS'")
         
-    print("Loading model...")
         
     trainer.print_model_summary()
     trainer.print_trainer_summary()
-    trainer()
+    if config['classifier_type'] == "CLS":
+        ab_stats, iso_stats, best_epoch = trainer()
+    else:
+        trainer()
     print("Done!")

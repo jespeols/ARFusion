@@ -182,11 +182,11 @@ def preprocess_TESSy(path,
         df_pheno = df_pheno[['pathogen'] + cols_in_order]
     else:
         df_pheno = df_pheno[cols_in_order]
-    df_pheno['num_phenotypes'] = df_pheno['phenotypes'].apply(lambda x: len(x))
+    df_pheno['num_ab'] = df_pheno['phenotypes'].apply(lambda x: len(x))
     df_pheno['num_R'] = df_pheno['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('R')]))
     df_pheno['num_S'] = df_pheno['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('S')]))
     # make sure there are no samples without phenotypes
-    df_pheno = df_pheno[df_pheno['num_phenotypes'] > 0]
+    df_pheno = df_pheno[df_pheno['num_ab'] > 0]
     
     if impute_age:
         df_pheno = impute_col(df_pheno, 'age', random_state=42)

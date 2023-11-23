@@ -1,6 +1,8 @@
 import os
 import torch
 import torch.nn as nn
+import numpy as np
+import pandas as pd
 import time 
 import matplotlib.pyplot as plt
 import wandb
@@ -275,7 +277,6 @@ class BertMLMTrainer(nn.Module):
             print("="*self._splitter_size)
         
         return loss, acc, seq_acc
-            
      
     def _init_wandb(self):
         self.wandb_run = wandb.init(
@@ -434,22 +435,6 @@ class BertMLMTrainer(nn.Module):
     
 ################################## Trainer for CLS task ##################################
 
-def get_num_correct(pred_res: torch.Tensor, target_res: torch.Tensor):
-    num_correct = torch.eq(pred_res, target_res).sum().item()
-    return num_correct
-
-
-def get_num_correct_seq(pred_res: torch.Tensor, target_res: torch.Tensor, ab_mask: torch.Tensor):
-    num_correct = 0
-    for i in range(pred_res.shape[0]): # for each sequence
-        sample_ab_mask = ab_mask[i]
-        sample_target_res = target_res[i][sample_ab_mask]
-        sample_pred_res = pred_res[i][sample_ab_mask]
-        eq = torch.eq(sample_pred_res, sample_target_res)
-        num_correct += eq.all().sum().item() 
-    return num_correct
-
-
 class BertCLSTrainer(nn.Module):
     
     def __init__(self,
@@ -556,6 +541,8 @@ class BertCLSTrainer(nn.Module):
         self.val_accuracies = []
         self.train_accuracies = []
         self.val_seq_accuracies = []
+        self.val_ab_stats = []
+        self.val_iso_stats = []
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
             # Dynamic masking: New mask for training set each epoch
@@ -570,10 +557,10 @@ class BertCLSTrainer(nn.Module):
             # _, train_acc = self.evaluate(self.train_loader)
             # self.train_accuracies.append(train_acc)
             print("Evaluating on validation set...")
-            val_loss, val_acc, val_seq_acc = self.evaluate(self.val_loader)
-            self.val_losses.append(val_loss)
-            self.val_accuracies.append(val_acc)
-            self.val_seq_accuracies.append(val_seq_acc)
+            results = self.evaluate(self.val_loader, self.val_set)
+            self._update_val_lists(results)
+            self._report_epoch_results()
+            early_stop = self.early_stopping()
             self._report_epoch_results()
             early_stop = self.early_stopping()
             if early_stop:
@@ -591,8 +578,7 @@ class BertCLSTrainer(nn.Module):
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
-            self.scheduler.step() if self.scheduler else None
-        
+            self.scheduler.step() if self.scheduler else None  
         if not early_stop:    
             self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
                     "Accuracies/final_val_acc":self.val_accuracies[-1],
@@ -617,6 +603,7 @@ class BertCLSTrainer(nn.Module):
                                 "Accuracies/test_seq_acc": test_seq_acc})
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
+        return self.val_ab_stats, self.val_iso_stats, self.current_epoch
         
     def train(self, epoch: int):
         print(f"Epoch {epoch+1}/{self.epochs}")
@@ -627,25 +614,8 @@ class BertCLSTrainer(nn.Module):
         printing_loss = 0
         for i, batch in enumerate(self.train_loader):
             batch_index = i + 1
-            # input, target_res, token_mask, ab_mask, attn_mask, original_seq, masked_seq = batch
-            # original_seq = self.train_set.reconstruct_sequence(original_seq)
-            # masked_seq = self.train_set.reconstruct_sequence(masked_seq)
-            input, target_res, token_mask, ab_mask, attn_mask = batch
             
-            # print("original sequence:", original_seq)
-            # print("masked sequence:", masked_seq)
-            
-            # print("input shape:", input.shape)
-            # print("input:", input)
-            # print("target_res shape:", target_res.shape)
-            # print("target_res:", target_res)
-            # print("attn_mask shape:", attn_mask.shape)
-            # print("attn_mask:", attn_mask)
-            # print("token_mask shape:", token_mask.shape)
-            # print("token_mask:", token_mask)
-            # print("ab_mask shape:", ab_mask.shape)
-            # print("ab_mask:", ab_mask)
-            
+            input, target_res, token_mask, ab_mask, attn_mask = batch     
             self.optimizer.zero_grad() # zero out gradients
             pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
             
@@ -689,43 +659,127 @@ class BertCLSTrainer(nn.Module):
             return True if self.early_stopping_counter >= self.patience else False
         
             
-    def evaluate(self, loader: DataLoader, print_mode: bool = True):
+    def evaluate(self, loader: DataLoader, ds_obj, print_mode: bool = True):
         self.model.eval()
+        # prepare evaluation statistics dataframes
+        eval_stats_ab, eval_stats_iso = self._init_eval_stats(ds_obj)
         with torch.no_grad():
             loss = 0
-            num_preds = 0
-            num_correct = 0
-            num_correct_seq = 0
-            for batch in loader:
+            num_preds = np.zeros((self.num_ab, 2)) # tracks the number of predictions for each antibiotic & resistance
+            num_correct = np.zeros_like(num_preds) # tracks the number of correct predictions for each antibiotic & resistance
+            for batch_idx, batch in enumerate(loader):
                 input, target_res, token_mask, ab_mask, attn_mask = batch
                 pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits))
                 
-                num_correct_seq += get_num_correct_seq(pred_res, target_res, ab_mask)
+                eval_stats_iso = self._update_iso_stats(batch_idx, pred_res, target_res, ab_mask, eval_stats_iso)
                 batch_loss = list()
                 for j in range(self.num_ab): # for each antibiotic
-                    mask = ab_mask[:, j] 
+                    mask = ab_mask[:, j] # (batch_size,), indicates which samples contain the antibiotic masked
                     if mask.any(): # if there is at least one masked sample for this antibiotic
                         ab_pred_logits = pred_logits[mask, j] # (num_masked_samples,)
                         ab_targets = target_res[mask, j] # (num_masked_samples,)
+                        num_R = ab_targets.sum().item()
+                        num_S = ab_targets.shape[0] - num_R
+                        num_preds[j, :] += [num_S, num_R]
                         
                         ab_loss = self.criterions[j](ab_pred_logits, ab_targets)
                         batch_loss.append(ab_loss.item())
                         
                         ab_pred_res = pred_res[mask, j] # (num_masked_samples,)
-                        num_preds += ab_targets.shape[0]
-                        num_correct += get_num_correct(ab_pred_res, ab_targets)    
+                        num_correct[j, :] += self._get_num_correct(ab_pred_res, ab_targets)    
                 loss += sum(batch_loss) / len(batch_loss) # average loss over antibiotics
             loss /= len(loader) # average loss over batches
-            acc = num_correct / num_preds # accuracy over all predictions
-            seq_acc = num_correct_seq / (len(loader) * self.batch_size) # accuracy over all sequences
+            acc = num_correct.sum() / num_preds.sum() # accuracy over all predictions
+            seq_acc = eval_stats_iso['correct_all'].sum() / eval_stats_iso.shape[0] # accuracy over all sequences
             
+            eval_stats_ab = self._update_ab_eval_stats(eval_stats_ab, num_preds, num_correct)
+            
+            eval_stats_iso['accuracy_S'] = eval_stats_iso.apply(
+                lambda row: row['correct_S']/row['num_masked_S'] if row['num_masked_S'] > 0 else np.nan, axis=1)
+            eval_stats_iso['accuracy_R'] = eval_stats_iso.apply(
+                lambda row: row['correct_R']/row['num_masked_R'] if row['num_masked_R'] > 0 else np.nan, axis=1)
         if print_mode:
             print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%} | Sequence accuracy: {seq_acc:.2%}")
             print("="*self._splitter_size)
         
-        return loss, acc, seq_acc
+        results = {"loss": loss, 
+                   "acc": acc, 
+                   "seq_acc": seq_acc,
+                   "ab_stats": eval_stats_ab,
+                   "iso_stats": eval_stats_iso}
+        return results
             
+    
+    def _update_val_lists(self, results: dict):
+        self.val_losses.append(results["loss"])
+        self.val_accuracies.append(results["acc"])
+        self.val_seq_accuracies.append(results["seq_acc"])
+        self.val_ab_stats.append(results["ab_stats"])
+        self.val_iso_stats.append(results["iso_stats"])
+    
+    
+    def _init_eval_stats(self, ds_obj):
+        eval_stats_ab = pd.DataFrame(columns=['ab', 'res', 'num_pred', 'num_correct'])
+        tmp = []
+        [tmp.extend([ab, ab]) for ab in self.antibiotics]
+        eval_stats_ab['ab'] = tmp
+        eval_stats_ab['res'] = ['S', 'R']*self.num_ab
+        eval_stats_ab['num_pred'], eval_stats_ab['num_correct'] = 0, 0
+        eval_stats_iso = ds_obj.ds.copy()
+        eval_stats_iso['num_masked'] = 0
+        eval_stats_iso['num_masked_S'] = 0
+        eval_stats_iso['num_masked_R'] = 0
+        eval_stats_iso['correct_S'] = 0
+        eval_stats_iso['correct_R'] = 0
+        eval_stats_iso['correct_all'] = False
+        # eval_stats_iso['correct_mask'] = [-1]*eval_stats_iso.shape[0] # indicates which antibiotics are -1: not masked, 0: incorrect, 1:correct
+        eval_stats_iso.drop(columns=['phenotypes'], inplace=True)
+        
+        return eval_stats_ab, eval_stats_iso
+    
+    
+    def _update_ab_eval_stats(self, eval_stats_ab: pd.DataFrame, num_preds: np.ndarray, num_correct: np.ndarray):
+        for j in range(self.num_ab): 
+            eval_stats_ab.loc[2*j, 'num_pred'] = num_preds[j, 0]
+            eval_stats_ab.loc[2*j+1, 'num_pred'] = num_preds[j, 1]
+            eval_stats_ab.loc[2*j, 'num_correct'] = num_correct[j, 0]
+            eval_stats_ab.loc[2*j+1, 'num_correct'] = num_correct[j, 1]
+        eval_stats_ab['accuracy'] = eval_stats_ab['num_correct'] / eval_stats_ab['num_pred']
+        return eval_stats_ab
+    
+    def _get_num_correct(self, pred_res: torch.Tensor, target_res: torch.Tensor):
+        eq = torch.eq(pred_res, target_res)
+        num_correct_S = eq[target_res == 0].sum().item()
+        num_correct_R = eq[target_res == 1].sum().item()
+        return [num_correct_S, num_correct_R]
+    
+    
+    def _update_iso_stats(self, batch_index: int, pred_res: torch.Tensor, target_res: torch.Tensor, ab_mask: torch.Tensor,
+                          eval_stats_iso: pd.DataFrame):
+        for i in range(pred_res.shape[0]): # for each isolate
+            global_idx = batch_index * self.batch_size + i # index of the isolate in the dataframe
+            iso_ab_mask = ab_mask[i]
+            
+            # counts
+            eval_stats_iso.loc[global_idx, 'num_masked'] = int(iso_ab_mask.sum().item())
+            iso_target_res = target_res[i][iso_ab_mask]
+            num_R = iso_target_res.sum().item()
+            num_S = iso_target_res.shape[0] - num_R
+            eval_stats_iso.loc[global_idx, 'num_masked_S'] = num_S
+            eval_stats_iso.loc[global_idx, 'num_masked_R'] = num_R
+            
+            # correct predictions
+            iso_pred_res = pred_res[i][iso_ab_mask]
+            eq = torch.eq(iso_pred_res, iso_target_res)
+            num_R_correct = eq[iso_target_res == 1].sum().item()
+            num_S_correct = eq[iso_target_res == 0].sum().item()
+            eval_stats_iso.loc[global_idx, 'correct_S'] = num_S_correct
+            eval_stats_iso.loc[global_idx, 'correct_R'] = num_R_correct
+            
+            eval_stats_iso.loc[global_idx, 'correct_all'] = bool(eq.all().item()) # 1 if all antibiotics are predicted correctly, 0 otherwise       
+        return eval_stats_iso
+    
      
     def _init_wandb(self):
         self.wandb_run = wandb.init(
