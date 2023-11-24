@@ -665,8 +665,9 @@ class BertCLSTrainer(nn.Module):
         eval_stats_ab, eval_stats_iso = self._init_eval_stats(ds_obj)
         with torch.no_grad():
             loss = 0
-            num_preds = np.zeros((self.num_ab, 2)) # tracks the number of predictions for each antibiotic & resistance
-            num_correct = np.zeros_like(num_preds) # tracks the number of correct predictions for each antibiotic & resistance
+            num = np.zeros((self.num_ab, 2)) # tracks the occurence for each antibiotic & resistance
+            num_preds = np.zeros_like(num) # tracks the number of predictions for each antibiotic & resistance
+            num_correct = np.zeros_like(num) # tracks the number of correct predictions for each antibiotic & resistance
             for batch_idx, batch in enumerate(loader):
                 input, target_res, token_mask, ab_mask, attn_mask = batch
                 pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
@@ -676,24 +677,25 @@ class BertCLSTrainer(nn.Module):
                 batch_loss = list()
                 for j in range(self.num_ab): # for each antibiotic
                     mask = ab_mask[:, j] # (batch_size,), indicates which samples contain the antibiotic masked
-                    if mask.any(): # if there is at least one masked sample for this antibiotic
-                        ab_pred_logits = pred_logits[mask, j] # (num_masked_samples,)
-                        ab_targets = target_res[mask, j] # (num_masked_samples,)
+                    if mask.any(): 
+                        ab_pred_logits = pred_logits[mask, j] 
+                        ab_targets = target_res[mask, j] 
                         num_R = ab_targets.sum().item()
                         num_S = ab_targets.shape[0] - num_R
-                        num_preds[j, :] += [num_S, num_R]
+                        num[j, :] += [num_S, num_R]
                         
                         ab_loss = self.criterions[j](ab_pred_logits, ab_targets)
                         batch_loss.append(ab_loss.item())
                         
-                        ab_pred_res = pred_res[mask, j] # (num_masked_samples,)
+                        ab_pred_res = pred_res[mask, j] 
                         num_correct[j, :] += self._get_num_correct(ab_pred_res, ab_targets)    
-                loss += sum(batch_loss) / len(batch_loss) # average loss over antibiotics
+                        num_preds[j, :] += self._get_num_preds(ab_pred_res)
+                loss += sum(batch_loss) / len(batch_loss) 
             loss /= len(loader) # average loss over batches
-            acc = num_correct.sum() / num_preds.sum() # accuracy over all predictions
+            acc = num_correct.sum() / num.sum() # overall accuracy
             seq_acc = eval_stats_iso['correct_all'].sum() / eval_stats_iso.shape[0] # accuracy over all sequences
             
-            eval_stats_ab = self._update_ab_eval_stats(eval_stats_ab, num_preds, num_correct)
+            eval_stats_ab = self._update_ab_eval_stats(eval_stats_ab, num, num_preds, num_correct)
             
             eval_stats_iso['accuracy_S'] = eval_stats_iso.apply(
                 lambda row: row['correct_S']/row['num_masked_S'] if row['num_masked_S'] > 0 else np.nan, axis=1)
@@ -725,7 +727,7 @@ class BertCLSTrainer(nn.Module):
         [tmp.extend([ab, ab]) for ab in self.antibiotics]
         eval_stats_ab['ab'] = tmp
         eval_stats_ab['res'] = ['S', 'R']*self.num_ab
-        eval_stats_ab['num_pred'], eval_stats_ab['num_correct'] = 0, 0
+        eval_stats_ab['num'], eval_stats_ab['num_pred'], eval_stats_ab['num_correct'] = 0, 0, 0
         eval_stats_iso = ds_obj.ds.copy()
         eval_stats_iso['num_masked'] = 0
         eval_stats_iso['num_masked_S'] = 0
@@ -739,8 +741,10 @@ class BertCLSTrainer(nn.Module):
         return eval_stats_ab, eval_stats_iso
     
     
-    def _update_ab_eval_stats(self, eval_stats_ab: pd.DataFrame, num_preds: np.ndarray, num_correct: np.ndarray):
+    def _update_ab_eval_stats(self, eval_stats_ab: pd.DataFrame, num, num_preds, num_correct):
         for j in range(self.num_ab): 
+            eval_stats_ab.loc[2*j, 'num'] = num[j, 0]
+            eval_stats_ab.loc[2*j+1, 'num'] = num[j, 1]
             eval_stats_ab.loc[2*j, 'num_pred'] = num_preds[j, 0]
             eval_stats_ab.loc[2*j+1, 'num_pred'] = num_preds[j, 1]
             eval_stats_ab.loc[2*j, 'num_correct'] = num_correct[j, 0]
@@ -748,11 +752,18 @@ class BertCLSTrainer(nn.Module):
         eval_stats_ab['accuracy'] = eval_stats_ab['num_correct'] / eval_stats_ab['num_pred']
         return eval_stats_ab
     
+    
     def _get_num_correct(self, pred_res: torch.Tensor, target_res: torch.Tensor):
         eq = torch.eq(pred_res, target_res)
         num_correct_S = eq[target_res == 0].sum().item()
         num_correct_R = eq[target_res == 1].sum().item()
         return [num_correct_S, num_correct_R]
+    
+    
+    def _get_num_preds(self, pred_res: torch.Tensor):
+        num_pred_S = (pred_res == 0).sum().item()
+        num_pred_R = (pred_res == 1).sum().item()
+        return [num_pred_S, num_pred_R]
     
     
     def _update_iso_stats(self, batch_index: int, pred_res: torch.Tensor, target_res: torch.Tensor, ab_mask: torch.Tensor,
