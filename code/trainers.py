@@ -722,19 +722,17 @@ class BertCLSTrainer(nn.Module):
     
     
     def _init_eval_stats(self, ds_obj):
-        eval_stats_ab = pd.DataFrame(columns=['ab', 'res', 'num_pred', 'num_correct'])
-        tmp = []
-        [tmp.extend([ab, ab]) for ab in self.antibiotics]
-        eval_stats_ab['ab'] = tmp
-        eval_stats_ab['res'] = ['S', 'R']*self.num_ab
-        eval_stats_ab['num'], eval_stats_ab['num_pred'], eval_stats_ab['num_correct'] = 0, 0, 0
+        eval_stats_ab = pd.DataFrame(columns=['antibiotic', 'num_tot', 'num_S', 'num_R', 'num_pred_S', 'num_pred_R', 
+                                              'num_correct', 'num_correct_S', 'num_correct_R',
+                                              'accuracy', 'sensitivity', 'specificity'])
+        eval_stats_ab['antibiotic'] = self.antibiotics
+        eval_stats_ab['num_tot'], eval_stats_ab['num_S'], eval_stats_ab['num_R'] = 0, 0, 0
+        eval_stats_ab['num_pred_S'], eval_stats_ab['num_pred_R'] = 0, 0
+        eval_stats_ab['num_correct'], eval_stats_ab['num_correct_S'], eval_stats_ab['num_correct_R'] = 0, 0, 0
+    
         eval_stats_iso = ds_obj.ds.copy()
-        eval_stats_iso['num_masked'] = 0
-        eval_stats_iso['num_masked_S'] = 0
-        eval_stats_iso['num_masked_R'] = 0
-        eval_stats_iso['correct_S'] = 0
-        eval_stats_iso['correct_R'] = 0
-        eval_stats_iso['correct_all'] = False
+        eval_stats_iso['num_masked'], eval_stats_iso['num_masked_S'], eval_stats_iso['num_masked_R'] = 0, 0, 0
+        eval_stats_iso['correct_S'], eval_stats_iso['correct_R'], eval_stats_iso['correct_all'] = 0, 0
         # eval_stats_iso['correct_mask'] = [-1]*eval_stats_iso.shape[0] # indicates which antibiotics are -1: not masked, 0: incorrect, 1:correct
         eval_stats_iso.drop(columns=['phenotypes'], inplace=True)
         
@@ -743,13 +741,17 @@ class BertCLSTrainer(nn.Module):
     
     def _update_ab_eval_stats(self, eval_stats_ab: pd.DataFrame, num, num_preds, num_correct):
         for j in range(self.num_ab): 
-            eval_stats_ab.loc[2*j, 'num'] = num[j, 0]
-            eval_stats_ab.loc[2*j+1, 'num'] = num[j, 1]
-            eval_stats_ab.loc[2*j, 'num_pred'] = num_preds[j, 0]
-            eval_stats_ab.loc[2*j+1, 'num_pred'] = num_preds[j, 1]
-            eval_stats_ab.loc[2*j, 'num_correct'] = num_correct[j, 0]
-            eval_stats_ab.loc[2*j+1, 'num_correct'] = num_correct[j, 1]
-        eval_stats_ab['accuracy'] = eval_stats_ab['num_correct'] / eval_stats_ab['num_pred']
+            eval_stats_ab.loc[j, 'num_tot'] = num[j, :].sum()
+            eval_stats_ab.loc[j, 'num_S'], eval_stats_ab[j, 'num_R'] = num[j, 0], num[j, 1]
+            eval_stats_ab.loc[j, 'num_pred_S'], eval_stats_ab[j, 'num_pred_R'] = num_preds[j, 0], num_preds[j, 1]
+            eval_stats_ab.loc[j, 'num_correct'] = num_correct[j, :].sum()
+            eval_stats_ab.loc[j, 'num_correct_S'], eval_stats_ab[j, 'num_correct_R'] = num_correct[j, 0], num_correct[j, 1]
+        eval_stats_ab['accuracy'] = eval_stats_ab.apply(
+            lambda row: row['num_correct']/row['num_tot'] if row['num_tot'] > 0 else np.nan, axis=1)
+        eval_stats_ab['sensitivity'] = eval_stats_ab.apply(
+            lambda row: row['num_correct_R']/row['num_R'] if row['num_R'] > 0 else np.nan, axis=1)
+        eval_stats_ab['specificity'] = eval_stats_ab.apply(
+            lambda row: row['num_correct_S']/row['num_S'] if row['num_S'] > 0 else np.nan, axis=1)
         return eval_stats_ab
     
     

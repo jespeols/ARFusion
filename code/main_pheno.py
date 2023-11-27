@@ -25,11 +25,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+# LOG_DIR = Path(os.path.join(BASE_DIR / "logs"))
 LOG_DIR = Path(os.path.join(BASE_DIR / "logs", "experiment_" + str(time_str)))
 RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_str)))
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
+    argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--mask_prob", type=float)
     argparser.add_argument("--num_layers", type=int)
@@ -44,9 +46,7 @@ if __name__ == "__main__":
     argparser.add_argument("--classifier_type", type=str)
     argparser.add_argument("--separate_phenotypes", type=bool)
     argparser.add_argument("--do_testing", type=bool)
-    
-    # os.environ['WANDB_MODE'] = 'disabled' # 'dryrun' or 'run' or 'offline' or 'disabled' or 'online'
-    
+        
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
         torch.cuda.empty_cache()
@@ -65,6 +65,7 @@ if __name__ == "__main__":
     
     # overwrite config with command line arguments
     args = argparser.parse_args()
+    config['wandb_mode'] = args.wandb_mode if args.wandb_mode else config['wandb_mode']
     config['name'] = args.name if args.name else config['name']
     config['mask_prob'] = args.mask_prob if args.mask_prob else config['mask_prob']
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
@@ -94,7 +95,6 @@ if __name__ == "__main__":
     else:
         print("Loading dataset...")
         ds = pd.read_pickle(config['data']['load_path'])
-    ds = ds.iloc[:100000]
     num_samples = ds.shape[0]
     
     ### If gender and age are not imputed, their missing values must be handled, both here and when constructing the vocabulary
@@ -145,6 +145,9 @@ if __name__ == "__main__":
             test_set=test_set,
             results_dir=RESULTS_DIR,
         )
+        trainer.print_model_summary()
+        trainer.print_trainer_summary()
+        trainer()
     elif config['classifier_type'] == "CLS":
         assert config['separate_phenotypes'] == False, "Separate phenotypes not supported for CLS classifier"
         
@@ -164,14 +167,14 @@ if __name__ == "__main__":
             test_set=test_set,
             results_dir=RESULTS_DIR,
         )
+        trainer.print_model_summary()
+        trainer.print_trainer_summary()
+        eval_stats_ab, eval_stats_iso, best_epoch = trainer()
+        print("antibiotics stats:")
+        print(eval_stats_ab[best_epoch])
+        print("isolate stats:")
+        print(eval_stats_iso[best_epoch].head(n=20))
     else:
         raise ValueError("Classifier type not supported, must be 'MLM' or 'CLS'")
         
-        
-    trainer.print_model_summary()
-    trainer.print_trainer_summary()
-    if config['classifier_type'] == "CLS":
-        ab_stats, iso_stats, best_epoch = trainer()
-    else:
-        trainer()
     print("Done!")

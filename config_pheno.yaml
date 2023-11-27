@@ -14,7 +14,7 @@ separate_phenotypes: False
 classifier_type: 'CLS' # 'CLS' or 'MLM'
 max_seq_len: 'auto'
 do_testing: False
-epochs: 3
+epochs: 20
 early_stopping_patience: 3
 lr: 0.00005 
 weight_decay: 0.01
