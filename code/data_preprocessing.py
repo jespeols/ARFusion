@@ -211,6 +211,5 @@ def preprocess_TESSy(path,
     if save_path:
         print(f"Saving to {save_path}")
         df_pheno.to_pickle(save_path)
-    print("Done!")
 
     return df_pheno

@@ -91,7 +91,7 @@ if __name__ == "__main__":
                               exclude_antibiotics=config['data']['exclude_antibiotics'],
                               impute_age=config['data']['impute_age'],
                               impute_gender=config['data']['impute_gender'])
-        print(f"Preprocessing took {(time.time()-start)/60:.1f} min.")
+        print(f"Preprocessing finished after {(time.time()-start)/60:.1f} min")
     else:
         print("Loading dataset...")
         ds = pd.read_pickle(config['data']['load_path'])
