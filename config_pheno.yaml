@@ -28,7 +28,7 @@ data:
   path: 'data/raw/AMR_TEST.csv'
   save_path: 'data/TESSy.pkl'
   load_path: 'data/TESSy.pkl'
-  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC']
+  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'TGC']
   pathogens: ['ESCCOL']
   impute_age: False
   impute_gender: False

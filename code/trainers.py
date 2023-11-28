@@ -509,7 +509,7 @@ class BertCLSTrainer(nn.Module):
     def print_trainer_summary(self):
         print("Trainer summary:")
         print("="*self._splitter_size)
-        print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
+        print(f"Device: {device} ({torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'})")
         print(f"Training dataset size: {self.train_size:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
@@ -697,10 +697,12 @@ class BertCLSTrainer(nn.Module):
             
             eval_stats_ab = self._update_ab_eval_stats(eval_stats_ab, num, num_preds, num_correct)
             
-            eval_stats_iso['accuracy_S'] = eval_stats_iso.apply(
+            eval_stats_iso['specificity'] = eval_stats_iso.apply(
                 lambda row: row['correct_S']/row['num_masked_S'] if row['num_masked_S'] > 0 else np.nan, axis=1)
-            eval_stats_iso['accuracy_R'] = eval_stats_iso.apply(
+            eval_stats_iso['sensitivity'] = eval_stats_iso.apply(
                 lambda row: row['correct_R']/row['num_masked_R'] if row['num_masked_R'] > 0 else np.nan, axis=1)
+            eval_stats_iso['accuracy'] = eval_stats_iso.apply(
+                lambda row: (row['correct_S'] + row['correct_R'])/row['num_masked'], axis=1)
         if print_mode:
             print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%} | Sequence accuracy: {seq_acc:.2%}")
             print("="*self._splitter_size)
@@ -724,7 +726,7 @@ class BertCLSTrainer(nn.Module):
     def _init_eval_stats(self, ds_obj):
         eval_stats_ab = pd.DataFrame(columns=['antibiotic', 'num_tot', 'num_S', 'num_R', 'num_pred_S', 'num_pred_R', 
                                               'num_correct', 'num_correct_S', 'num_correct_R',
-                                              'accuracy', 'sensitivity', 'specificity'])
+                                              'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'])
         eval_stats_ab['antibiotic'] = self.antibiotics
         eval_stats_ab['num_tot'], eval_stats_ab['num_S'], eval_stats_ab['num_R'] = 0, 0, 0
         eval_stats_ab['num_pred_S'], eval_stats_ab['num_pred_R'] = 0, 0
@@ -732,7 +734,7 @@ class BertCLSTrainer(nn.Module):
     
         eval_stats_iso = ds_obj.ds.copy()
         eval_stats_iso['num_masked'], eval_stats_iso['num_masked_S'], eval_stats_iso['num_masked_R'] = 0, 0, 0
-        eval_stats_iso['correct_S'], eval_stats_iso['correct_R'], eval_stats_iso['correct_all'] = 0, 0
+        eval_stats_iso['correct_S'], eval_stats_iso['correct_R'], eval_stats_iso['correct_all'] = 0, 0, False
         # eval_stats_iso['correct_mask'] = [-1]*eval_stats_iso.shape[0] # indicates which antibiotics are -1: not masked, 0: incorrect, 1:correct
         eval_stats_iso.drop(columns=['phenotypes'], inplace=True)
         
@@ -752,6 +754,11 @@ class BertCLSTrainer(nn.Module):
             lambda row: row['num_correct_R']/row['num_R'] if row['num_R'] > 0 else np.nan, axis=1)
         eval_stats_ab['specificity'] = eval_stats_ab.apply(
             lambda row: row['num_correct_S']/row['num_S'] if row['num_S'] > 0 else np.nan, axis=1)
+        eval_stats_ab['precision'] = eval_stats_ab.apply(
+            lambda row: row['num_correct_R']/row['num_pred_R'] if row['num_pred_R'] > 0 else np.nan, axis=1)
+        eval_stats_ab['F1'] = eval_stats_ab.apply(
+            lambda row: 2*row['precision']*row['sensitivity']/(row['precision']+row['sensitivity']) 
+            if row['precision'] > 0 and row['sensitivity'] > 0 else np.nan, axis=1)
         return eval_stats_ab
     
     
