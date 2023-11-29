@@ -1,4 +1,4 @@
-wandb_mode: 'disabled' # 'online' for syncing, or 'disabled' for no tracking
+wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
 project_name: Genotype-MLM
 name: baseline
 emb_dim: 256
