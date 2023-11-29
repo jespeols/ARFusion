@@ -71,7 +71,6 @@ if __name__ == "__main__":
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
     config['random_state'] = args.random_state if args.random_state else config['random_state']
-    config['do_testing'] = args.do_testing if args.do_testing else config['do_testing']
     config['separate_phenotypes'] = args.separate_phenotypes if args.separate_phenotypes else config['separate_phenotypes']
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
