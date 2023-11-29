@@ -50,7 +50,6 @@ class BertMLMTrainer(nn.Module):
                  model: BERT,
                  train_set,
                  val_set,
-                 test_set, # can be None
                  results_dir: Path = None,
                  ):
         super(BertMLMTrainer, self).__init__()
@@ -59,27 +58,23 @@ class BertMLMTrainer(nn.Module):
         torch.manual_seed(self.random_state)
         torch.cuda.manual_seed(self.random_state)
         
-        self.model = model
-        self.classifier_type = config['classifier_type'] 
-        self.train_set, self.train_size = train_set, len(train_set)
-        self.train_size = len(self.train_set)      
-        self.model.max_seq_len = self.train_set.max_seq_len 
-        self.val_set, self.val_size = val_set, len(val_set)
-        if test_set:
-            self.test_set, self.test_size = test_set, len(test_set)
-        self.split = config["split"]
         self.project_name = config["project_name"]
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
-         
+        self.model = model
+        self.classifier_type = config['classifier_type'] 
+        
+        self.train_set, self.train_size = train_set, len(train_set)
+        self.val_set, self.val_size = val_set, len(val_set) 
+        assert self.val_size / (self.train_size + self.val_size) == config["val_share"], "Validation set size does not match intended val_share"
+        self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
+        self.num_batches = self.train_size // self.batch_size
+         
         self.lr = config["lr"]
         self.weight_decay = config["weight_decay"]
         self.epochs = config["epochs"]
         self.patience = config["early_stopping_patience"]
-        self.save_model = config["save_model"] if config["save_model"] else False
-        
-        self.do_testing = config["do_testing"] if config["do_testing"] else False
-        self.num_batches = self.train_size // self.batch_size
+        self.save_model = config["save_model"] if config["save_model"] else False        
         
         self.mask_prob = config["mask_prob"]
         self.criterion = nn.NLLLoss(ignore_index=-100).to(device) # value -100 are ignored in NLLLoss
@@ -89,7 +84,7 @@ class BertMLMTrainer(nn.Module):
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
         self.current_epoch = 0
-        self.report_every = config["report_every"] if config["report_every"] else 100
+        self.report_every = config["report_every"] if config["report_every"] else 500
         self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
         self._splitter_size = 70
         self.results_dir = results_dir
@@ -114,10 +109,12 @@ class BertMLMTrainer(nn.Module):
     def print_trainer_summary(self):
         print("Trainer summary:")
         print("="*self._splitter_size)
-        print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
+        if device.type == "cuda":
+            print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
+        else:
+            print(f"Device: {device}")
         print(f"Training dataset size: {self.train_size:,}")
-        print(f"Train-val-test split {self.split[0]:.0%} - {self.split[1]:.0%} - {self.split[2]:.0%}")
-        print(f"Will test? {'Yes' if self.do_testing else 'No'}")
+        print(f"CV split: {self.train_share:.0%} train - {self.val_share:.0%} val")
         print(f"Mask probability: {self.mask_prob:.0%}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
@@ -132,18 +129,10 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run = self._init_wandb()
         self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
-        if self.do_testing:
-            self.test_set.prepare_dataset(mask_prob=self.mask_prob) 
-            self.test_loader = DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False)
         
         start_time = time.time()
         self.best_val_loss = float('inf')
-        
-        self.losses = []
-        self.val_losses = []
-        self.val_accuracies = []
-        self.train_accuracies = []
-        self.val_seq_accuracies = []
+        self._init_result_lists()
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
             # Dynamic masking: New mask for training set each epoch
@@ -179,14 +168,16 @@ class BertMLMTrainer(nn.Module):
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
-            self.scheduler.step() if self.scheduler else None
+            if self.scheduler:
+                self.scheduler.step() 
         
         if not early_stop:    
             self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
                     "Accuracies/final_val_acc":self.val_accuracies[-1],
                     "Accuracies/final_val_seq_acc": self.val_seq_accuracies[-1],
                     "final_epoch": self.current_epoch+1})
-        self.save_model(self.results_dir / "model_state.pt") if self.save_model else None
+        if self.save_model:
+            self.save_model(self.results_dir / "model_state.pt") 
         train_time = (time.time() - start_time)/60
         self.wandb_run.log({"Training time (min)": train_time})
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
@@ -196,13 +187,6 @@ class BertMLMTrainer(nn.Module):
             s += f" | Final validation accuracy {self.val_accuracies[-1]:.2%}"
             s += f" | Final validation sequence accuracy {self.val_seq_accuracies[-1]:.2%}"
             print(s)
-        
-        if self.do_testing:
-            print("Evaluating on test set...")
-            self.test_loss, self.test_acc, test_seq_acc = self.evaluate(self.test_loader)
-            self.wandb_run.log({"Losses/test_loss": self.test_loss, 
-                                "Accuracies/test_acc": self.test_acc,
-                                "Accuracies/test_seq_acc": test_seq_acc})
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
     
@@ -254,7 +238,7 @@ class BertMLMTrainer(nn.Module):
             self.early_stopping_counter += 1
             return True if self.early_stopping_counter >= self.patience else False
         
-            
+         
     def evaluate(self, loader: DataLoader, print_mode: bool = True):
         self.model.eval()
         loss = 0
@@ -277,6 +261,14 @@ class BertMLMTrainer(nn.Module):
             print("="*self._splitter_size)
         
         return loss, acc, seq_acc
+     
+     
+    def _init_result_lists(self):
+        self.losses = []
+        self.val_losses = []
+        self.val_accuracies = []
+        self.val_seq_accuracies = []
+     
      
     def _init_wandb(self):
         self.wandb_run = wandb.init(
@@ -303,7 +295,6 @@ class BertMLMTrainer(nn.Module):
                 "train_size": self.train_size,
                 "random_state": self.random_state,
                 # "val_size": self.val_size,
-                # "test_size": self.test_size,
                 # "early_stopping_patience": self.patience,
                 # "dropout_prob": self.model.dropout_prob,
             }
@@ -318,10 +309,6 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_seq_acc", summary="max", step_metric="epoch")
         
-        if self.do_testing:
-            self.wandb_run.define_metric("Losses/test_loss")
-            self.wandb_run.define_metric("Accuracies/test_acc")
-            self.wandb_run.define_metric("Accuracies/test_seq_acc")
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
         self.wandb_run.define_metric("Accuracies/final_val_seq_acc")
@@ -362,7 +349,6 @@ class BertMLMTrainer(nn.Module):
         fig, ax = plt.subplots()
         ax.plot(range(len(self.losses)), self.losses, '-o', label='Training')
         ax.plot(range(len(self.val_losses)), self.val_losses, '-o', label='Validation')
-        ax.axhline(y=self.test_loss, color='r', linestyle='--', label='Test') if self.do_testing else None
         ax.set_title('MLM losses')
         ax.set_xlabel('Epoch')
         ax.set_xticks(range(len(self.losses))) if len(self.losses) < 10 else ax.set_xticks(range(0, len(self.losses), 5))
@@ -377,7 +363,6 @@ class BertMLMTrainer(nn.Module):
     def _visualize_accuracy(self, savepath: Path = None):
         fig, ax = plt.subplots()
         ax.plot(range(len(self.val_accuracies)), self.val_accuracies, '-o', label='Validation')
-        ax.axhline(y=self.test_acc, color='r', linestyle='--', label='Test') if self.do_testing else None
         ax.set_title('MLM accuracy')
         ax.set_xlabel('Epoch')
         ax.set_xticks(range(len(self.val_accuracies))) if len(self.val_accuracies) < 10 else ax.set_xticks(range(0, len(self.val_accuracies), 5))
@@ -389,13 +374,13 @@ class BertMLMTrainer(nn.Module):
         plt.close() 
     
     
-    def save_model(self, savepath: Path):
+    def _save_model(self, savepath: Path):
         torch.save(self.model.state_dict(), savepath)
         print(f"Model saved to {savepath}")
         print("="*self._splitter_size)
         
         
-    def load_model(self, savepath: Path):
+    def _load_model(self, savepath: Path):
         print("="*self._splitter_size)
         print(f"Loading model from {savepath}")
         self.model.load_state_dict(torch.load(savepath))
@@ -443,7 +428,6 @@ class BertCLSTrainer(nn.Module):
                  antibiotics: list, # list of antibiotics in the dataset
                  train_set,
                  val_set,
-                 test_set, # can be None
                  results_dir: Path = None,
                  ):
         super(BertCLSTrainer, self).__init__()
@@ -453,27 +437,25 @@ class BertCLSTrainer(nn.Module):
         torch.cuda.manual_seed(self.random_state)
         
         self.model = model
+        self.project_name = config["project_name"]
+        self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.classifier_type = config['classifier_type']
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics) 
+        
         self.train_set, self.train_size = train_set, len(train_set)
         self.train_size = len(self.train_set)      
-        self.val_set, self.val_size = val_set, len(val_set)
-        if test_set:
-            self.test_set, self.test_size = test_set, len(test_set)
-        self.split = config["split"]
-        self.project_name = config["project_name"]
-        self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
-         
+        self.val_set, self.val_size = val_set, len(val_set) 
+        assert self.val_size / (self.train_size + self.val_size) == config["val_share"], "Validation set size does not match intended val_share"
+        self.val_share = config["val_share"]
         self.batch_size = config["batch_size"]
+        self.num_batches = self.train_size // self.batch_size
+         
         self.lr = config["lr"]
         self.weight_decay = config["weight_decay"]
         self.epochs = config["epochs"]
         self.patience = config["early_stopping_patience"]
         self.save_model = config["save_model"] if config["save_model"] else False
-        
-        self.do_testing = config["do_testing"] if config["do_testing"] else False
-        self.num_batches = self.train_size // self.batch_size
         
         self.mask_prob = config["mask_prob"]
         self.criterions = [nn.BCEWithLogitsLoss() for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
@@ -483,7 +465,7 @@ class BertCLSTrainer(nn.Module):
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
         self.current_epoch = 0
-        self.report_every = config["report_every"] if config["report_every"] else 100
+        self.report_every = config["report_every"] if config["report_every"] else 1000
         self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
         self._splitter_size = 70
         self.results_dir = results_dir
@@ -509,12 +491,13 @@ class BertCLSTrainer(nn.Module):
     def print_trainer_summary(self):
         print("Trainer summary:")
         print("="*self._splitter_size)
-        print(f"Device: {device} ({torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'})")
-        print(f"Training dataset size: {self.train_size:,}")
+        if device.type == "cuda":
+            print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
+        else:
+            print(f"Device: {device}")        print(f"Training dataset size: {self.train_size:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
-        print(f"Train-val-test split {self.split[0]:.0%} - {self.split[1]:.0%} - {self.split[2]:.0%}")
-        print(f"Will test? {'Yes' if self.do_testing else 'No'}")
+        print(f"CV split: {self.train_share:.0%} train - {self.val_share:.0%} val")
         print(f"Mask probability: {self.mask_prob:.0%}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
@@ -529,20 +512,10 @@ class BertCLSTrainer(nn.Module):
         self.wandb_run = self._init_wandb()
         self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
-        if self.do_testing:
-            self.test_set.prepare_dataset(mask_prob=self.mask_prob) 
-            self.test_loader = DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False)
         
         start_time = time.time()
-        self.best_val_loss = float('inf')
-        
-        self.losses = []
-        self.val_losses = []
-        self.val_accuracies = []
-        self.train_accuracies = []
-        self.val_seq_accuracies = []
-        self.val_ab_stats = []
-        self.val_iso_stats = []
+        self.best_val_loss = float('inf') 
+        self._init_result_lists()
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
             # Dynamic masking: New mask for training set each epoch
@@ -553,9 +526,6 @@ class BertCLSTrainer(nn.Module):
             self.losses.append(loss) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
-            # print("Evaluating on training set...")
-            # _, train_acc = self.evaluate(self.train_loader)
-            # self.train_accuracies.append(train_acc)
             print("Evaluating on validation set...")
             results = self.evaluate(self.val_loader, self.val_set)
             self._update_val_lists(results)
@@ -578,13 +548,15 @@ class BertCLSTrainer(nn.Module):
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
-            self.scheduler.step() if self.scheduler else None  
+            if self.scheduler:
+                self.scheduler.step()
         if not early_stop:    
             self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
                     "Accuracies/final_val_acc":self.val_accuracies[-1],
                     "Accuracies/final_val_seq_acc": self.val_seq_accuracies[-1],
                     "final_epoch": self.current_epoch+1})
-        self.save_model(self.results_dir / "model_state.pt") if self.save_model else None
+        if self.save_model:
+            self._save_model(self.results_dir / "model_state.pt") 
         train_time = (time.time() - start_time)/60
         self.wandb_run.log({"Training time (min)": train_time})
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
@@ -595,16 +567,11 @@ class BertCLSTrainer(nn.Module):
             s += f" | Final validation sequence accuracy {self.val_seq_accuracies[-1]:.2%}"
             print(s)
         
-        if self.do_testing:
-            print("Evaluating on test set...")
-            self.test_loss, self.test_acc, test_seq_acc = self.evaluate(self.test_loader)
-            self.wandb_run.log({"Losses/test_loss": self.test_loss, 
-                                "Accuracies/test_acc": self.test_acc,
-                                "Accuracies/test_seq_acc": test_seq_acc})
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
         return self.val_ab_stats, self.val_iso_stats, self.current_epoch
-        
+    
+    
     def train(self, epoch: int):
         print(f"Epoch {epoch+1}/{self.epochs}")
         time_ref = time.time()
@@ -619,16 +586,15 @@ class BertCLSTrainer(nn.Module):
             self.optimizer.zero_grad() # zero out gradients
             pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
             
-            # select only the antibtiotics present in the samples - to calculate loss
+            ab_indices = ab_mask.any(dim=0).nonzero().squeeze().tolist() # list of indices of antibiotics present in the batch
             losses = list()
-            for j in range(self.num_ab): # for each antibiotic
+            for j in ab_indices: 
                 mask = ab_mask[:, j] # (batch_size,), indicates which samples contain the antibiotic masked
-                if mask.any(): # if there is at least one masked sample for this antibiotic
-                    # isolate the predictions and targets for the antibiotic
-                    ab_pred_logits = pred_logits[mask, j] # (num_masked_samples,)
-                    ab_targets = target_res[mask, j] # (num_masked_samples,)
-                    ab_loss = self.criterions[j](ab_pred_logits, ab_targets)
-                    losses.append(ab_loss)
+                # isolate the predictions and targets for the antibiotic
+                ab_pred_logits = pred_logits[mask, j] # (num_masked_samples,)
+                ab_targets = target_res[mask, j] # (num_masked_samples,)
+                ab_loss = self.criterions[j](ab_pred_logits, ab_targets)
+                losses.append(ab_loss)
             loss = sum(losses) / len(losses) # average loss over antibiotics
             epoch_loss += loss.item() 
             reporting_loss += loss.item()
@@ -646,6 +612,7 @@ class BertCLSTrainer(nn.Module):
                 printing_loss = 0           
         avg_epoch_loss = epoch_loss / self.num_batches
         return avg_epoch_loss 
+    
     
     def early_stopping(self):
         if self.val_losses[-1] < self.best_val_loss:
@@ -715,6 +682,15 @@ class BertCLSTrainer(nn.Module):
         return results
             
     
+    def _init_result_lists(self):
+        self.losses = []
+        self.val_losses = []
+        self.val_accuracies = []
+        self.val_seq_accuracies = []
+        self.val_ab_stats = []
+        self.val_iso_stats = []
+        
+        
     def _update_val_lists(self, results: dict):
         self.val_losses.append(results["loss"])
         self.val_accuracies.append(results["acc"])
@@ -825,8 +801,8 @@ class BertCLSTrainer(nn.Module):
                 "train_size": self.train_size,
                 "classifier_type": self.classifier_type,
                 "random_state": self.random_state,
-                # "val_size": self.val_size,
-                # "test_size": self.test_size,
+                'val_share': self.val_share,
+                "val_size": self.val_size,
                 # "early_stopping_patience": self.patience,
                 # "dropout_prob": self.model.dropout_prob,
             }
@@ -841,10 +817,6 @@ class BertCLSTrainer(nn.Module):
         self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_seq_acc", summary="max", step_metric="epoch")
         
-        if self.do_testing:
-            self.wandb_run.define_metric("Losses/test_loss")
-            self.wandb_run.define_metric("Accuracies/test_acc")
-            self.wandb_run.define_metric("Accuracies/test_seq_acc")
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
         self.wandb_run.define_metric("Accuracies/final_val_seq_acc")
@@ -868,7 +840,6 @@ class BertCLSTrainer(nn.Module):
         
         global_step = self.current_epoch * self.num_batches + batch_index # global step, total #batches seen
         self.wandb_run.log({"batch": global_step, "Losses/live_loss": avg_loss})
-        # self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
     
         
     def _print_loss_summary(self, time_elapsed, batch_index, tot_loss):
@@ -885,7 +856,6 @@ class BertCLSTrainer(nn.Module):
         fig, ax = plt.subplots()
         ax.plot(range(len(self.losses)), self.losses, '-o', label='Training')
         ax.plot(range(len(self.val_losses)), self.val_losses, '-o', label='Validation')
-        ax.axhline(y=self.test_loss, color='r', linestyle='--', label='Test') if self.do_testing else None
         ax.set_title('MLM losses')
         ax.set_xlabel('Epoch')
         ax.set_xticks(range(len(self.losses))) if len(self.losses) < 10 else ax.set_xticks(range(0, len(self.losses), 5))
@@ -900,7 +870,6 @@ class BertCLSTrainer(nn.Module):
     def _visualize_accuracy(self, savepath: Path = None):
         fig, ax = plt.subplots()
         ax.plot(range(len(self.val_accuracies)), self.val_accuracies, '-o', label='Validation')
-        ax.axhline(y=self.test_acc, color='r', linestyle='--', label='Test') if self.do_testing else None
         ax.set_title('MLM accuracy')
         ax.set_xlabel('Epoch')
         ax.set_xticks(range(len(self.val_accuracies))) if len(self.val_accuracies) < 10 else ax.set_xticks(range(0, len(self.val_accuracies), 5))
@@ -912,13 +881,13 @@ class BertCLSTrainer(nn.Module):
         plt.close() 
     
     
-    def save_model(self, savepath: Path):
+    def _save_model(self, savepath: Path):
         torch.save(self.model.state_dict(), savepath)
         print(f"Model saved to {savepath}")
         print("="*self._splitter_size)
         
         
-    def load_model(self, savepath: Path):
+    def _load_model(self, savepath: Path):
         print("="*self._splitter_size)
         print(f"Loading model from {savepath}")
         self.model.load_state_dict(torch.load(savepath))

@@ -9,17 +9,16 @@ num_layers: 6
 dropout_prob: 0.1
 mask_prob: 0.15
 batch_size: 32
-split: [0.8, 0.1, 0.1] # train, val, test
+val_share: 0.15 # CV split
 max_seq_len: 'auto'
-do_testing: False
 epochs: 100
 early_stopping_patience: 3
 lr: 0.00005 
 weight_decay: 0.01
 print_progress_every: 1000
 report_every: 500
-save_vocab: False   # True for fine-tuning or inference 
-save_model: False   # True for fine-tuning or inference
+save_vocab: False 
+save_model: False
 random_state: 42
 data:
   threshold_year: 1970
@@ -28,6 +27,9 @@ data:
   exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
   exclusion_chars: 
   # exclusion_chars: ['-']  
+  gene_count_threshold: 
+  save_path: 
+  # save_path: 'data/TESSy.pkl'
 specials:   
   CLS: '[CLS]'
   PAD: '[PAD]'

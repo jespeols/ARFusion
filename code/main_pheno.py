@@ -22,8 +22,6 @@ from data_preprocessing import preprocess_TESSy
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 if __name__ == "__main__":
@@ -42,7 +40,6 @@ if __name__ == "__main__":
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--classifier_type", type=str)
     argparser.add_argument("--separate_phenotypes", type=bool)
-    argparser.add_argument("--do_testing", type=bool)
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -78,7 +75,11 @@ if __name__ == "__main__":
     config['separate_phenotypes'] = args.separate_phenotypes if args.separate_phenotypes else config['separate_phenotypes']
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
-    results_dir = Path(os.path.join(BASE_DIR / "results" / "pheno", config['name']))
+    if config['name']:
+        results_dir = Path(os.path.join(BASE_DIR / "results" / "pheno", config['name']))
+    else:
+        time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+        results_dir = Path(os.path.join(BASE_DIR / "results" / "pheno", "experiment_" + str(time_str)))
     
     if config['data']['prepare_data']:
         print("Preprocessing dataset...")
@@ -122,25 +123,20 @@ if __name__ == "__main__":
     else:
         max_seq_len = config['max_seq_len']
     
-    train_indices, val_indices, test_indices = get_split_indices(num_samples, config['split'], 
-                                                                 random_state=config['random_state'])
+    train_indices, val_indices = get_split_indices(num_samples, config['val_share'], random_state=config['random_state'])
     print("Loading model...")
     if config['classifier_type'] == "MLM":
         assert config['separate_phenotypes'] == True, "Separate phenotypes must be used for MLM classifier"
         
         train_set = PhenotypeMLMDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
         val_set = PhenotypeMLMDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-        if config['do_testing']:
-            test_set = PhenotypeMLMDataset(ds.iloc[test_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-        else:
-            test_set = None
+
         bert = BERT(config, vocab_size, max_seq_len).to(device)
         trainer = BertMLMTrainer(
             config=config,
             model=bert,
             train_set=train_set,
             val_set=val_set,
-            test_set=test_set,
             results_dir=results_dir,
         )
         trainer.print_model_summary()
@@ -151,10 +147,6 @@ if __name__ == "__main__":
         
         train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, antibiotics, specials, max_seq_len, base_dir=BASE_DIR)
         val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, antibiotics, specials, max_seq_len, base_dir=BASE_DIR)
-        if config['do_testing']:
-            test_set = PhenotypeDataset(ds.iloc[test_indices], vocab, antibiotics, specials, max_seq_len, base_dir=BASE_DIR)
-        else:
-            test_set = None
         bert = BERT(config, vocab_size, max_seq_len, num_ab=len(antibiotics)).to(device)
         trainer = BertCLSTrainer(
             config=config,
@@ -162,7 +154,6 @@ if __name__ == "__main__":
             antibiotics=antibiotics,
             train_set=train_set,
             val_set=val_set,
-            test_set=test_set,
             results_dir=results_dir,
         )
         trainer.print_model_summary()
