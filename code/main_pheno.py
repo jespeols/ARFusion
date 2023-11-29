@@ -25,9 +25,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-# LOG_DIR = Path(os.path.join(BASE_DIR / "logs"))
-LOG_DIR = Path(os.path.join(BASE_DIR / "logs", "experiment_" + str(time_str)))
-RESULTS_DIR = Path(os.path.join(BASE_DIR / "results", "experiment_" + str(time_str)))
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
@@ -61,8 +58,6 @@ if __name__ == "__main__":
     with open(config_path, "r") as config_file:
         config = yaml.safe_load(config_file)
     
-    os.environ['WANDB_MODE'] = config['wandb_mode']
-    
     # overwrite config with command line arguments
     args = argparser.parse_args()
     config['wandb_mode'] = args.wandb_mode if args.wandb_mode else config['wandb_mode']
@@ -82,6 +77,9 @@ if __name__ == "__main__":
     config['do_testing'] = args.do_testing if args.do_testing else config['do_testing']
     config['separate_phenotypes'] = args.separate_phenotypes if args.separate_phenotypes else config['separate_phenotypes']
         
+    os.environ['WANDB_MODE'] = config['wandb_mode']
+    results_dir = Path(os.path.join(BASE_DIR / "results" / "pheno", config['name']))
+    
     if config['data']['prepare_data']:
         print("Preprocessing dataset...")
         start = time.time()
@@ -115,7 +113,7 @@ if __name__ == "__main__":
     print("Antibiotics:", antibiotics)
     vocab_size = len(vocab)
     
-    max_phenotypes_len = ds['num_phenotypes'].max()    
+    max_phenotypes_len = ds['num_ab'].max()    
     if config['max_seq_len'] == 'auto':
         if config['separate_phenotypes']:
             max_seq_len = 2*max_phenotypes_len + 4 + 1 # +4 for year, country, age & gender, +1 for CLS token
@@ -143,7 +141,7 @@ if __name__ == "__main__":
             train_set=train_set,
             val_set=val_set,
             test_set=test_set,
-            results_dir=RESULTS_DIR,
+            results_dir=results_dir,
         )
         trainer.print_model_summary()
         trainer.print_trainer_summary()
@@ -165,15 +163,22 @@ if __name__ == "__main__":
             train_set=train_set,
             val_set=val_set,
             test_set=test_set,
-            results_dir=RESULTS_DIR,
+            results_dir=results_dir,
         )
         trainer.print_model_summary()
         trainer.print_trainer_summary()
         eval_stats_ab, eval_stats_iso, best_epoch = trainer()
+        print("Finished training!")
+        print("Best epoch:", best_epoch+1)
+        ab_stats = eval_stats_ab[best_epoch]
+        iso_stats = eval_stats_iso[best_epoch]
+        print("Exporting results...")
+        ab_stats.to_csv(BASE_DIR / "results" / "pheno" / "ab_stats.csv", index=False)
+        iso_stats.to_csv(BASE_DIR / "results" / "pheno" / "iso_stats.csv", index=False)
         print("antibiotics stats:")
-        print(eval_stats_ab[best_epoch])
+        print(ab_stats)
         print("isolate stats:")
-        print(eval_stats_iso[best_epoch].head(n=20))
+        print(iso_stats.head(n=20))
     else:
         raise ValueError("Classifier type not supported, must be 'MLM' or 'CLS'")
         

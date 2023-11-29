@@ -1,4 +1,4 @@
-wandb_mode: 'disabled' # 'online' for syncing, or 'disabled' for no tracking
+wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
 project_name: Phenotype-MLM
 name: baseline
 emb_dim: 256
@@ -28,7 +28,8 @@ data:
   path: 'data/raw/AMR_TEST.csv'
   save_path: 'data/TESSy.pkl'
   load_path: 'data/TESSy.pkl'
-  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'TGC']
+  # exclude_antibiotics: 
+  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK']
   pathogens: ['ESCCOL']
   impute_age: False
   impute_gender: False

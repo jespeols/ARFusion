@@ -168,7 +168,7 @@ def preprocess_TESSy(path,
         df = df.groupby(['ID', 'antibiotic']).first().reset_index()
     
     print(f"Number of tests after parsing: {df.shape[0]:,}")
-    print(f"Aggregating phenotypes for each ID...")
+    print(f"Aggregating tests for each ID...")
     df_agg = df.groupby('ID')[['antibiotic', 'phenotype']].agg(list).reset_index()
     df_agg['phenotypes'] = df_agg.apply(
         lambda x: [x['antibiotic'][i] + "_" + x['phenotype'][i] for i in range(len(x['antibiotic']))], axis=1)

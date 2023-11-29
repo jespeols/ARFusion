@@ -744,10 +744,10 @@ class BertCLSTrainer(nn.Module):
     def _update_ab_eval_stats(self, eval_stats_ab: pd.DataFrame, num, num_preds, num_correct):
         for j in range(self.num_ab): 
             eval_stats_ab.loc[j, 'num_tot'] = num[j, :].sum()
-            eval_stats_ab.loc[j, 'num_S'], eval_stats_ab[j, 'num_R'] = num[j, 0], num[j, 1]
-            eval_stats_ab.loc[j, 'num_pred_S'], eval_stats_ab[j, 'num_pred_R'] = num_preds[j, 0], num_preds[j, 1]
+            eval_stats_ab.loc[j, 'num_S'], eval_stats_ab.loc[j, 'num_R'] = num[j, 0], num[j, 1]
+            eval_stats_ab.loc[j, 'num_pred_S'], eval_stats_ab.loc[j, 'num_pred_R'] = num_preds[j, 0], num_preds[j, 1]
             eval_stats_ab.loc[j, 'num_correct'] = num_correct[j, :].sum()
-            eval_stats_ab.loc[j, 'num_correct_S'], eval_stats_ab[j, 'num_correct_R'] = num_correct[j, 0], num_correct[j, 1]
+            eval_stats_ab.loc[j, 'num_correct_S'], eval_stats_ab.loc[j, 'num_correct_R'] = num_correct[j, 0], num_correct[j, 1]
         eval_stats_ab['accuracy'] = eval_stats_ab.apply(
             lambda row: row['num_correct']/row['num_tot'] if row['num_tot'] > 0 else np.nan, axis=1)
         eval_stats_ab['sensitivity'] = eval_stats_ab.apply(
