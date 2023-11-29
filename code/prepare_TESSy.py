@@ -12,10 +12,9 @@ if __name__ == '__main__':
     with open(config_path, "r") as config_file:
         config = yaml.safe_load(config_file)
     config = config['data']
-    _ = preprocess_TESSy(path=config['path'],
-                         pathogens=config['pathogens'],
-                         save_path=config['save_path'],
-                         exclude_antibiotics=config['exclude_antibiotics'],
-                         impute_age=config['impute_age'],
-                         impute_gender=config['impute_gender'])
-                            
+    _ = preprocess_TESSy(path=config['data']['path'],
+                         pathogens=config['data']['pathogens'],
+                         save_path=config['data']['save_path'],
+                         exclude_antibiotics=config['data']['exclude_antibiotics'],
+                         impute_age=config['data']['impute_age'],
+                         impute_gender=config['data']['impute_gender'])
