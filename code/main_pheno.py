@@ -166,8 +166,8 @@ if __name__ == "__main__":
         ab_stats = eval_stats_ab[best_epoch]
         iso_stats = eval_stats_iso[best_epoch]
         print("Exporting results...")
-        ab_stats.to_csv(BASE_DIR / "results" / "pheno" / "ab_stats.csv", index=False)
-        iso_stats.to_csv(BASE_DIR / "results" / "pheno" / "iso_stats.csv", index=False)
+        ab_stats.to_csv(os.path.join(results_dir, "ab_stats.csv"), index=False)
+        iso_stats.to_csv(os.path.join(results_dir, "iso_stats.csv"), index=False)
         print("antibiotics stats:")
         print(ab_stats)
         print("isolate stats:")
