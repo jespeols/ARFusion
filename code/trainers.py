@@ -21,27 +21,6 @@ BASE_DIR = Path(__file__).resolve().parent
 os.chdir(BASE_DIR)
 
 ############################################ Trainer for MLM task ############################################
-    
-def token_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor):
-    r = tokens.argmax(-1).masked_select(token_mask) # select the indices of the predicted tokens
-    t = token_target.masked_select(token_mask)
-    
-    c = torch.eq(r, t).sum().item()
-    tot = (token_mask).sum().item()
-    acc = c / tot if tot > 0 else 1 # if tot == 0, then all tokens are masked (currently not possible)
-    return acc
-
-
-def seq_accuracy(tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor):
-    r = tokens.argmax(-1) # each row is a seq
-    r_ = torch.mul(r, token_mask) # element-wise multiplication, non-masked tokens become 0
-    t_ = torch.mul(token_target, token_mask)
-    
-    c = torch.eq(r_, t_).all(dim=1).sum().item() # count the number of correctly classified sequences
-    tot = token_mask.shape[0] # total number of seqs (batch size)
-    acc = c / tot if tot > 0 else 1 # if tot == 0, then all seqs are masked (currently not possible)
-    return acc
-
 
 class BertMLMTrainer(nn.Module):
     
@@ -65,7 +44,7 @@ class BertMLMTrainer(nn.Module):
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
-        assert self.val_size / (self.train_size + self.val_size) == config["val_share"], "Validation set size does not match intended val_share"
+        assert round(self.val_size / (self.train_size + self.val_size), 2) == config["val_share"], "Validation set size does not match intended val_share"
         self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
         self.num_batches = self.train_size // self.batch_size
@@ -114,7 +93,7 @@ class BertMLMTrainer(nn.Module):
         else:
             print(f"Device: {device}")
         print(f"Training dataset size: {self.train_size:,}")
-        print(f"CV split: {self.train_share:.0%} train - {self.val_share:.0%} val")
+        print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
         print(f"Mask probability: {self.mask_prob:.0%}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
@@ -143,26 +122,21 @@ class BertMLMTrainer(nn.Module):
             self.losses.append(loss) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
-            # print("Evaluating on training set...")
-            # _, train_acc = self.evaluate(self.train_loader)
-            # self.train_accuracies.append(train_acc)
             print("Evaluating on validation set...")
-            val_loss, val_acc, val_seq_acc = self.evaluate(self.val_loader)
-            self.val_losses.append(val_loss)
-            self.val_accuracies.append(val_acc)
-            self.val_seq_accuracies.append(val_seq_acc)
+            val_results = self.evaluate(self.val_loader, self.val_set)
+            self._update_val_lists(val_results)
             self._report_epoch_results()
             early_stop = self.early_stopping()
             if early_stop:
-                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
-                s = f"Best validation loss {self.best_val_loss:.3f}"
+                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
+                s = f"Best validation loss {self.best_val_loss:.4f}"
                 s += f" | Validation accuracy {self.val_accuracies[self.best_epoch]:.2%}"
-                s += f" | Validation sequence accuracy {self.val_seq_accuracies[self.best_epoch]:.2%}"
+                s += f" | Validation sequence accuracy {self.val_iso_accuracies[self.best_epoch]:.2%}"
                 s += f" at epoch {self.best_epoch+1}"
                 print(s)
                 self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
                            "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch],
-                           "Accuracies/final_val_seq_acc": self.val_seq_accuracies[self.best_epoch],
+                           "Accuracies/final_val_iso_acc": self.val_iso_accuracies[self.best_epoch],
                            "final_epoch": self.best_epoch+1})
                 print("="*self._splitter_size)
                 self.model.load_state_dict(self.best_model_state) 
@@ -174,7 +148,7 @@ class BertMLMTrainer(nn.Module):
         if not early_stop:    
             self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
                     "Accuracies/final_val_acc":self.val_accuracies[-1],
-                    "Accuracies/final_val_seq_acc": self.val_seq_accuracies[-1],
+                    "Accuracies/final_val_iso_acc": self.val_iso_accuracies[-1],
                     "final_epoch": self.current_epoch+1})
         if self.save_model:
             self.save_model(self.results_dir / "model_state.pt") 
@@ -183,12 +157,13 @@ class BertMLMTrainer(nn.Module):
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
         if not early_stop:
-            s = f"Final validation loss {self.val_losses[-1]:.3f}"
+            s = f"Final validation loss {self.val_losses[-1]:.4f}"
             s += f" | Final validation accuracy {self.val_accuracies[-1]:.2%}"
-            s += f" | Final validation sequence accuracy {self.val_seq_accuracies[-1]:.2%}"
+            s += f" | Final validation sequence accuracy {self.val_iso_accuracies[-1]:.2%}"
             print(s)
         self._visualize_losses(savepath=self.results_dir / "losses.png")
         self._visualize_accuracy(savepath=self.results_dir / "accuracy.png")
+        return self.val_iso_stats, self.current_epoch
     
         
     def train(self, epoch: int):
@@ -239,36 +214,77 @@ class BertMLMTrainer(nn.Module):
             return True if self.early_stopping_counter >= self.patience else False
         
          
-    def evaluate(self, loader: DataLoader, print_mode: bool = True):
+    def evaluate(self, loader: DataLoader, ds_obj, print_mode: bool = True):
         self.model.eval()
-        loss = 0
-        acc = 0
-        seq_acc = 0
-        for batch in loader:
-            input, token_target, token_mask, attn_mask = batch
-            tokens = self.model(input, attn_mask)
+        eval_stats_iso = ds_obj.ds.copy()
+        eval_stats_iso.replace({'[PAD]': np.nan}, inplace=True)
+        eval_stats_iso['num_masked'], eval_stats_iso['num_correct'] = 0, 0
+        eval_stats_iso['correct_all'] = False
+        assert self.val_size == eval_stats_iso.shape[0], "Validation set size does not match loaded dataset object"
+        with torch.no_grad():
+            loss = 0
+            for batch_idx, batch in enumerate(loader):
+                input, token_target, token_mask, attn_mask = batch
+                tokens = self.model(input, attn_mask)
+                
+                loss += self.criterion(tokens.transpose(-1, -2), token_target).item()
+                eval_stats_iso = self._update_iso_stats(batch_idx, tokens, token_target, token_mask, eval_stats_iso)
             
-            loss += self.criterion(tokens.transpose(-1, -2), token_target).item()
-            acc += token_accuracy(tokens, token_target, token_mask)
-            seq_acc += seq_accuracy(tokens, token_target, token_mask)
-            
-        loss /= len(loader) 
-        acc /= len(loader)
-        seq_acc /= len(loader)
+            loss /= len(loader) 
+            acc = eval_stats_iso['num_correct'].sum() / eval_stats_iso['num_masked'].sum()
+            iso_acc = eval_stats_iso['correct_all'].sum() / eval_stats_iso.shape[0]
         
         if print_mode:
-            print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%} | Sequence accuracy: {seq_acc:.2%}")
+            print(f"Loss: {loss:.4f} | Accuracy: {acc:.2%} | Isolate accuracy: {iso_acc:.2%}")
             print("="*self._splitter_size)
         
-        return loss, acc, seq_acc
+        results = {
+            "loss": loss,
+            "acc": acc,
+            "iso_acc": iso_acc,
+            "iso_stats": eval_stats_iso
+        }
+        return results
      
      
     def _init_result_lists(self):
         self.losses = []
         self.val_losses = []
         self.val_accuracies = []
-        self.val_seq_accuracies = []
-     
+        self.val_iso_accuracies = []
+        self.val_iso_stats = []
+    
+    
+    def _update_val_lists(self, val_results: dict):
+        self.val_losses.append(val_results["loss"])
+        self.val_accuracies.append(val_results["acc"])
+        self.val_iso_accuracies.append(val_results["iso_acc"])
+        self.val_iso_stats.append(val_results["iso_stats"])
+
+
+    def _update_iso_stats(self, batch_idx:int, tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor,
+                          eval_stats_iso: pd.DataFrame):
+        ## Old version, efficient way to calculate iso_acc
+        # r = tokens.argmax(-1) # each row is a seq
+        # r_ = torch.mul(r, token_mask) # element-wise multiplication, non-masked tokens become 0
+        # t_ = torch.mul(token_target, token_mask)
+        # eq = torch.eq(r_, t_) # element-wise equality
+        # c = torch.eq(r_, t_).all(dim=1).sum().item() # count the number of correctly classified sequences
+        
+        for i in range(token_target.shape[0]):
+            global_idx = batch_idx * self.batch_size + i
+            # get the predicted and target tokens for the sequence
+            iso_mask = token_mask[i] # (seq_len,)
+            pred_tokens = tokens[i, iso_mask].argmax(-1) # (num_masked_tokens,)
+            targets = token_target[i, iso_mask] # (num_masked_tokens,)
+            
+            eq = torch.eq(pred_tokens, targets) 
+            eval_stats_iso.loc[global_idx, 'num_masked'] = iso_mask.sum().item()
+            eval_stats_iso.loc[global_idx, 'num_correct'] = eq.sum().item()
+            eval_stats_iso.loc[global_idx, 'correct_all'] = eq.all().item()
+        
+        return eval_stats_iso
+        
      
     def _init_wandb(self):
         self.wandb_run = wandb.init(
@@ -307,11 +323,11 @@ class BertMLMTrainer(nn.Module):
         self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
-        self.wandb_run.define_metric("Accuracies/val_seq_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Accuracies/val_iso_acc", summary="max", step_metric="epoch")
         
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
-        self.wandb_run.define_metric("Accuracies/final_val_seq_acc")
+        self.wandb_run.define_metric("Accuracies/final_val_iso_acc")
         self.wandb_run.define_metric("final_epoch")
 
         return self.wandb_run
@@ -322,7 +338,7 @@ class BertMLMTrainer(nn.Module):
             "Losses/train_loss": self.losses[-1],
             "Losses/val_loss": self.val_losses[-1],
             "Accuracies/val_acc": self.val_accuracies[-1],
-            "Accuracies/val_seq_acc": self.val_seq_accuracies[-1]
+            "Accuracies/val_iso_acc": self.val_iso_accuracies[-1]
         }
         self.wandb_run.log(wandb_dict)
     
@@ -341,7 +357,7 @@ class BertMLMTrainer(nn.Module):
           
         s = f"{time.strftime('%H:%M:%S', time_elapsed)}" 
         s += f" | Epoch: {self.current_epoch+1}/{self.epochs} | {batch_index}/{self.num_batches} ({progress:.2%}) | "\
-                f"Loss: {mlm_loss:.3f}"
+                f"Loss: {mlm_loss:.4f}"
         print(s)
     
     
@@ -444,10 +460,9 @@ class BertCLSTrainer(nn.Module):
         self.num_ab = len(self.antibiotics) 
         
         self.train_set, self.train_size = train_set, len(train_set)
-        self.train_size = len(self.train_set)      
         self.val_set, self.val_size = val_set, len(val_set) 
-        assert self.val_size / (self.train_size + self.val_size) == config["val_share"], "Validation set size does not match intended val_share"
-        self.val_share = config["val_share"]
+        assert round(self.val_size / (self.train_size + self.val_size), 2) == config["val_share"], "Validation set size does not match intended val_share"
+        self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
         self.num_batches = self.train_size // self.batch_size
          
@@ -494,10 +509,11 @@ class BertCLSTrainer(nn.Module):
         if device.type == "cuda":
             print(f"Device: {device} ({torch.cuda.get_device_name(0)})")
         else:
-            print(f"Device: {device}")        print(f"Training dataset size: {self.train_size:,}")
+            print(f"Device: {device}")        
+        print(f"Training dataset size: {self.train_size:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
-        print(f"CV split: {self.train_share:.0%} train - {self.val_share:.0%} val")
+        print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
         print(f"Mask probability: {self.mask_prob:.0%}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
@@ -527,22 +543,20 @@ class BertCLSTrainer(nn.Module):
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             print("Evaluating on validation set...")
-            results = self.evaluate(self.val_loader, self.val_set)
-            self._update_val_lists(results)
-            self._report_epoch_results()
-            early_stop = self.early_stopping()
+            val_results = self.evaluate(self.val_loader, self.val_set)
+            self._update_val_lists(val_results)
             self._report_epoch_results()
             early_stop = self.early_stopping()
             if early_stop:
-                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.3f}")
-                s = f"Best validation loss {self.best_val_loss:.3f}"
+                print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
+                s = f"Best validation loss {self.best_val_loss:.4f}"
                 s += f" | Validation accuracy {self.val_accuracies[self.best_epoch]:.2%}"
-                s += f" | Validation sequence accuracy {self.val_seq_accuracies[self.best_epoch]:.2%}"
+                s += f" | Validation sequence accuracy {self.val_iso_accuracies[self.best_epoch]:.2%}"
                 s += f" at epoch {self.best_epoch+1}"
                 print(s)
                 self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
                            "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch],
-                           "Accuracies/final_val_seq_acc": self.val_seq_accuracies[self.best_epoch],
+                           "Accuracies/final_val_iso_acc": self.val_iso_accuracies[self.best_epoch],
                            "final_epoch": self.best_epoch+1})
                 print("="*self._splitter_size)
                 self.model.load_state_dict(self.best_model_state) 
@@ -553,7 +567,7 @@ class BertCLSTrainer(nn.Module):
         if not early_stop:    
             self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
                     "Accuracies/final_val_acc":self.val_accuracies[-1],
-                    "Accuracies/final_val_seq_acc": self.val_seq_accuracies[-1],
+                    "Accuracies/final_val_iso_acc": self.val_iso_accuracies[-1],
                     "final_epoch": self.current_epoch+1})
         if self.save_model:
             self._save_model(self.results_dir / "model_state.pt") 
@@ -562,9 +576,9 @@ class BertCLSTrainer(nn.Module):
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
         if not early_stop:
-            s = f"Final validation loss {self.val_losses[-1]:.3f}"
+            s = f"Final validation loss {self.val_losses[-1]:.4f}"
             s += f" | Final validation accuracy {self.val_accuracies[-1]:.2%}"
-            s += f" | Final validation sequence accuracy {self.val_seq_accuracies[-1]:.2%}"
+            s += f" | Final validation sequence accuracy {self.val_iso_accuracies[-1]:.2%}"
             print(s)
         
         self._visualize_losses(savepath=self.results_dir / "losses.png")
@@ -626,7 +640,7 @@ class BertCLSTrainer(nn.Module):
             return True if self.early_stopping_counter >= self.patience else False
         
             
-    def evaluate(self, loader: DataLoader, ds_obj, print_mode: bool = True):
+    def evaluate(self, loader: DataLoader, ds_obj: pd.DataFrame, print_mode: bool = True):
         self.model.eval()
         # prepare evaluation statistics dataframes
         eval_stats_ab, eval_stats_iso = self._init_eval_stats(ds_obj)
@@ -660,7 +674,7 @@ class BertCLSTrainer(nn.Module):
                 loss += sum(batch_loss) / len(batch_loss) 
             loss /= len(loader) # average loss over batches
             acc = num_correct.sum() / num.sum() # overall accuracy
-            seq_acc = eval_stats_iso['correct_all'].sum() / eval_stats_iso.shape[0] # accuracy over all sequences
+            iso_acc = eval_stats_iso['correct_all'].sum() / eval_stats_iso.shape[0] # accuracy over all sequences
             
             eval_stats_ab = self._update_ab_eval_stats(eval_stats_ab, num, num_preds, num_correct)
             
@@ -671,14 +685,16 @@ class BertCLSTrainer(nn.Module):
             eval_stats_iso['accuracy'] = eval_stats_iso.apply(
                 lambda row: (row['correct_S'] + row['correct_R'])/row['num_masked'], axis=1)
         if print_mode:
-            print(f"Loss: {loss:.3f} | Accuracy: {acc:.2%} | Sequence accuracy: {seq_acc:.2%}")
+            print(f"Loss: {loss:.4f} | Accuracy: {acc:.2%} | Isolate accuracy: {iso_acc:.2%}")
             print("="*self._splitter_size)
         
-        results = {"loss": loss, 
-                   "acc": acc, 
-                   "seq_acc": seq_acc,
-                   "ab_stats": eval_stats_ab,
-                   "iso_stats": eval_stats_iso}
+        results = {
+            "loss": loss, 
+            "acc": acc, 
+            "iso_acc": iso_acc,
+            "ab_stats": eval_stats_ab,
+            "iso_stats": eval_stats_iso
+        }
         return results
             
     
@@ -686,7 +702,7 @@ class BertCLSTrainer(nn.Module):
         self.losses = []
         self.val_losses = []
         self.val_accuracies = []
-        self.val_seq_accuracies = []
+        self.val_iso_accuracies = []
         self.val_ab_stats = []
         self.val_iso_stats = []
         
@@ -694,7 +710,7 @@ class BertCLSTrainer(nn.Module):
     def _update_val_lists(self, results: dict):
         self.val_losses.append(results["loss"])
         self.val_accuracies.append(results["acc"])
-        self.val_seq_accuracies.append(results["seq_acc"])
+        self.val_iso_accuracies.append(results["iso_acc"])
         self.val_ab_stats.append(results["ab_stats"])
         self.val_iso_stats.append(results["iso_stats"])
     
@@ -751,8 +767,8 @@ class BertCLSTrainer(nn.Module):
         return [num_pred_S, num_pred_R]
     
     
-    def _update_iso_stats(self, batch_index: int, pred_res: torch.Tensor, target_res: torch.Tensor, ab_mask: torch.Tensor,
-                          eval_stats_iso: pd.DataFrame):
+    def _update_iso_stats(self, batch_index: int, pred_res: torch.Tensor, target_res: torch.Tensor, 
+                          ab_mask: torch.Tensor, eval_stats_iso: pd.DataFrame):
         for i in range(pred_res.shape[0]): # for each isolate
             global_idx = batch_index * self.batch_size + i # index of the isolate in the dataframe
             iso_ab_mask = ab_mask[i]
@@ -815,11 +831,11 @@ class BertCLSTrainer(nn.Module):
         self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
-        self.wandb_run.define_metric("Accuracies/val_seq_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Accuracies/val_iso_acc", summary="max", step_metric="epoch")
         
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
-        self.wandb_run.define_metric("Accuracies/final_val_seq_acc")
+        self.wandb_run.define_metric("Accuracies/final_val_iso_acc")
         self.wandb_run.define_metric("final_epoch")
 
         return self.wandb_run
@@ -830,7 +846,7 @@ class BertCLSTrainer(nn.Module):
             "Losses/train_loss": self.losses[-1],
             "Losses/val_loss": self.val_losses[-1],
             "Accuracies/val_acc": self.val_accuracies[-1],
-            "Accuracies/val_seq_acc": self.val_seq_accuracies[-1]
+            "Accuracies/val_iso_acc": self.val_iso_accuracies[-1]
         }
         self.wandb_run.log(wandb_dict)
     
@@ -848,7 +864,7 @@ class BertCLSTrainer(nn.Module):
           
         s = f"{time.strftime('%H:%M:%S', time_elapsed)}" 
         s += f" | Epoch: {self.current_epoch+1}/{self.epochs} | {batch_index}/{self.num_batches} ({progress:.2%}) | "\
-                f"Loss: {mlm_loss:.3f}"
+                f"Loss: {mlm_loss:.4f}"
         print(s)
     
     

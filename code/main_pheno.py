@@ -80,9 +80,11 @@ if __name__ == "__main__":
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
         results_dir = Path(os.path.join(BASE_DIR / "results" / "pheno", "experiment_" + str(time_str)))
+    print(f"Name of experiment: {config['name']}")
+    print(f"Results directory: {results_dir}")
     
     if config['data']['prepare_data']:
-        print("Preprocessing dataset...")
+        print("\nPreprocessing dataset...")
         start = time.time()
         ds = preprocess_TESSy(path=config['data']['path'],
                               pathogens=config['data']['pathogens'],
@@ -92,7 +94,7 @@ if __name__ == "__main__":
                               impute_gender=config['data']['impute_gender'])
         print(f"Preprocessing finished after {(time.time()-start)/60:.1f} min")
     else:
-        print("Loading dataset...")
+        print("\nLoading dataset...")
         ds = pd.read_pickle(config['data']['load_path'])
     num_samples = ds.shape[0]
     
@@ -106,11 +108,11 @@ if __name__ == "__main__":
     # ds.fillna(NA, inplace=True)
     
     print("Constructing vocabulary...")
-    savepath_vocab = BASE_DIR / "data" / "pheno_vocab.pt" if config['save_vocab'] else None
+    savepath_vocab = os.path.join(results_dir, "vocab.pt") if config['save_vocab'] else None
     vocab, antibiotics = construct_pheno_vocab(ds, 
                                                specials, 
-                                               savepath_vocab=savepath_vocab, 
-                                               separate_phenotypes=config['separate_phenotypes'])
+                                               separate_phenotypes=config['separate_phenotypes'],
+                                               savepath_vocab=savepath_vocab)
     print("Antibiotics:", antibiotics)
     vocab_size = len(vocab)
     

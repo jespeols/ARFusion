@@ -1,8 +1,9 @@
-wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
+wandb_mode: 'disabled' # 'online' for syncing, or 'disabled' for no tracking
 project_name: Genotype-MLM
 name: baseline
 emb_dim: 256
 ff_dim: 256
+classifier_type: 'MLM' # only MLM supported for genotype model
 hidden_dim:  # for classifier, not used for MLM
 num_heads: 4
 num_layers: 6
@@ -17,7 +18,7 @@ lr: 0.00005
 weight_decay: 0.01
 print_progress_every: 1000
 report_every: 500
-save_vocab: False 
+save_vocab: False
 save_model: False
 random_state: 42
 data:

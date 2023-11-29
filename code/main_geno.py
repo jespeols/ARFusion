@@ -66,12 +66,13 @@ if __name__ == "__main__":
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
     if config['name']:
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "pheno", config['name']))
+        results_dir = Path(os.path.join(BASE_DIR / "results" / "geno", config['name']))
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "pheno", "experiment_" + str(time_str)))
-    
-    print("Loading dataset...")
+        results_dir = Path(os.path.join(BASE_DIR / "results" / "geno", "experiment_" + str(time_str)))
+    print(f"Name of experiment: {config['name']}")
+    print(f"Results directory: {results_dir}")
+    print("\nLoading dataset...")
     path = BASE_DIR / "data" / "raw" / "NCBI.tsv"
 
     ds = preprocess_NCBI(path, 
@@ -93,8 +94,7 @@ if __name__ == "__main__":
     # ds.fillna(NA, inplace=True)
     
     print("Constructing vocabulary...")
-    if config['save_vocab']:
-        savepath_vocab = BASE_DIR / "data" / "NCBI" / "geno_vocab.pt" 
+    savepath_vocab = os.path.join(results_dir, "vocab.pt") if config['save_vocab'] else None
     vocab = construct_geno_vocab(ds, specials, savepath_vocab)
     vocab_size = len(vocab)
     
@@ -109,6 +109,7 @@ if __name__ == "__main__":
     train_set = GenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
     val_set = GenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
     
+    assert config['classifier_type'] == "MLM", "classifier_type must be 'MLM' for genotype model"
     print("Loading model...")
     bert = BERT(config, vocab_size, max_seq_len).to(device)
     trainer = BertMLMTrainer(
@@ -121,5 +122,9 @@ if __name__ == "__main__":
     
     trainer.print_model_summary()
     trainer.print_trainer_summary()
-    trainer()
+    iso_stats, best_epoch = trainer()
+    print("Best epoch: ", best_epoch+1)
+    print("Exporting results...")
+    iso_stats[best_epoch].to_csv(results_dir / "iso_stats.csv", index=False)
+    print("isolate statistics: \n", iso_stats[best_epoch].head(n=10))
     print("Done!")
