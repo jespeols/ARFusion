@@ -121,9 +121,9 @@ class BertMLMTrainer(nn.Module):
             loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(loss) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
-            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             print("Evaluating on validation set...")
             val_results = self.evaluate(self.val_loader, self.val_set)
+            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             self._update_val_lists(val_results)
             self._report_epoch_results()
             early_stop = self.early_stopping()
@@ -541,9 +541,9 @@ class BertCLSTrainer(nn.Module):
             loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(loss) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
-            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             print("Evaluating on validation set...")
             val_results = self.evaluate(self.val_loader, self.val_set)
+            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             self._update_val_lists(val_results)
             self._report_epoch_results()
             early_stop = self.early_stopping()
