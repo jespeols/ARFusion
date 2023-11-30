@@ -34,14 +34,15 @@ def preprocess_NCBI(path,
     #################################### PARSING ####################################
     
     #### geo_loc_name -> country 
-    alternative_nan = ['not determined', 'not collected', 'not provided', 'Not Provided',
-                   'OUTPATIENT', 'Not collected', 'Not Collected', 'not available']
+    alternative_nan = ['not determined', 'not collected', 'not provided', 'Not Provided', 'missing',
+                   'OUTPATIENT', 'Not collected', 'Not Collected', 'not available', '-']
     df.loc[:,'geo_loc_name'] = df['geo_loc_name'].replace(alternative_nan, np.nan) 
     
     # Remove regional information
     df.loc[:,'geo_loc_name'] = df['geo_loc_name'].str.split(',').str[0]
     df.loc[:,'geo_loc_name'] = df['geo_loc_name'].str.split(':').str[0] 
     df = df.rename(columns={'geo_loc_name': 'country'})
+    df.loc[:,'country'] = df['country'].replace('United Kingdom', 'UK')
     
     ##### collection_date -> year
     alternative_nan = ['missing']
