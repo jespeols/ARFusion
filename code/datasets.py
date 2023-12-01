@@ -189,6 +189,11 @@ class PhenotypeDataset(Dataset):
         np.random.seed(self.random_state)
         
         self.ds = ds.reset_index(drop=True) 
+        self.original_ds = deepcopy(self.ds) 
+        tot_pheno = self.ds['num_ab'].sum()
+        tot_S = self.ds['num_S'].sum()
+        tot_R = self.ds['num_R'].sum()
+        print(f"Proportion of S/R {tot_S / tot_pheno:.1%}/{tot_R / tot_pheno:.1%}")
         self.num_samples = self.ds.shape[0]
         self.vocab = vocab
         self.antibiotics = antibiotics
@@ -209,6 +214,7 @@ class PhenotypeDataset(Dataset):
                             self.ORIGINAL_SEQUENCE, self.MASKED_SEQUENCE]
         else: 
             self.columns = [self.INDICES_MASKED, self.TARGET_RESISTANCES, self.TOKEN_MASK, self.AB_MASK]        
+        
         
     def __len__(self):
         return self.num_samples
@@ -231,9 +237,25 @@ class PhenotypeDataset(Dataset):
             return input, target_res, token_mask, ab_mask, attn_mask
 
        
-    def prepare_dataset(self, mask_prob: float = 0.15): # will be called at the start of each epoch (dynamic masking)
-        sequences, masked_sequences, target_resistances, token_masks, ab_masks = self._construct_masked_sequences(mask_prob)
-        
+    def prepare_dataset(self,  mask_prob: float = None, num_known_ab: int = None): # will be called at the start of each epoch (dynamic masking)
+        ## IT IS PROBABLY MORE EFFICIENT TO DO THIS IN THE PREPROCESSING STEP, GIVEN MASKING METHOD IS CONSTANT ACROSS EPOCHS
+        if num_known_ab:
+            print(f"Preparing dataset for masking with {num_known_ab} known antibiotics")
+            self.num_known_ab = num_known_ab
+            self.mask_prob = None
+            self.ds = self.original_ds[self.original_ds['num_ab'] > self.num_known_ab].reset_index(drop=True)
+            self.num_samples = self.ds.shape[0]
+            print(f"Dropping {self.original_ds.shape[0] - self.num_samples} samples with less than {self.num_known_ab+1} antibiotics")
+            tot_pheno = self.ds['num_ab'].sum()
+            tot_S = self.ds['num_S'].sum()
+            tot_R = self.ds['num_R'].sum()
+            print(f"Now {self.num_samples} samples left, S/R proportion: {tot_S/tot_pheno:.1%}/{tot_R / tot_pheno:.1%}")
+        else:
+            print(f"Preparing dataset for masking with mask_prob = {mask_prob}")
+            self.mask_prob = mask_prob
+            self.num_known_ab = None
+            
+        sequences, masked_sequences, target_resistances, token_masks, ab_masks = self._construct_masked_sequences()
         indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in masked_sequences]
         
         if self.include_sequences:
@@ -251,55 +273,61 @@ class PhenotypeDataset(Dataset):
         return indices, resistances
     
     
-    def _construct_masked_sequences(self, mask_prob: float):  
+    def _construct_masked_sequences(self):  
         # RoBERTa: 80% -> [MASK], 10% -> original token, 10% -> random token
-        self.mask_prob = mask_prob
+        
         sequences = deepcopy(self.ds['phenotypes'].tolist())
         masked_sequences = list()
-        # all_target_indices = list()
         all_target_resistances = list()
         ab_masks = list() # will be applied to the output of the model, i.e. (batch_size, num_ab)
         token_masks = list() # will be applied to the the sequence itself, i.e. (batch_size, seq_len)
         for seq in deepcopy(sequences):
             seq_len = len(seq)
-            # target_indices, target_resistances = self._encode_sequence(seq) # if we don't want to indicate masking here, we 
-            # all_target_indices.append(target_indices)                       # encode the whole sequence, and use a token mask
-            # all_target_resistances.append(target_resistances)
             
             token_mask = [False] * seq_len # indicates which tokens in the sequence are masked, includes all tokens
             ab_mask = [False] * self.num_ab # will indicate which antibiotics are masked, indexed in the order of self.antibiotics
             target_resistances = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
-            tokens_masked = 0
-            for i in range(seq_len):
-                if np.random.rand() < self.mask_prob: 
+            if self.mask_prob:
+                tokens_masked = 0
+                for i in range(seq_len):
+                    if np.random.rand() < self.mask_prob: 
+                        ab, res = seq[i].split('_')
+                        ab_idx = self.ab_to_idx[ab]
+                        tokens_masked += 1
+                        r = np.random.rand()
+                        if r < 0.8: 
+                            seq[i] = self.MASK
+                        elif r < 0.9:
+                            j = np.random.randint(self.vocab_size-self.num_ab*2, self.vocab_size) # select random pheno token
+                            seq[i] = self.vocab.lookup_token(j)
+                        # else: do nothing, since r > 0.9 and we keep the same token
+                        token_mask[i] = True
+                        ab_mask[ab_idx] = True # indicate which antibiotic is masked at this position
+                        target_resistances[ab_idx] = self.enc_res[res] # the target resistance of the antibiotic
+                if tokens_masked == 0: # mask at least one token
+                    i = np.random.randint(seq_len)
                     ab, res = seq[i].split('_')
                     ab_idx = self.ab_to_idx[ab]
-                    tokens_masked += 1
                     r = np.random.rand()
                     if r < 0.8: 
                         seq[i] = self.MASK
                     elif r < 0.9:
-                        j = np.random.randint(self.vocab_size-self.num_ab*2, self.vocab_size) # select random pheno token
+                        j = np.random.randint(self.vocab_size-self.num_ab*2, self.vocab_size) # select random token, excluding specials
                         seq[i] = self.vocab.lookup_token(j)
                     # else: do nothing, since r > 0.9 and we keep the same token
                     token_mask[i] = True
                     ab_mask[ab_idx] = True # indicate which antibiotic is masked at this position
                     target_resistances[ab_idx] = self.enc_res[res] # the target resistance of the antibiotic
-            if tokens_masked == 0: # mask at least one token
-                i = np.random.randint(seq_len)
-                ab, res = seq[i].split('_')
-                ab_idx = self.ab_to_idx[ab]
-                r = np.random.rand()
-                if r < 0.8: 
+            else:
+                # randomly select seq_len - num_known_ab antibiotics to mask
+                mask_indices = np.random.choice(seq_len, seq_len - self.num_known_ab, replace=False)
+                for i in mask_indices: # implement ROBERTa masking
+                    ab, res = seq[i].split('_')
+                    ab_idx = self.ab_to_idx[ab]
                     seq[i] = self.MASK
-                elif r < 0.9:
-                    j = np.random.randint(self.vocab_size-self.num_ab*2, self.vocab_size) # select random token, excluding specials
-                    seq[i] = self.vocab.lookup_token(j)
-                # else: do nothing, since r > 0.9 and we keep the same token
-                token_mask[i] = True
-                ab_mask[ab_idx] = True # indicate which antibiotic is masked at this position
-                target_resistances[ab_idx] = self.enc_res[res] # the target resistance of the antibiotic
-                
+                    token_mask[i] = True
+                    ab_mask[ab_idx] = True
+                    target_resistances[ab_idx] = self.enc_res[res]
             masked_sequences.append(seq)
             token_masks.append(token_mask)
             ab_masks.append(ab_mask)
@@ -315,7 +343,6 @@ class PhenotypeDataset(Dataset):
             
             sequences[i][:0] = seq_start
             masked_sequences[i][:0] = seq_start
-            # all_target_indices[i][:0] = [-1]*5 
             
             seq_len = len(sequences[i])
             if seq_len < self.max_seq_len:
@@ -325,9 +352,7 @@ class PhenotypeDataset(Dataset):
             # the antibiotic-specific lists should always be of length num_ab
             pheno_len = len(all_target_resistances[i])
             all_target_resistances[i].extend([-1] * (self.num_ab - pheno_len))
-            # all_target_indices[i].extend([-1] * (self.num_ab - pheno_len)) # -1 indicates padding
             # ab_mask is defined with correct length
-                
         return sequences, masked_sequences, all_target_resistances, token_masks, ab_masks  
     
     
@@ -367,7 +392,10 @@ class PhenotypeMLMDataset(Dataset):
         np.random.seed(self.random_state)
         
         self.ds = ds.reset_index(drop=True) 
-        print(f"Proportion of S/R {self.ds['num_S'].sum()  / self.ds['num_phenotypes'].sum():.1%}/{self.ds['num_R'].sum() / self.ds['num_phenotypes'].sum():.1%}")
+        tot_pheno = self.ds['num_ab'].sum()
+        tot_S = self.ds['num_S'].sum()
+        tot_R = self.ds['num_R'].sum()
+        print(f"Proportion of S/R {tot_S / tot_pheno:.1%}/{tot_R / tot_pheno:.1%}")
         self.num_samples = self.ds.shape[0]
         self.vocab = vocab
         self.vocab_size = len(self.vocab)

@@ -7,7 +7,10 @@ hidden_dim: 256 # for classifier
 num_heads: 4
 num_layers: 6
 dropout_prob: 0.1
-mask_prob: 0.25
+# mask_prob: 0.25
+mask_prob: 
+# num_known_ab: 4
+num_known_ab: 
 batch_size: 32
 val_share: 0.15 # CV split
 separate_phenotypes: False

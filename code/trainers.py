@@ -473,6 +473,9 @@ class BertCLSTrainer(nn.Module):
         self.save_model = config["save_model"] if config["save_model"] else False
         
         self.mask_prob = config["mask_prob"]
+        self.num_known_ab = config["num_known_ab"]
+        assert (self.num_known_ab or self.mask_prob), "Either mask_prob or num_known_ab must be specified"
+        assert not (self.num_known_ab and self.mask_prob), "Masking both by probability and number of known antibiotics is not supported"
         self.criterions = [nn.BCEWithLogitsLoss() for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
@@ -514,7 +517,10 @@ class BertCLSTrainer(nn.Module):
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
-        print(f"Mask probability: {self.mask_prob:.0%}")
+        if self.mask_prob:
+            print(f"Mask probability: {self.mask_prob:.0%}")
+        if self.num_known_ab:
+            print(f"Number of known antibiotics: {self.num_known_ab}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
         print(f"Batch size: {self.batch_size}")
@@ -526,7 +532,10 @@ class BertCLSTrainer(nn.Module):
         
     def __call__(self):      
         self.wandb_run = self._init_wandb()
-        self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
+        if self.mask_prob:
+            self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
+        else:
+            self.val_set.prepare_dataset(num_known_ab=self.num_known_ab)
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
         
         start_time = time.time()
@@ -535,7 +544,10 @@ class BertCLSTrainer(nn.Module):
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
             # Dynamic masking: New mask for training set each epoch
-            self.train_set.prepare_dataset(mask_prob=self.mask_prob)
+            if self.mask_prob:
+                self.train_set.prepare_dataset(mask_prob=self.mask_prob)
+            else:
+                self.train_set.prepare_dataset(num_known_ab=self.num_known_ab)
             self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
             epoch_start_time = time.time()
             loss = self.train(self.current_epoch) # returns loss, averaged over batches
@@ -810,10 +822,12 @@ class BertCLSTrainer(nn.Module):
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
-                "mask_prob": self.mask_prob,
+                "mask_prob/num_known_ab": self.mask_prob if self.mask_prob else self.num_known_ab,
                 "max_seq_len": self.model.max_seq_len,
                 "vocab_size": len(self.train_set.vocab),
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
+                "num_antibiotics": self.num_ab,
+                "antibiotics": self.antibiotics,
                 "train_size": self.train_size,
                 "classifier_type": self.classifier_type,
                 "random_state": self.random_state,

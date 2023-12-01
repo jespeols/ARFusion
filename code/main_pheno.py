@@ -29,6 +29,7 @@ if __name__ == "__main__":
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--mask_prob", type=float)
+    argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--num_heads", type=int)
     argparser.add_argument("--emb_dim", type=int)
@@ -60,6 +61,7 @@ if __name__ == "__main__":
     config['wandb_mode'] = args.wandb_mode if args.wandb_mode else config['wandb_mode']
     config['name'] = args.name if args.name else config['name']
     config['mask_prob'] = args.mask_prob if args.mask_prob else config['mask_prob']
+    config['num_known_ab'] = args.num_known_ab if args.num_known_ab else config['num_known_ab']
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
