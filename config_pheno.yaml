@@ -25,6 +25,11 @@ report_every: 1500
 save_vocab: False    
 save_model: False   
 random_state: 42
+specials:   
+  CLS: '[CLS]'
+  PAD: '[PAD]'
+  MASK: '[MASK]'
+  UNK: '[UNK]'
 data:
   prepare_data: False
   path: 'data/raw/AMR_TEST.csv'
@@ -35,8 +40,93 @@ data:
   pathogens: ['ESCCOL']
   impute_age: False
   impute_gender: False
-specials:   
-  CLS: '[CLS]'
-  PAD: '[PAD]'
-  MASK: '[MASK]'
-  UNK: '[UNK]'
+antibiotics:
+  abbr_to_names:
+    AMC: 'Amoxicillin/Clavulanic acid'
+    AMK: 'Amikacin'
+    AMP: 'Ampicillin'
+    AMX: 'Amoxicillin'
+    CAZ: 'Ceftazidime'
+    CIP: 'Ciprofloxacin'
+    COL: 'Colistin'
+    CRO: 'Ceftriaxone'
+    CTX: 'Cefotaxime'
+    DOR: 'Doripenem'
+    ETP: 'Ertapenem'
+    FEP: 'Cefepime'
+    GEN: 'Gentamicin'
+    IPM: 'Imipenem'
+    LVX: 'Levofloxacin'
+    MEM: 'Meropenem'
+    MFX: 'Moxifloxacin'
+    NAL: 'Nalidixic acid'
+    NET: 'Netilmicin'
+    NOR: 'Norfloxacin'
+    OFX: 'Ofloxacin'
+    PIP: 'Piperacillin'
+    POL: 'Polymyxin B'
+    TGC: 'Tigecycline'
+    TOB: 'Tobramycin'
+    TZP: 'Piperacillin/Tazobactam'  
+  name_to_abbr:
+    Amoxicillin/Clavulanic acid: 'AMC'
+    Amikacin: 'AMK'
+    Ampicillin: 'AMP'
+    Amoxicillin: 'AMX'
+    Ceftazidime: 'CAZ'
+    Ciprofloxacin: 'CIP'
+    Colistin: 'COL'
+    Ceftriaxone: 'CRO'
+    Cefotaxime: 'CTX'
+    Doripenem: 'DOR'
+    Ertapenem: 'ETP'
+    Cefepime: 'FEP'
+    Gentamicin: 'GEN'
+    Imipenem: 'IPM'
+    Levofloxacin: 'LVX'
+    Meropenem: 'MEM'
+    Moxifloxacin: 'MFX'
+    Nalidixic acid: 'NAL'
+    Netilmicin: 'NET'
+    Norfloxacin: 'NOR'
+    Ofloxacin: 'OFX'
+    Piperacillin: 'PIP'
+    Polymyxin B: 'POL'
+    Tigecycline: 'TGC'
+    Tobramycin: 'TOB'
+    Piperacillin/Tazobactam: 'TZP'
+  classes:
+    Aminoglycosides: ['AMK', 'GEN', 'TOB', 'NET']
+    Carbapenems: ['IPM', 'MEM', 'DOR', 'ETP']
+    Cephalosporins: ['CTX', 'CRO', 'CAZ', 'FEP']
+    Fluoroquinolones: ['CIP', 'OFX', 'LVX', 'NOR', 'MFX', 'NAL']
+    Penicillins: ['AMP', 'AMX', 'AMC', 'PIP', 'TZP']
+    Polypeptides: ['COL', 'POL']
+    Tetracyclines: ['TGC']
+  abbr_to_class:
+    AMK: 'Aminoglycosides'
+    GEN: 'Aminoglycosides'
+    TOB: 'Aminoglycosides'
+    NET: 'Aminoglycosides'
+    IPM: 'Carbapenems'
+    MEM: 'Carbapenems'
+    DOR: 'Carbapenems'
+    ETP: 'Carbapenems'
+    CTX: 'Cephalosporins'
+    CRO: 'Cephalosporins'
+    CAZ: 'Cephalosporins'
+    FEP: 'Cephalosporins'
+    CIP: 'Fluoroquinolones'
+    OFX: 'Fluoroquinolones'
+    LVX: 'Fluoroquinolones'
+    NOR: 'Fluoroquinolones'
+    MFX: 'Fluoroquinolones'
+    NAL: 'Fluoroquinolones'
+    AMP: 'Penicillins'
+    AMX: 'Penicillins'
+    AMC: 'Penicillins'
+    PIP: 'Penicillins'
+    TZP: 'Penicillins'
+    COL: 'Polypeptides'
+    POL: 'Polypeptides'
+    TGC: 'Tetracyclines'
