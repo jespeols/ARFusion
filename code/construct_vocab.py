@@ -35,8 +35,10 @@ def construct_geno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: P
     
     vocab = Vocab(token_counter, specials=special_tokens)
     vocab.set_default_index(vocab[UNK])
-    torch.save(vocab, savepath_vocab) if savepath_vocab else None
+    if savepath_vocab:
+        torch.save(vocab, savepath_vocab)
     return vocab
+
 
 def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: Path = None, separate_phenotypes: bool = True):
     token_counter = Counter()
@@ -45,12 +47,12 @@ def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: 
     CLS, PAD, MASK, UNK = specials['CLS'], specials['PAD'], specials['MASK'], specials['UNK']
     special_tokens = specials.values() 
     
-    year = ds['year'].astype('Int16')
-    year_range = range(year.min(), year.max()+1)
+    min_year, max_year = ds['year'].min(), ds['year'].max()
+    year_range = range(min_year, max_year + 1)
     token_counter.update([str(y) for y in year_range]) 
     
-    age = ds['age'].astype('Int16')
-    age_range = range(age.min(), age.max()+1)
+    min_age, max_age = ds['age'].min(), ds['age'].max()
+    age_range = range(min_age, max_age + 1)
     token_counter.update([str(a) for a in age_range])
     
     country = ds['country'].unique().astype('str').tolist()
@@ -71,9 +73,26 @@ def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: 
     torch.save(vocab, savepath_vocab) if savepath_vocab else None
     return vocab, unique_antibiotics
     
-
-if __name__ == '__main__':
-    ds = pd.read_pickle(BASE_DIR / "data" / "TESSy_parsed.pkl")
-    specials = {'CLS': '[CLS]', 'PAD': '[PAD]', 'MASK': '[MASK]', 'UNK': '[UNK]'}
-    vocab = construct_pheno_vocab(ds, specials)
-    print([vocab.lookup_token(i) for i in range(len(vocab))])
+    
+def construct_MM_vocab(df_geno: pd.DataFrame,
+                       df_pheno: pd.DataFrame,
+                       specials: dict,
+                       savepath_vocab: Path = None):
+    token_counter = Counter()
+    ds_geno = df_geno.copy()
+    ds_pheno = df_pheno.copy()
+    
+    CLS, PAD, MASK, UNK = specials['CLS'], specials['PAD'], specials['MASK'], specials['UNK']
+    # SEP = specials['SEP']
+    special_tokens = specials.values()
+    
+    min_year = min(ds_geno['year'].min(), ds_pheno['year'].min())
+    max_year = max(ds_geno['year'].max(), ds_pheno['year'].max())
+    year_range = range(min_year, max_year+1)
+    token_counter.update([str(y) for y in year_range])
+    
+    min_age = min(ds_pheno['age'].min(), ds_pheno['age'].min())
+    max_age = max(ds_pheno['age'].max(), ds_pheno['age'].max())
+    age_range = range(min_age, max_age+1)
+    token_counter.update([str(a) for a in age_range])
+    

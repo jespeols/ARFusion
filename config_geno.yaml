@@ -36,6 +36,36 @@ data:
   gene_count_threshold: 35
   save_path: 
   # save_path: 'data/TESSy.pkl'
+  # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK']
+  exclude_antibiotics: 
+  ab_names_to_abbr:
+    Amoxicillin/Clavulanic acid: 'AMC'
+    Amikacin: 'AMK'
+    Ampicillin: 'AMP'
+    Amoxicillin: 'AMX'
+    Ceftazidime: 'CAZ'
+    Ciprofloxacin: 'CIP'
+    Colistin: 'COL'
+    Ceftriaxone: 'CRO'
+    Cefotaxime: 'CTX'
+    Doripenem: 'DOR'
+    Ertapenem: 'ETP'
+    Cefepime: 'FEP'
+    Gentamicin: 'GEN'
+    Imipenem: 'IPM'
+    Levofloxacin: 'LVX'
+    Meropenem: 'MEM'
+    Moxifloxacin: 'MFX'
+    Nalidixic acid: 'NAL'
+    Netilmicin: 'NET'
+    Norfloxacin: 'NOR'
+    Ofloxacin: 'OFX'
+    Piperacillin: 'PIP'
+    Polymyxin B: 'POL'
+    Tigecycline: 'TGC'
+    Tobramycin: 'TOB'
+    Piperacillin/Tazobactam: 'TZP'
+    
   region_mapping:
     'Afghanistan': 'Asia'
     'Albania': 'Europe'

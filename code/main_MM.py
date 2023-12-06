@@ -76,7 +76,9 @@ if __name__ == "__main__":
     path = BASE_DIR / "data" / "raw" / "NCBI.tsv"
 
     ds = preprocess_NCBI(path, 
-                        include_phenotype=False,
+                        include_phenotype=True,
+                        ab_names_to_abbr=config['data']['ab_names_to_abbr'],
+                        exclude_antibiotics=config['data']['exclude_antibiotics'], 
                         threshold_year=config['data']['threshold_year'],
                         exclude_genotypes=config['data']['exclude_genotypes'],
                         exclude_assembly_variants=config['data']['exclude_assembly_variants'],
@@ -84,6 +86,7 @@ if __name__ == "__main__":
                         gene_count_threshold=config['data']['gene_count_threshold'],
                         save_path=config['data']['save_path'])
     num_samples = ds.shape[0]
+    print(ds[ds['num_phenotypes']>0].head(n=30))
     
     # replace missing values with PAD token -> will not be included in vocabulary or in self-attention
     specials = config['specials']

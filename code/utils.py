@@ -22,8 +22,7 @@ def filter_gene_counts(df, threshold_num):
     num_above = len(indices)
     # drop samples with more than threshold_num genotypes
     df.drop(indices, inplace=True)
-    print(f"Dropping samples with more than {threshold_num} genotypes")
-    print(f"Number of samples with more than {threshold_num} genotypes: {num_above:,}")
+    print(f"Dropping {num_above} isolates with more than {threshold_num} genotypes")
     return df
 
 

@@ -11,38 +11,58 @@ from utils import filter_gene_counts
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 def preprocess_NCBI(path,
-                    base_dir: Path = BASE_DIR,
-                    include_phenotype: bool = False, 
                     save_path = None,
+                    include_phenotype: bool = False, 
+                    ab_names_to_abbr: dict = None,
+                    exclude_antibiotics: list = None,
                     threshold_year: int = None,
                     exclude_genotypes: list = None,
                     exclude_assembly_variants: list = None,
                     exclusion_chars: list = None,
                     gene_count_threshold: int = None,
                     ):
-    os.chdir(base_dir)
-    
+
     NCBI_data = pd.read_csv(path, sep='\t', low_memory=False)
     cols = ['collection_date', 'geo_loc_name', 'AMR_genotypes_core']
     cols += ['AST_phenotypes'] if include_phenotype else []
     df = NCBI_data[cols]
     df = df.rename(columns={'AMR_genotypes_core': 'genotypes'})
+    df = df[df['genotypes'].notnull()] # filter out missing genotypes
     if include_phenotype:
-        df = df.rename(columns={'AST_phenotypes': 'phenotypes'}) 
-    df = df[df['genotypes'].notnull()] # filter missing genotypes
-    
-    #################################### PARSING ####################################
+        print("Parsing phenotypes...")
+        df = df.rename(columns={'AST_phenotypes': 'phenotypes'})
+        indices = df[df['phenotypes'].notnull()].index 
+        df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].str.split(',')
+        df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].apply(lambda x: [p for p in x if p.split("=")[1] in ['R', 'S']])
+        name_to_abbr_lower = {k.casefold(): v for k, v in ab_names_to_abbr.items()}
+        df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].apply(
+            lambda x: [name_to_abbr_lower[p.split("=")[0].casefold()] + "_" + p.split("=")[1] for p in x if 
+                       p.split("=")[0].casefold() in name_to_abbr_lower.keys() and p.split("=")[1] in ['R', 'S']]
+        )
+        if exclude_antibiotics:
+            df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].apply(
+                lambda x: [p for p in x if p.split("_")[0] not in exclude_antibiotics]
+            )
+        df['num_ab'] = df['phenotypes'].apply(lambda x: len(x) if isinstance(x, list) else np.nan)
+        df = df[df['num_ab'] != 0]
+        df['num_ab'] = df['num_ab'].replace(np.nan, 0)
     
     #### geo_loc_name -> country 
-    alternative_nan = ['not determined', 'not collected', 'not provided', 'Not Provided', 'missing',
-                   'OUTPATIENT', 'Not collected', 'Not Collected', 'not available', '-']
-    df.loc[:,'geo_loc_name'] = df['geo_loc_name'].replace(alternative_nan, np.nan) 
+    alternative_nan = ['not determined', 'not collected', 'not provided', 'Not Provided', 'OUTPATIENT',
+                       'missing: control sample', 'Not collected', 'Not Collected', 'not available', '-']
+    df.loc[:,'geo_loc_name'] = df['geo_loc_name'].replace(alternative_nan, np.nan)
     
     # Remove regional information
     df.loc[:,'geo_loc_name'] = df['geo_loc_name'].str.split(',').str[0]
     df.loc[:,'geo_loc_name'] = df['geo_loc_name'].str.split(':').str[0] 
     df = df.rename(columns={'geo_loc_name': 'country'})
-    df.loc[:,'country'] = df['country'].replace('United Kingdom', 'UK')
+    df.loc[:,'country'] = df['country'].replace({'United Kingdom': 'UK', 
+                                                 'United Arab Emirates': 'UAE',
+                                                 'Democratic Republic of the Congo': 'DRC',
+                                                 'Republic of the Congo': 'DRC',
+                                                 'Czechia': 'Czech Republic',
+                                                 'France and Algeria': 'France'})
+    
     
     ##### collection_date -> year
     alternative_nan = ['missing']
@@ -50,15 +70,17 @@ def preprocess_NCBI(path,
     df.loc[:,'collection_date'] = df['collection_date'].str.split('-').str[0]
     df.loc[:,'collection_date'] = df['collection_date'].str.split('/').str[0]
     df = df.rename(columns={'collection_date': 'year'})
-    if threshold_year:
-        indices = df[df['year'].astype(float) <= threshold_year].index
-        df.drop(indices, inplace=True)
     
     #### Parse genotypes
     df['genotypes'] = df['genotypes'].str.split(',')
     print("Parsing genotypes...")
-    print(f"Number of samples before parsing: {df.shape[0]}")
+    print(f"Number of isolates before parsing: {df.shape[0]:,}")
     
+    if threshold_year:
+        indices = df[df['year'].astype(float) < threshold_year].index
+        print(f"Removing {len(indices):,} isolates with year < {threshold_year}")
+        df.drop(indices, inplace=True)
+        
     df['genotypes'] = df['genotypes'].apply(lambda x: list(set([g.strip() for g in x]))) # remove whitespace and duplicates
     if exclude_genotypes: 
         print(f"Removing genotypes: {exclude_genotypes}")
@@ -88,7 +110,9 @@ def preprocess_NCBI(path,
 
     # Exclude cases where there is only one genotype and no other info
     df = df[~((df['num_genotypes'] == 1) & (df['country'].isnull()) & (df['year'].isnull()))]
-    print(f"Number of samples after parsing: {df.shape[0]}")
+    print(f"Number of isolates after parsing: {df.shape[0]:,}")
+    if include_phenotype:
+        print(f"Number of isolates with phenotype info after parsing: {df['num_ab'].notnull().sum():,}")
     
     df.to_pickle(save_path) if save_path else None
     
@@ -176,41 +200,42 @@ def preprocess_TESSy(path,
     df_agg.drop(columns=['antibiotic', 'phenotype'], inplace=True)
     
     df_others = df.drop(columns=['antibiotic', 'phenotype']).groupby('ID').first().reset_index() 
-    df_pheno = df_agg.merge(df_others, on='ID')
+    df = df_agg.merge(df_others, on='ID')
     
     cols_in_order = ['year', 'country', 'gender', 'age', 'phenotypes'] # can change to date or year-month here
     if len(pathogens) > 1:
-        df_pheno = df_pheno[['pathogen'] + cols_in_order]
+        df = df[['pathogen'] + cols_in_order]
     else:
-        df_pheno = df_pheno[cols_in_order]
-    df_pheno['num_ab'] = df_pheno['phenotypes'].apply(lambda x: len(x))
-    df_pheno['num_R'] = df_pheno['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('R')]))
-    df_pheno['num_S'] = df_pheno['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('S')]))
+        df = df[cols_in_order]
+    df['country'] = df['country'].replace('United Kingdom', 'UK')
+    df['num_ab'] = df['phenotypes'].apply(lambda x: len(x))
+    df['num_R'] = df['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('R')]))
+    df['num_S'] = df['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('S')]))
     # make sure there are no samples without phenotypes
-    df_pheno = df_pheno[df_pheno['num_ab'] > 0]
+    df = df[df['num_ab'] > 0]
     
     if impute_age:
-        df_pheno = impute_col(df_pheno, 'age', random_state=42)
+        df = impute_col(df, 'age', random_state=42)
     else:
-        print(f"Dropping {df_pheno['age'].isnull().sum():,} samples with missing value in the 'age' column")
-        df_pheno.dropna(subset=['age'], inplace=True)
+        print(f"Dropping {df['age'].isnull().sum():,} samples with missing value in the 'age' column")
+        df.dropna(subset=['age'], inplace=True)
         
     alternative_nan = ["UNK", "O"]
-    df_pheno['gender'].replace(alternative_nan, np.nan, inplace=True)
+    df['gender'].replace(alternative_nan, np.nan, inplace=True)
     if impute_gender:
-        df_pheno = impute_col(df_pheno, 'gender', random_state=42)
+        df = impute_col(df, 'gender', random_state=42)
     else:
-        print(f"Dropping {df_pheno['gender'].isnull().sum():,} samples with missing value in the 'gender' column")
-        df_pheno.dropna(subset=['gender'], inplace=True)
+        print(f"Dropping {df['gender'].isnull().sum():,} samples with missing value in the 'gender' column")
+        df.dropna(subset=['gender'], inplace=True)
 
     if not any([impute_age, impute_gender]):
-        print(f"Number of samples after dropping samples with missing values: {df_pheno.shape[0]:,}")
+        print(f"Number of samples after dropping samples with missing values: {df.shape[0]:,}")
     else:
-        print(f"Final number of samples: {df_pheno.shape[0]:,}")
+        print(f"Final number of samples: {df.shape[0]:,}")
     
-    df_pheno.reset_index(drop=True, inplace=True)
+    df.reset_index(drop=True, inplace=True)
     if save_path:
         print(f"Saving to {save_path}")
-        df_pheno.to_pickle(save_path)
+        df.to_pickle(save_path)
 
-    return df_pheno
+    return df
