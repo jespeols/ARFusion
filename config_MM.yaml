@@ -29,7 +29,7 @@ specials:
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
-  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET']
+  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK']
   pathogens: ['ESCCOL']
   TESSy:
     prepare_data: False
