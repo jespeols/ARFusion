@@ -30,12 +30,10 @@ class GenotypeDataset(Dataset):
                  vocab: Vocab,
                  specials: dict,
                  max_seq_len: int,
-                 base_dir: Path,
                  include_sequences: bool = False,
                  random_state: int = 42,
                  ):
         
-        os.chdir(base_dir)
         self.random_state = random_state
         np.random.seed(self.random_state)
         
@@ -179,17 +177,33 @@ class PhenotypeDataset(Dataset):
                  antibiotics: list,
                  specials: dict,
                  max_seq_len: int,
-                 base_dir: Path,
+                 num_known_ab: int = None,
+                 mask_prob: float = None,
                  include_sequences: bool = False,
                  random_state: int = 42,
                  ):
         
-        os.chdir(base_dir)
         self.random_state = random_state
         np.random.seed(self.random_state)
         
-        self.ds = ds.reset_index(drop=True) 
-        self.original_ds = deepcopy(self.ds) 
+        self.ds = ds.reset_index(drop=True)
+        assert num_known_ab or mask_prob, "Either num_known_ab or mask_prob must be specified"
+        assert not (num_known_ab and mask_prob), "Only one of num_known_ab or mask_prob can be specified"
+        self.num_known_ab = num_known_ab
+        self.mask_prob = mask_prob
+        if self.num_known_ab:
+            original_num_samples = self.ds.shape[0] 
+            print(f"Preparing dataset for masking with {num_known_ab} known antibiotics")
+            self.ds = self.ds[self.ds['num_ab'] > self.num_known_ab].reset_index(drop=True)
+            num_samples = self.ds.shape[0]
+            print(f"Original number of isolates: {original_num_samples:,}")
+            print(f"Dropping {(original_num_samples - num_samples):,} isolates with less than {self.num_known_ab+1} antibiotics")
+            tot_pheno = self.ds['num_ab'].sum()
+            tot_S = self.ds['num_S'].sum()
+            tot_R = self.ds['num_R'].sum()
+            print(f"Now {num_samples:,} samples left")
+        else:
+            print(f"Preparing dataset for masking with mask_prob = {self.mask_prob}")
         tot_pheno = self.ds['num_ab'].sum()
         tot_S = self.ds['num_S'].sum()
         tot_R = self.ds['num_R'].sum()
@@ -237,24 +251,7 @@ class PhenotypeDataset(Dataset):
             return input, target_res, token_mask, ab_mask, attn_mask
 
        
-    def prepare_dataset(self,  mask_prob: float = None, num_known_ab: int = None): # will be called at the start of each epoch (dynamic masking)
-        ## IT IS PROBABLY MORE EFFICIENT TO DO THIS IN THE PREPROCESSING STEP, GIVEN MASKING METHOD IS CONSTANT ACROSS EPOCHS
-        if num_known_ab:
-            print(f"Preparing dataset for masking with {num_known_ab} known antibiotics")
-            self.num_known_ab = num_known_ab
-            self.mask_prob = None
-            self.ds = self.original_ds[self.original_ds['num_ab'] > self.num_known_ab].reset_index(drop=True)
-            self.num_samples = self.ds.shape[0]
-            print(f"Dropping {self.original_ds.shape[0] - self.num_samples} samples with less than {self.num_known_ab+1} antibiotics")
-            tot_pheno = self.ds['num_ab'].sum()
-            tot_S = self.ds['num_S'].sum()
-            tot_R = self.ds['num_R'].sum()
-            print(f"Now {self.num_samples} samples left, S/R proportion: {tot_S/tot_pheno:.1%}/{tot_R / tot_pheno:.1%}")
-        else:
-            print(f"Preparing dataset for masking with mask_prob = {mask_prob}")
-            self.mask_prob = mask_prob
-            self.num_known_ab = None
-            
+    def prepare_dataset(self): # will be called at the start of each epoch (dynamic masking)
         sequences, masked_sequences, target_resistances, token_masks, ab_masks = self._construct_masked_sequences()
         indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in masked_sequences]
         
@@ -382,12 +379,10 @@ class PhenotypeMLMDataset(Dataset):
                  vocab: Vocab,
                  specials: dict,
                  max_seq_len: int,
-                 base_dir: Path,
                  include_sequences: bool = False,
                  random_state: int = 42,
                  ):
         
-        os.chdir(base_dir)
         self.random_state = random_state
         np.random.seed(self.random_state)
         

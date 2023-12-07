@@ -52,7 +52,7 @@ def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: 
     token_counter.update([str(y) for y in year_range]) 
     
     min_age, max_age = ds['age'].min(), ds['age'].max()
-    age_range = range(min_age, max_age + 1)
+    age_range = range(int(min_age), int(max_age + 1))
     token_counter.update([str(a) for a in age_range])
     
     country = ds['country'].unique().astype('str').tolist()

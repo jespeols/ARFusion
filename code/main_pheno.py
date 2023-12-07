@@ -41,6 +41,7 @@ if __name__ == "__main__":
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--classifier_type", type=str)
     argparser.add_argument("--separate_phenotypes", type=bool)
+    argparser.add_argument("--prepare_data", type=bool)
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -66,7 +67,6 @@ if __name__ == "__main__":
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
     config['ff_dim'] = args.ff_dim if args.ff_dim else config['ff_dim']
-    # config['ff_dim'] = config['emb_dim']        
     config['classifier_type'] = args.classifier_type if args.classifier_type else config['classifier_type']
     config['hidden_dim'] = args.hidden_dim if args.hidden_dim else config['hidden_dim']
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
@@ -74,6 +74,9 @@ if __name__ == "__main__":
     config['lr'] = args.lr if args.lr else config['lr']
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['separate_phenotypes'] = args.separate_phenotypes if args.separate_phenotypes else config['separate_phenotypes']
+    config['data']['prepare_data'] = args.prepare_data if args.prepare_data else config['data']['prepare_data']
+    print(config['num_known_ab'])
+    print(args.num_known_ab)
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
     if config['name']:
@@ -87,7 +90,7 @@ if __name__ == "__main__":
     if config['data']['prepare_data']:
         print("\nPreprocessing dataset...")
         start = time.time()
-        ds = preprocess_TESSy(path=config['data']['path'],
+        ds = preprocess_TESSy(path=config['data']['raw_path'],
                               pathogens=config['data']['pathogens'],
                               save_path=config['data']['save_path'],
                               exclude_antibiotics=config['data']['exclude_antibiotics'],
@@ -131,8 +134,8 @@ if __name__ == "__main__":
     if config['classifier_type'] == "MLM":
         assert config['separate_phenotypes'] == True, "Separate phenotypes must be used for MLM classifier"
         
-        train_set = PhenotypeMLMDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-        val_set = PhenotypeMLMDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+        train_set = PhenotypeMLMDataset(ds.iloc[train_indices], vocab, specials, max_seq_len)
+        val_set = PhenotypeMLMDataset(ds.iloc[val_indices], vocab, specials, max_seq_len)
 
         bert = BERT(config, vocab_size, max_seq_len).to(device)
         trainer = BertMLMTrainer(
@@ -148,8 +151,10 @@ if __name__ == "__main__":
     elif config['classifier_type'] == "CLS":
         assert config['separate_phenotypes'] == False, "Separate phenotypes not supported for CLS classifier"
         
-        train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, antibiotics, specials, max_seq_len, base_dir=BASE_DIR)
-        val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, antibiotics, specials, max_seq_len, base_dir=BASE_DIR)
+        train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, antibiotics, specials, max_seq_len,
+                                     num_known_ab=config['num_known_ab'], mask_prob=config['mask_prob'])
+        val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, antibiotics, specials, max_seq_len,
+                                   num_known_ab=config['num_known_ab'], mask_prob=config['mask_prob'])
         bert = BERT(config, vocab_size, max_seq_len, num_ab=len(antibiotics)).to(device)
         trainer = BertCLSTrainer(
             config=config,

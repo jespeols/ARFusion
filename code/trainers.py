@@ -472,10 +472,9 @@ class BertCLSTrainer(nn.Module):
         self.patience = config["early_stopping_patience"]
         self.save_model = config["save_model"] if config["save_model"] else False
         
-        self.mask_prob = config["mask_prob"]
-        self.num_known_ab = config["num_known_ab"]
-        assert (self.num_known_ab or self.mask_prob), "Either mask_prob or num_known_ab must be specified"
-        assert not (self.num_known_ab and self.mask_prob), "Masking both by probability and number of known antibiotics is not supported"
+        self.mask_prob = self.train_set.mask_prob
+        self.num_known_ab = self.train_set.num_known_ab
+        
         self.criterions = [nn.BCEWithLogitsLoss() for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
@@ -532,10 +531,7 @@ class BertCLSTrainer(nn.Module):
         
     def __call__(self):      
         self.wandb_run = self._init_wandb()
-        if self.mask_prob:
-            self.val_set.prepare_dataset(mask_prob=self.mask_prob) 
-        else:
-            self.val_set.prepare_dataset(num_known_ab=self.num_known_ab)
+        self.val_set.prepare_dataset()
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
         
         start_time = time.time()
@@ -544,10 +540,7 @@ class BertCLSTrainer(nn.Module):
         for self.current_epoch in range(self.current_epoch, self.epochs):
             self.model.train()
             # Dynamic masking: New mask for training set each epoch
-            if self.mask_prob:
-                self.train_set.prepare_dataset(mask_prob=self.mask_prob)
-            else:
-                self.train_set.prepare_dataset(num_known_ab=self.num_known_ab)
+            self.train_set.prepare_dataset()
             self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
             epoch_start_time = time.time()
             loss = self.train(self.current_epoch) # returns loss, averaged over batches
