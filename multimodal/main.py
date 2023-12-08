@@ -1,10 +1,15 @@
 # %%
-import os
 import torch
 import yaml
 import wandb
 import argparse
 import pandas as pd
+import os
+import sys
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR))
+os.chdir(BASE_DIR)
 
 from datetime import datetime
 from pathlib import Path

@@ -1,18 +1,24 @@
 # %%
-import os
 import torch
 import yaml
 import wandb
 import argparse
 import pandas as pd
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR))
+os.chdir(BASE_DIR)
 
 from datetime import datetime
 from pathlib import Path
 
 # user-defined modules
-from models import BERT
-from datasets import GenotypeDataset
-from trainers import BertMLMTrainer
+from geno.models import BERT
+from geno.datasets import GenotypeDataset
+from geno.trainers import BertMLMTrainer
 
 # user-defined functions
 from construct_vocab import construct_geno_vocab
@@ -20,8 +26,6 @@ from utils import get_split_indices
 from data_preprocessing import preprocess_NCBI
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()

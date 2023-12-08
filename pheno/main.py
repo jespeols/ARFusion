@@ -1,19 +1,22 @@
 # %%
-import os
 import torch
 import yaml
 import wandb
 import argparse
 import pandas as pd
 import time
-
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR))
+os.chdir(BASE_DIR)
 
 # user-defined modules
-from models import BERT
-from datasets import PhenotypeMLMDataset, PhenotypeDataset
-from trainers import BertMLMTrainer, BertCLSTrainer
+from pheno.models import BERT
+from pheno.datasets import PhenotypeMLMDataset, PhenotypeDataset
+from pheno.trainers import BertMLMTrainer, BertCLSTrainer
 
 # user-defined functions
 from construct_vocab import construct_pheno_vocab
@@ -21,8 +24,6 @@ from utils import get_split_indices
 from data_preprocessing import preprocess_TESSy
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()

@@ -194,6 +194,14 @@ data:
       COL: 'Polypeptides'
       POL: 'Polypeptides'
       TGC: 'Tetracyclines'
+    class_encoding:
+      Aminoglycosides: 0
+      Carbapenems: 1
+      Cephalosporins: 2
+      Fluoroquinolones: 3
+      Penicillins: 4
+      Polypeptides: 5
+      Tetracyclines: 6
   region_mapping:
     'Afghanistan': 'Asia'
     'Albania': 'Europe'

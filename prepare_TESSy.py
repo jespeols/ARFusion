@@ -5,7 +5,7 @@ from pathlib import Path
 # user-defined functions
 from data_preprocessing import preprocess_TESSy
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent
 
 if __name__ == '__main__':
     config_path = BASE_DIR / "config_pheno.yaml"
