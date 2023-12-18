@@ -52,7 +52,7 @@ if __name__ == "__main__":
     else:
         print("Using CPU")  
     
-    assert os.getcwd() == BASE_DIR, "Current working directory must be the base directory of the project"
+    assert Path(os.getcwd()) == BASE_DIR, "Current working directory must be the base directory of the project"
     print(f"\nCurrent working directory: {os.getcwd()}")
     print("Loading config file...")
     
@@ -188,17 +188,17 @@ if __name__ == "__main__":
     )
     trainer.print_model_summary()
     trainer.print_trainer_summary()
-    results = trainer()    
-    print("Finished training!")
-    print("Exporting results...") 
-    export_results(results, results_dir / "ft_results.pkl")
-    best_epoch = results['best_epoch']
-    results['val_ab_stats'][best_epoch].to_csv(os.path.join(results_dir, "ab_stats.csv"), index=False)
-    print("ab_stats")
-    print(results['val_ab_stats'][best_epoch])
-    results['val_iso_stats_pheno'][best_epoch].to_csv(os.path.join(results_dir, "iso_stats_pheno.csv"), index=False)
-    print("iso_stats_pheno")
-    print(results['val_iso_stats_pheno'][best_epoch].head(n=10))
-    results['val_iso_stats_geno'][best_epoch].to_csv(os.path.join(results_dir, "iso_stats_geno.csv"), index=False)
-    print("iso_stats_geno")
-    print(results['val_iso_stats_geno'][best_epoch].head(n=10))
+    # results = trainer()    
+    # print("Finished training!")
+    # print("Exporting results...") 
+    # export_results(results, results_dir / "ft_results.pkl")
+    # best_epoch = results['best_epoch']
+    # results['val_ab_stats'][best_epoch].to_csv(os.path.join(results_dir, "ab_stats.csv"), index=False)
+    # print("ab_stats")
+    # print(results['val_ab_stats'][best_epoch])
+    # results['val_iso_stats_pheno'][best_epoch].to_csv(os.path.join(results_dir, "iso_stats_pheno.csv"), index=False)
+    # print("iso_stats_pheno")
+    # print(results['val_iso_stats_pheno'][best_epoch].head(n=10))
+    # results['val_iso_stats_geno'][best_epoch].to_csv(os.path.join(results_dir, "iso_stats_geno.csv"), index=False)
+    # print("iso_stats_geno")
+    # print(results['val_iso_stats_geno'][best_epoch].head(n=10))

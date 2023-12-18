@@ -6,5 +6,5 @@ runs
 data/raw
 data/NCBI_genotype_parsed.pkl
 ARFusion.def
-data/TESSy_parsed.pkl
-data/TESSy.pkl
+data/*.pkl
+*.pt
