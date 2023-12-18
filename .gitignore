@@ -1,5 +1,5 @@
-code/__pycache__
-logs
+*/__pycache__
+__pycache__
 results
 wandb
 runs

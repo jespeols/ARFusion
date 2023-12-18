@@ -1,7 +1,7 @@
 import numpy as np
-import pandas as pd
+import pickle
 
-def get_split_indices(size_to_split, val_share, random_state:int=42):
+def get_split_indices(size_to_split, val_share, random_state: int = 42):
     indices = np.arange(size_to_split)
     np.random.seed(random_state)
     np.random.shuffle(indices)
@@ -14,6 +14,22 @@ def get_split_indices(size_to_split, val_share, random_state:int=42):
     val_indices = indices[train_size:]
     
     return train_indices, val_indices
+
+
+def get_multimodal_split_indices(sizes: list[int], val_share, random_state:int=42):
+    train_indices = []
+    val_indices = []
+    np.random.seed(random_state)
+    for size in sizes:
+        assert isinstance(size, int), "sizes must be a list of integers"
+        indices = np.arange(size)
+        np.random.shuffle(indices)
+        train_size = int((1 - val_share) * size)
+        train_indices.append(indices[:train_size])
+        val_indices.append(indices[train_size:])
+    
+    return train_indices, val_indices
+    
 
 
 def filter_gene_counts(df, threshold_num):
@@ -34,4 +50,9 @@ def impute_col(df, col, random_state=42):
     df.loc[indices, col] = sample
     
     return df
-    
+
+
+def export_results(results, savepath):
+    with open(savepath, 'wb') as f:
+        pickle.dump(results, f)
+    print(f"Results saved to {savepath}")

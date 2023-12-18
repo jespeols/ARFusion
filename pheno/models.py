@@ -7,15 +7,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class JointEmbedding(nn.Module):
     
-    def __init__(self, config, vocab_size, max_seq_len):
+    def __init__(self, config, vocab_size, max_seq_len, pad_idx):
         super(JointEmbedding, self).__init__()
         
-        self.emb_dim = config['emb_dim']
         self.vocab_size = vocab_size
         self.max_seq_len = max_seq_len
+        self.pad_idx = pad_idx
+        self.emb_dim = config['emb_dim']
         self.dropout_prob = config['dropout_prob']
         
-        self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
+        self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim, padding_idx=self.pad_idx) 
         # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
         self.position_emb = nn.Embedding(self.max_seq_len, self.emb_dim) 
         
@@ -128,12 +129,13 @@ class EncoderLayer(nn.Module):
     
 class BERT(nn.Module):
     
-    def __init__(self, config, vocab_size: int, max_seq_len: int, num_ab: int = None):
+    def __init__(self, config, vocab_size: int, max_seq_len: int, num_ab: int, pad_idx: int = 1):
         super(BERT, self).__init__()
                 
         self.vocab_size = vocab_size
         self.num_ab = num_ab
         self.max_seq_len = max_seq_len
+        self.pad_idx = pad_idx
                 
         # parameters
         self.emb_dim = config['emb_dim']
@@ -143,33 +145,22 @@ class BERT(nn.Module):
         self.dropout_prob = config['dropout_prob']
         
         # embedding and encoder blocks
-        self.embedding = JointEmbedding(config, self.vocab_size, self.max_seq_len) 
+        self.embedding = JointEmbedding(config, self.vocab_size, self.max_seq_len, self.pad_idx) 
         self.encoder = nn.ModuleList([EncoderLayer(config) for _ in range(self.num_layers)])
-        
-        # token-prediction 
-        self.token_prediction_layer = nn.Linear(self.emb_dim, self.vocab_size) # MLM task
-        self.softmax = nn.LogSoftmax(dim=-1) # log softmax improves numerical stability, we use NLLLoss later
         
         # classifier
         self.hidden_dim = config['hidden_dim'] # for the classification layer
-        if self.num_ab:
-            self.classification_layer = [AbPredictor(self.emb_dim, self.hidden_dim).to(device) for _ in range(num_ab)] 
-        else:
-            self.classification_layer = None # can be set later
+        self.classification_layer = [AbPredictor(self.emb_dim, self.hidden_dim).to(device) for _ in range(num_ab)] 
         
-    def forward(self, input_tensor: torch.Tensor, attn_mask:torch.Tensor = None): # None if we are not doing MLM
+    def forward(self, input_tensor: torch.Tensor, attn_mask:torch.Tensor):
         embedded = self.embedding(input_tensor)
         for layer in self.encoder:
             embedded = layer(embedded, attn_mask)
         encoded = embedded # ouput of the BERT Encoder
         
-        if self.classification_layer: # ASSUMES MLM AND CLASSIFICATION ARE NOT DONE AT THE SAME TIME
-            cls_token = encoded[:, 0, :] # (batch_size, emb_dim)
-            predictions = torch.cat([net(cls_token) for net in self.classification_layer], dim=1) # (batch_size, num_ab)
-            return predictions
-        else:
-            token_prediction = self.token_prediction_layer(encoded) # (batch_size, seq_len, vocab_size)
-            return self.softmax(token_prediction)
+        cls_token = encoded[:, 0, :] # (batch_size, emb_dim)
+        predictions = torch.cat([net(cls_token) for net in self.classification_layer], dim=1) # (batch_size, num_ab)
+        return predictions
 
 
 class AbPredictor(nn.Module): # predicts resistance or susceptibility for an antibiotic

@@ -3,7 +3,6 @@ project_name: Genotype-MLM
 name: baseline
 emb_dim: 256
 ff_dim: 256
-classifier_type: 'MLM' # only MLM supported for genotype model
 hidden_dim:  # for classifier, not used for MLM
 num_heads: 4
 num_layers: 6

@@ -7,15 +7,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class JointEmbedding(nn.Module):
     
-    def __init__(self, config, vocab_size, max_seq_len):
+    def __init__(self, config: dict, vocab_size: int, max_seq_len: int, pad_idx: int):
         super(JointEmbedding, self).__init__()
         
-        self.emb_dim = config['emb_dim']
         self.vocab_size = vocab_size
         self.max_seq_len = max_seq_len
+        self.pad_idx = pad_idx
+        self.emb_dim = config['emb_dim']
         self.dropout_prob = config['dropout_prob']
         
-        self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
+        self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim, padding_idx=self.pad_idx) 
         # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
         self.position_emb = nn.Embedding(self.max_seq_len, self.emb_dim) 
         
@@ -23,21 +24,12 @@ class JointEmbedding(nn.Module):
         self.layer_norm = nn.LayerNorm(self.emb_dim)
         
     def forward(self, input_tensor):
-        # input_tensor: (batch_size, seq_len)
-        # token_type_ids: (batch_size, seq_len)
-        # position_ids: (batch_size, seq_len)
         seq_len = input_tensor.size(-1)
         
-        # token_type not relevant for unimodal data
-        # token_type_tensor = torch.zeros_like(input_tensor).to(device) # (batch_size, seq_len)
-        # token_type_tensor[:, (seq_len//2 + 1):] = 1 # here, we assume that the sentence is split in half
-        
         token_emb = self.token_emb(input_tensor) # (batch_size, seq_len, emb_dim)
-        # token_type_emb = self.token_type_emb(token_type_tensor) # (batch_size, seq_len, emb_dim)
         pos_tensor = torch.arange(seq_len, dtype=torch.long, device=device).expand_as(input_tensor) # (batch_size, seq_len)
         position_emb = self.position_emb(pos_tensor) # (batch_size, seq_len, emb_dim)
         
-        # emb = token_emb + token_type_emb + position_emb
         emb = token_emb + position_emb
         emb = self.layer_norm(emb) 
         emb = self.dropout(emb)
@@ -128,12 +120,12 @@ class EncoderLayer(nn.Module):
     
 class BERT(nn.Module):
     
-    def __init__(self, config, vocab_size: int, max_seq_len: int, num_ab: int = None):
+    def __init__(self, config, vocab_size: int, max_seq_len: int, pad_idx: int = 1):
         super(BERT, self).__init__()
                 
         self.vocab_size = vocab_size
-        self.num_ab = num_ab
         self.max_seq_len = max_seq_len
+        self.pad_idx = pad_idx
                 
         # parameters
         self.emb_dim = config['emb_dim']
@@ -143,33 +135,19 @@ class BERT(nn.Module):
         self.dropout_prob = config['dropout_prob']
         
         # embedding and encoder blocks
-        self.embedding = JointEmbedding(config, self.vocab_size, self.max_seq_len) 
+        self.embedding = JointEmbedding(config, self.vocab_size, self.max_seq_len, self.pad_idx) 
         self.encoder = nn.ModuleList([EncoderLayer(config) for _ in range(self.num_layers)])
         
-        # token-prediction 
         self.token_prediction_layer = nn.Linear(self.emb_dim, self.vocab_size) # MLM task
-        self.softmax = nn.LogSoftmax(dim=-1) # log softmax improves numerical stability, we use NLLLoss later
         
-        # classifier
-        self.hidden_dim = config['hidden_dim'] # for the classification layer
-        if self.num_ab:
-            self.classification_layer = [AbPredictor(self.emb_dim, self.hidden_dim).to(device) for _ in range(num_ab)] 
-        else:
-            self.classification_layer = None # can be set later
-        
-    def forward(self, input_tensor: torch.Tensor, attn_mask:torch.Tensor = None): # None if we are not doing MLM
+    def forward(self, input_tensor: torch.Tensor, attn_mask:torch.Tensor): # None if we are not doing MLM
         embedded = self.embedding(input_tensor)
         for layer in self.encoder:
             embedded = layer(embedded, attn_mask)
         encoded = embedded # ouput of the BERT Encoder
-        
-        if self.classification_layer: # ASSUMES MLM AND CLASSIFICATION ARE NOT DONE AT THE SAME TIME
-            cls_token = encoded[:, 0, :] # (batch_size, emb_dim)
-            predictions = torch.cat([net(cls_token) for net in self.classification_layer], dim=1) # (batch_size, num_ab)
-            return predictions
-        else:
-            token_prediction = self.token_prediction_layer(encoded) # (batch_size, seq_len, vocab_size)
-            return self.softmax(token_prediction)
+
+        token_prediction = self.token_prediction_layer(encoded) # (batch_size, seq_len, vocab_size)
+        return token_prediction
 
 
 class AbPredictor(nn.Module): # predicts resistance or susceptibility for an antibiotic
@@ -189,52 +167,3 @@ class AbPredictor(nn.Module): # predicts resistance or susceptibility for an ant
     def forward(self, X):
         # X is the CLS token of the BERT model
         return self.classifier(X)
-
-            
-################################################################################################################         
-################################################################################################################
-
-class PhenoEmbedding(nn.Module): 
-# uses a normal position embedding, an embedding for the antibiotic, and an embedding for the resistance (binary)
-    def __init__(self, config, vocab_size):
-        super(PhenoEmbedding, self).__init__()
-        
-        self.emb_dim = config['emb_dim']
-        self.vocab_size = vocab_size
-        self.dropout_prob = config['dropout_prob']
-        
-        self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
-        self.res_emb = nn.Embedding(2, self.emb_dim) # 2 possible values for resistance: 0 or 1
-        # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
-        self.position_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
-        
-        self.dropout = nn.Dropout(self.dropout_prob)
-        self.layer_norm = nn.LayerNorm(self.emb_dim)
-        
-    def forward(self, input_tensor, res_mask):
-        # input_tensor: (batch_size, seq_len)
-        # token_type_ids: (batch_size, seq_len)
-        # position_ids: (batch_size, seq_len)
-        # res_mask: (batch_size, seq_len) - determines resistance value for each token
-        
-        seq_len = input_tensor.size(-1)
-        
-        pos_tensor = self.numeric_position(seq_len, input_tensor)
-        # token_type not relevant for unimodal data
-        # token_type_tensor = torch.zeros_like(input_tensor).to(device) # (batch_size, seq_len)
-        # token_type_tensor[:, (seq_len//2 + 1):] = 1 # here, we assume that the sentence is split in half
-        
-        token_emb = self.token_emb(input_tensor) # (batch_size, seq_len, emb_dim)
-        # token_type_emb = self.token_type_emb(token_type_tensor) # (batch_size, seq_len, emb_dim)
-        position_emb = self.position_emb(pos_tensor) # (batch_size, seq_len, emb_dim)
-        
-        # emb = token_emb + token_type_emb + position_emb
-        emb = token_emb + position_emb
-        emb = self.dropout(emb)
-        emb = self.layer_norm(emb) 
-        return emb
-                
-    def numeric_position(self, dim, input_tensor): # input_tensor: (batch_size, seq_len)
-        # dim is the length of the sequence
-        position_ids = torch.arange(dim, dtype=torch.long, device=device) # create tensor of [0, 1, 2, ..., dim-1]
-        return position_ids.expand_as(input_tensor) # expand to (batch_size, seq_len)

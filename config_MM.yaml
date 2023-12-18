@@ -1,36 +1,73 @@
+#################### PRE-TRAINING ####################
 wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
 project_name: Multimodal-MLM
-name: baseline
+name: baseline_pt
 emb_dim: 256
 ff_dim: 256
 hidden_dim: 256 # for classifier
 num_heads: 4
 num_layers: 6
 dropout_prob: 0.1
-mask_prob: 0.15
+mask_prob_geno: 0.25
+mask_prob_pheno: 0.25
 num_known_ab: 4
-batch_size: 32
+batch_size: 64
 val_share: 0.15 # CV split
 max_seq_len: 'auto'
-epochs: 100
+epochs: 20
 early_stopping_patience: 3
-lr: 0.00005 
+lr: 0.0001 
 weight_decay: 0.01
-print_progress_every: 1000
-report_every: 500
+print_progress_every: 1500
+report_every: 1000
 savepath_vocab: 'MM_vocab.pt'
-save_model: False
+save_model: True
 random_state: 42
+
+#################### FINE-TUNING ####################
+fine_tune:
+  wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
+  project_name: Multimodal-MLM
+  name: baseline_ft
+  ds_path: 'data/NCBI.pkl'
+  model_path: 'results/baseline_pt/model_state.pt'
+  batch_size: 16
+  val_share: 0.15
+  epochs: 100
+  mask_prob: 0.25
+  num_known_ab: 
+  lr: 0.00001
+  weight_decay: 0.01
+  early_stopping_patience: 3
+  print_progress_every: 1000
+  report_every: 500
+  save_model: False
+  random_state: 42
+
+#################### DATA & MISC. ####################
 specials:   
   CLS: '[CLS]'
   PAD: '[PAD]'
   MASK: '[MASK]'
-  SEP: '[SEP]'
+  # SEP: '[SEP]'
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
   exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK']
   pathogens: ['ESCCOL']
+  NCBI:
+    prepare_data: True
+    raw_path: 'data/raw/NCBI.tsv'
+    save_path: 'data/NCBI.pkl'
+    load_path: 'data/NCBI.pkl'
+    threshold_year: 1970
+    include_phenotype: True
+    exclude_genotypes:
+    # exclude_assembly_variants: 
+    exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
+    exclusion_chars: 
+    # exclusion_chars: ['-']  
+    gene_count_threshold: 35
   TESSy:
     prepare_data: False
     raw_path: 'data/raw/AMR_TEST.csv'
@@ -94,16 +131,6 @@ data:
       'UK': 'UK'
       'UZ': 'Uzbekistan'
       'XK': 'Kosovo'
-  NCBI:
-    raw_path: 'data/raw/NCBI.tsv'
-    threshold_year: 1970
-    include_phenotype: True
-    exclude_genotypes:
-    # exclude_assembly_variants: 
-    exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
-    exclusion_chars: 
-    # exclusion_chars: ['-']  
-    gene_count_threshold: 35
   antibiotics:
     abbr_to_names:
       AMC: 'Amoxicillin/Clavulanic acid'

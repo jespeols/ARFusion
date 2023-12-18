@@ -1,7 +1,6 @@
 # %%
 import torch
 import yaml
-import wandb
 import argparse
 import pandas as pd
 import os
@@ -47,9 +46,8 @@ if __name__ == "__main__":
     else:
         print("Using CPU")  
         
-    print(f"\nCurrent working directory: {BASE_DIR}")
+    print(f"\nCurrent working directory: {os.getcwd()}")
     print("Loading config file...")
-    
     config_path = BASE_DIR / "config_geno.yaml"
     with open(config_path, "r") as config_file:
         config = yaml.safe_load(config_file)
@@ -91,11 +89,12 @@ if __name__ == "__main__":
     
     # replace missing values with PAD token -> will not be included in vocabulary or in self-attention
     specials = config['specials']
-    PAD = specials['PAD']
-    ds.fillna(PAD, inplace=True)
+    pad_token = specials['PAD']
+    ds.fillna(pad_token, inplace=True)
     # replace missing values with [NA] token -> will be included in vocabulary and in self-attention
     # NA = '[NA]' # not available, missing values
     # ds.fillna(NA, inplace=True)
+    pad_idx = list(specials.values()).index(pad_token)
     
     print("Constructing vocabulary...")
     savepath_vocab = os.path.join(results_dir, "vocab.pt") if config['save_vocab'] else None
@@ -104,18 +103,17 @@ if __name__ == "__main__":
     
     if config['max_seq_len'] == 'auto':
         max_genotypes_len = max([ds['num_genotypes'].iloc[i] for i in range(num_samples) if  
-                                 ds['year'].iloc[i] != PAD and ds['country'].iloc[i] != PAD])
+                                 ds['year'].iloc[i] != pad_token and ds['country'].iloc[i] != pad_token])
         max_seq_len = max_genotypes_len + 2 + 1 # +2 for year & country, +1 for CLS token
     else:
         max_seq_len = config['max_seq_len']
     
     train_indices, val_indices = get_split_indices(num_samples, config['val_share'], random_state=config['random_state'])
-    train_set = GenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
-    val_set = GenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, base_dir=BASE_DIR)
+    train_set = GenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len)
+    val_set = GenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len)
     
-    assert config['classifier_type'] == "MLM", "classifier_type must be 'MLM' for genotype model"
     print("Loading model...")
-    bert = BERT(config, vocab_size, max_seq_len).to(device)
+    bert = BERT(config, vocab_size, max_seq_len, pad_idx=pad_idx).to(device)
     trainer = BertMLMTrainer(
         config=config,
         model=bert,

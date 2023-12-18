@@ -13,8 +13,6 @@ mask_prob:
 num_known_ab: 
 batch_size: 32
 val_share: 0.15 # CV split
-separate_phenotypes: False
-classifier_type: 'CLS' # 'CLS' or 'MLM'
 max_seq_len: 'auto'
 epochs: 30
 early_stopping_patience: 3

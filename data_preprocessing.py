@@ -8,7 +8,8 @@ from pathlib import Path
 # user-defined functions
 from utils import filter_gene_counts
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent
+os.chdir(BASE_DIR)
 
 def preprocess_NCBI(path,
                     save_path = None,
@@ -22,7 +23,7 @@ def preprocess_NCBI(path,
                     gene_count_threshold: int = None,
                     ):
 
-    NCBI_data = pd.read_csv(path, sep='\t', low_memory=False)
+    NCBI_data = pd.read_csv(path, sep='\t', low_memory=False) 
     cols = ['collection_date', 'geo_loc_name', 'AMR_genotypes_core']
     cols += ['AST_phenotypes'] if include_phenotype else []
     df = NCBI_data[cols]
@@ -56,14 +57,10 @@ def preprocess_NCBI(path,
     df.loc[:,'geo_loc_name'] = df['geo_loc_name'].str.split(',').str[0]
     df.loc[:,'geo_loc_name'] = df['geo_loc_name'].str.split(':').str[0] 
     df = df.rename(columns={'geo_loc_name': 'country'})
-    df.loc[:,'country'] = df['country'].replace({'United Kingdom': 'UK', 
-                                                 'United Arab Emirates': 'UAE',
-                                                 'Democratic Republic of the Congo': 'DRC',
-                                                 'Republic of the Congo': 'DRC',
-                                                 'Czechia': 'Czech Republic',
-                                                 'France and Algeria': 'France'})
-    
-    
+    df.loc[:,'country'] = df['country'].replace(
+        {'United Kingdom': 'UK', 'United Arab Emirates': 'UAE', 'Democratic Republic of the Congo': 'DRC',
+         'Republic of the Congo': 'DRC', 'Czechia': 'Czech Republic', 'France and Algeria': 'France'})
+        
     ##### collection_date -> year
     alternative_nan = ['missing']
     df.loc[:,'collection_date'] = df['collection_date'].replace(alternative_nan, np.nan)
@@ -112,7 +109,7 @@ def preprocess_NCBI(path,
     df = df[~((df['num_genotypes'] == 1) & (df['country'].isnull()) & (df['year'].isnull()))]
     print(f"Number of isolates after parsing: {df.shape[0]:,}")
     if include_phenotype:
-        print(f"Number of isolates with phenotype info after parsing: {df['num_ab'].notnull().sum():,}")
+        print(f"Number of isolates with phenotype info after parsing: {df[df['num_ab'] > 0].shape[0]:,}")
     
     df.to_pickle(save_path) if save_path else None
     
@@ -125,13 +122,11 @@ from utils import impute_col
 
 def preprocess_TESSy(path,
                      pathogens: list,
-                     base_dir: Path = BASE_DIR, 
                      save_path = None,
                      exclude_antibiotics: list = None,
                      impute_gender: bool = False,
                      impute_age: bool = False,
                      ):
-    os.chdir(base_dir)
     
     print(f"Reading in TESSy data from '{path}'...")
     TESSy_data = pd.read_csv(path, low_memory=False)
