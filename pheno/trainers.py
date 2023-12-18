@@ -35,7 +35,6 @@ class BertCLSTrainer(nn.Module):
         self.model = model
         self.project_name = config["project_name"]
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.classifier_type = config['classifier_type']
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics) 
         
@@ -73,7 +72,6 @@ class BertCLSTrainer(nn.Module):
         print("Model summary:")
         print("="*self._splitter_size)
         print(f"Embedding dim: {self.model.emb_dim}")
-        print(f"Classifier type: {self.classifier_type}")
         print(f"Feed-forward dim: {self.model.ff_dim}")
         print(f"Hidden dim: {self.model.hidden_dim}")
         print(f"Number of heads: {self.model.num_heads}")
@@ -383,10 +381,8 @@ class BertCLSTrainer(nn.Module):
             name=self.wandb_name, # name of the run
             
             config={
-                # "dataset": "NCBI",
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
-                # "model": "BERT",
                 "hidden_dim": self.model.hidden_dim,
                 "num_layers": self.model.num_layers,
                 "num_heads": self.model.num_heads,
@@ -394,19 +390,17 @@ class BertCLSTrainer(nn.Module):
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
-                "mask_prob/num_known_ab": self.mask_prob if self.mask_prob else self.num_known_ab,
+                "mask_prob": self.mask_prob,
+                "num_known_ab": self.num_known_ab,
                 "max_seq_len": self.model.max_seq_len,
                 "vocab_size": len(self.train_set.vocab),
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "num_antibiotics": self.num_ab,
                 "antibiotics": self.antibiotics,
                 "train_size": self.train_size,
-                "classifier_type": self.classifier_type,
                 "random_state": self.random_state,
                 'val_share': self.val_share,
                 "val_size": self.val_size,
-                # "early_stopping_patience": self.patience,
-                # "dropout_prob": self.model.dropout_prob,
             }
         )
         self.wandb_run.watch(self.model) # watch the model for gradients and parameters

@@ -40,7 +40,6 @@ class BertMLMTrainer(nn.Module):
         self.project_name = config["project_name"]
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.model = model
-        self.classifier_type = config['classifier_type'] 
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
@@ -75,7 +74,6 @@ class BertMLMTrainer(nn.Module):
         print("Model summary:")
         print("="*self._splitter_size)
         print(f"Embedding dim: {self.model.emb_dim}")
-        print(f"Classifier type: {self.classifier_type}")
         print(f"Feed-forward dim: {self.model.ff_dim}")
         print(f"Dropout probability: {self.model.dropout_prob:.0%}")
         print(f"Number of heads: {self.model.num_heads}")
@@ -221,11 +219,11 @@ class BertMLMTrainer(nn.Module):
         with torch.no_grad():
             loss = 0
             for batch_idx, batch in enumerate(loader):
-                input, token_target, token_mask, attn_mask = batch
+                input, token_target, attn_mask = batch
                 tokens = self.model(input, attn_mask)
                 
                 loss += self.criterion(tokens.transpose(-1, -2), token_target).item()
-                eval_stats_iso = self._update_iso_stats(batch_idx, tokens, token_target, token_mask, eval_stats_iso)
+                eval_stats_iso = self._update_iso_stats(batch_idx, tokens, token_target, eval_stats_iso)
             
             loss /= len(loader) 
             acc = eval_stats_iso['num_correct'].sum() / eval_stats_iso['num_masked'].sum()
@@ -259,9 +257,9 @@ class BertMLMTrainer(nn.Module):
         self.val_iso_stats.append(val_results["iso_stats"])
 
 
-    def _update_iso_stats(self, batch_idx:int, tokens: torch.Tensor, token_target: torch.Tensor, token_mask: torch.Tensor,
+    def _update_iso_stats(self, batch_idx:int, tokens: torch.Tensor, token_target: torch.Tensor, 
                           eval_stats_iso: pd.DataFrame):
-        
+        token_mask = token_target != -1 # (batch_size, seq_len)
         for i in range(token_target.shape[0]):
             global_idx = batch_idx * self.batch_size + i
             # get the predicted and target tokens for the sequence
@@ -283,12 +281,8 @@ class BertMLMTrainer(nn.Module):
             name=self.wandb_name, # name of the run
             
             config={
-                # "dataset": "NCBI",
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
-                # "model": "BERT",
-                "hidden_dim": self.model.hidden_dim,
-                "classifier_type": self.classifier_type,
                 "num_layers": self.model.num_layers,
                 "num_heads": self.model.num_heads,
                 "emb_dim": self.model.emb_dim,
@@ -300,10 +294,9 @@ class BertMLMTrainer(nn.Module):
                 "vocab_size": len(self.train_set.vocab),
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "train_size": self.train_size,
+                "val_size": self.val_size,
+                "val_share": self.val_share,
                 "random_state": self.random_state,
-                # "val_size": self.val_size,
-                # "early_stopping_patience": self.patience,
-                # "dropout_prob": self.model.dropout_prob,
             }
         )
         self.wandb_run.watch(self.model) # watch the model for gradients and parameters
@@ -340,7 +333,6 @@ class BertMLMTrainer(nn.Module):
         
         global_step = self.current_epoch * self.num_batches + batch_index # global step, total #batches seen
         self.wandb_run.log({"batch": global_step, "Losses/live_loss": avg_loss})
-        # self.writer.add_scalar("Loss", avg_loss, global_step=global_step)
     
         
     def _print_loss_summary(self, time_elapsed, batch_index, tot_loss):
@@ -365,34 +357,3 @@ class BertMLMTrainer(nn.Module):
         self.model.load_state_dict(torch.load(savepath))
         print("Model loaded")
         print("="*self._splitter_size)
-    
-    ######################### Function to load and save training checkpoints ###########################
-    
-    # def save_checkpoint(self, epoch, loss):
-    #     if not self.checkpoint_dir: # if checkpoint_dir is None
-    #         return
-        
-    #     name = f"bert_epoch{epoch+1}_loss{loss:.2f}.pt"
-
-    #     if not self.checkpoint_dir.exists(): 
-    #         self.checkpoint_dir.mkdir()
-    #     torch.save({
-    #         'epoch': epoch,
-    #         'model_state_dict': self.model.state_dict(),
-    #         'optimizer_state_dict': self.optimizer.state_dict(),
-    #         'loss': loss
-    #         }, self.checkpoint_dir / name)
-        
-    #     print(f"Checkpoint saved to {self.checkpoint_dir / name}")
-    #     print("="*self._splitter_size)
-        
-        
-    # def load_checkpoint(self, path: Path):
-    #     print("="*self._splitter_size)
-    #     print(f"Loading model checkpoint from {path}")
-    #     checkpoint = torch.load(path)
-    #     self.current_epoch = checkpoint['epoch']
-    #     self.model.load_state_dict(checkpoint['model_state_dict'])
-    #     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    #     print(f"Loaded checkpoint from epoch {self.current_epoch}")
-    #     print("="*self._splitter_size)

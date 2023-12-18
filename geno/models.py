@@ -17,7 +17,6 @@ class JointEmbedding(nn.Module):
         self.dropout_prob = config['dropout_prob']
         
         self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim, padding_idx=self.pad_idx) 
-        # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
         self.position_emb = nn.Embedding(self.max_seq_len, self.emb_dim) 
         
         self.dropout = nn.Dropout(self.dropout_prob)
@@ -148,22 +147,3 @@ class BERT(nn.Module):
 
         token_prediction = self.token_prediction_layer(encoded) # (batch_size, seq_len, vocab_size)
         return token_prediction
-
-
-class AbPredictor(nn.Module): # predicts resistance or susceptibility for an antibiotic
-    def __init__(self, emb_dim: int, hidden_dim: int):
-        super(AbPredictor, self).__init__()
-        
-        self.emb_dim = emb_dim
-        self.hidden_dim = hidden_dim
-        
-        self.classifier = nn.Sequential(
-            nn.Linear(self.emb_dim, self.hidden_dim),
-            nn.ReLU(),
-            nn.LayerNorm(self.hidden_dim),
-            nn.Linear(self.hidden_dim, 1), # binary classification (S:0 | R:1)
-        )
-    
-    def forward(self, X):
-        # X is the CLS token of the BERT model
-        return self.classifier(X)

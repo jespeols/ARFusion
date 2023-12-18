@@ -20,7 +20,7 @@ from pheno.trainers import BertCLSTrainer
 
 # user-defined functions
 from construct_vocab import construct_pheno_vocab
-from utils import get_split_indices
+from utils import get_split_indices, export_results
 from data_preprocessing import preprocess_TESSy
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -130,17 +130,8 @@ if __name__ == "__main__":
     )
     trainer.print_model_summary()
     trainer.print_trainer_summary()
-    eval_stats_ab, eval_stats_iso, best_epoch = trainer()
+    results = trainer()
     print("Finished training!")
-    print("Best epoch:", best_epoch+1)
-    ab_stats = eval_stats_ab[best_epoch]
-    iso_stats = eval_stats_iso[best_epoch]
     print("Exporting results...")
-    ab_stats.to_csv(os.path.join(results_dir, "ab_stats.csv"), index=False)
-    iso_stats.to_csv(os.path.join(results_dir, "iso_stats.csv"), index=False)
-    print("antibiotics stats:")
-    print(ab_stats)
-    print("isolate stats:")
-    print(iso_stats.head(n=20))
-        
+    export_results(results, results_dir)
     print("Done!")

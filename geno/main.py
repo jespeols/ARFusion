@@ -109,8 +109,8 @@ if __name__ == "__main__":
         max_seq_len = config['max_seq_len']
     
     train_indices, val_indices = get_split_indices(num_samples, config['val_share'], random_state=config['random_state'])
-    train_set = GenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len)
-    val_set = GenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len)
+    train_set = GenotypeDataset(ds.iloc[train_indices], vocab, specials, max_seq_len, config['mask_prob'])
+    val_set = GenotypeDataset(ds.iloc[val_indices], vocab, specials, max_seq_len, config['mask_prob'])
     
     print("Loading model...")
     bert = BERT(config, vocab_size, max_seq_len, pad_idx=pad_idx).to(device)

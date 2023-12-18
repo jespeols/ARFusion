@@ -89,7 +89,7 @@ class PhenotypeDataset(Dataset):
         item = self.df.iloc[idx]
         
         input = torch.tensor(item[self.INDICES_MASKED], dtype=torch.long, device=device)
-        target_res = torch.tensor(item[self.target_res], dtype=torch.float32, device=device)
+        target_res = torch.tensor(item[self.TARGET_RESISTANCES], dtype=torch.float32, device=device)
         attn_mask = (input != self.vocab[self.PAD]).unsqueeze(0).unsqueeze(1)
         
         if self.include_sequences:

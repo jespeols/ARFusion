@@ -47,10 +47,10 @@ class GenotypeDataset(Dataset):
         
         self.include_sequences = include_sequences
         if self.include_sequences:
-            self.columns = [self.INDICES_MASKED, self.TARGET_INDICES, self.TOKEN_MASK, 
+            self.columns = [self.INDICES_MASKED, self.TARGET_INDICES, 
                             self.MASKED_SEQUENCE]
         else: 
-            self.columns = [self.INDICES_MASKED, self.TARGET_INDICES, self.TOKEN_MASK]
+            self.columns = [self.INDICES_MASKED, self.TARGET_INDICES]
         
         
     def __len__(self):
@@ -94,7 +94,7 @@ class GenotypeDataset(Dataset):
         seq_starts = [[self.CLS, self.ds['year'].iloc[i], self.ds['country'].iloc[i]] for i in range(self.ds.shape[0])]
         for i, geno_seq in enumerate(sequences):
             seq_len = len(geno_seq)
-            token_mask = np.random.rand(seq_len) < self.mask_prob_geno   
+            token_mask = np.random.rand(seq_len) < self.mask_prob   
             target_indices = np.array([-1]*seq_len)
             if not token_mask.any():
                 # if no tokens are masked, mask one random token

@@ -14,7 +14,7 @@ num_known_ab:
 batch_size: 64
 val_share: 0.15 # CV split
 max_seq_len: 'auto'
-epochs: 20
+epochs: 30
 early_stopping_patience: 3
 lr: 0.0001 
 weight_decay: 0.01

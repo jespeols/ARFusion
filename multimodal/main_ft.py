@@ -45,7 +45,6 @@ if __name__ == "__main__":
     else:
         print("Using CPU")  
     
-    assert os.getcwd() == BASE_DIR, "Current working directory must be the base directory of the project"
     print(f"\nCurrent working directory: {os.getcwd()}")
     print("Loading config file...")
     
