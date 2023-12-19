@@ -134,7 +134,7 @@ if __name__ == "__main__":
     )
     if not config_ft['naive_model']:
         tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
-        print("model is pre-trained:", tuner.model.is_pretrained)
+        tuner.model.is_pretrained = True
     tuner.print_model_summary()
     tuner.print_trainer_summary()
     ft_results = tuner()
