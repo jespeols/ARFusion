@@ -20,9 +20,7 @@ from multimodal.datasets import MMFinetuneDataset
 from multimodal.trainers import MMBertFineTuner
 
 # user-defined functions
-from construct_vocab import construct_MM_vocab
 from utils import get_split_indices, export_results
-from data_preprocessing import preprocess_NCBI, preprocess_TESSy
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -32,6 +30,7 @@ if __name__ == "__main__":
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--model_path", type=str)
+    argparser.add_argument("--naive_model", type=bool)
     argparser.add_argument("--mask_prob", type=float)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
@@ -59,12 +58,13 @@ if __name__ == "__main__":
     config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
     config_ft['name'] = args.name if args.name else config_ft['name']
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
+    config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
     assert not (args.mask_prob and args.num_known_ab), "'mask_prob' and 'num_known_ab' cannot be set at the same time"
     if args.mask_prob:
         config_ft['mask_prob'] = args.mask_prob
-        config['num_known_ab'] = None
+        config_ft['num_known_ab'] = None
     elif args.num_known_ab:
-        config['num_known_ab'] = args.num_known_ab
+        config_ft['num_known_ab'] = args.num_known_ab
         config_ft['mask_prob'] = None
     assert not (config_ft['mask_prob'] and config['num_known_ab']), "'mask_prob' and 'num_known_ab' cannot be set at the same time"
     config_ft['batch_size'] = args.batch_size if args.batch_size else config_ft['batch_size']
@@ -74,7 +74,7 @@ if __name__ == "__main__":
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
     if config['name']:
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config['name']))
+        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config_ft['name']))
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
         results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", "experiment_" + str(time_str)))
@@ -123,7 +123,7 @@ if __name__ == "__main__":
         random_state=config_ft['random_state']
     )
     pad_idx = vocab[pad_token]
-    bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True)
+    bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
     tuner = MMBertFineTuner(
         config=config,
         model=bert,
@@ -132,8 +132,10 @@ if __name__ == "__main__":
         val_set=ds_ft_val,
         results_dir=results_dir,
     )
-    tuner.load_model(config_ft['model_path'])
+    if not config_ft['naive_model']:
+        tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
+        print("model is pre-trained:", tuner.model.is_pretrained)
     tuner.print_model_summary()
     tuner.print_trainer_summary()
     ft_results = tuner()
-    export_results(ft_results, results_dir / 'pt_results.pkl')
+    export_results(ft_results, results_dir / 'ft_results.pkl')

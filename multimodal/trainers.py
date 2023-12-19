@@ -117,8 +117,9 @@ class MMBertPreTrainer(nn.Module):
         
         
     def __call__(self):      
+        self._init_wandb()
+        print("="*self._splitter_size)
         print("Initializing training...")
-        self.wandb_run = self._init_wandb()
         self.val_set.prepare_dataset()
         self.val_set.shuffle() # to avoid batches of only genotypes or only phenotypes
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
@@ -170,7 +171,7 @@ class MMBertPreTrainer(nn.Module):
                     "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[self.best_epoch],
                     "Accuracies/final_val_geno_acc": self.val_geno_accs[self.best_epoch],
                     "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[self.best_epoch],
-                    "final_epoch": self.best_epoch+1
+                    "best_epoch": self.best_epoch+1
                 })
                 print("="*self._splitter_size)
                 self.model.load_state_dict(self.best_model_state) 
@@ -187,7 +188,7 @@ class MMBertPreTrainer(nn.Module):
                     "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
                     "Accuracies/final_val_geno_acc": self.val_geno_accs[-1],
                     "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[-1],
-                    "final_epoch": self.current_epoch+1
+                    "best_epoch": self.current_epoch+1
                 })
         self.model.is_pretrained = True
         if self.save_model_:
@@ -210,7 +211,7 @@ class MMBertPreTrainer(nn.Module):
             print(s3)
         
         results = {
-            "best epoch": self.best_epoch,
+            "best_epoch": self.current_epoch,
             "train_losses": self.losses,
             "val_losses": self.val_losses,
             "val_pheno_losses": self.val_pheno_losses,
@@ -220,9 +221,9 @@ class MMBertPreTrainer(nn.Module):
             "val_pheno_iso_accs": self.val_pheno_iso_accs,
             "val_geno_iso_accs": self.val_geno_iso_accs,
             "train_time": train_time,
-            "val_iso_stats_geno": self.val_iso_stats_geno,
-            "val_iso_stats_pheno": self.val_iso_stats_pheno,
-            "val_ab_stats": self.val_ab_stats
+            "val_iso_stats_geno": self.val_iso_stats_geno[self.best_epoch],
+            "val_iso_stats_pheno": self.val_iso_stats_pheno[self.best_epoch],
+            "val_ab_stats": self.val_ab_stats[self.best_epoch]
         }
         return results
     
@@ -540,6 +541,7 @@ class MMBertPreTrainer(nn.Module):
             name=self.wandb_name, # name of the run
             
             config={
+                "trainer_type": "pre-training",
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
                 "hidden_dim": self.model.hidden_dim,
@@ -583,9 +585,7 @@ class MMBertPreTrainer(nn.Module):
         self.wandb_run.define_metric("Accuracies/final_val_geno_acc")
         self.wandb_run.define_metric("Accuracies/final_val_geno_iso_acc")
         
-        self.wandb_run.define_metric("final_epoch")
-
-        return self.wandb_run
+        self.wandb_run.define_metric("best_epoch", hidden=True)
     
      
     def _report_epoch_results(self):
@@ -620,7 +620,7 @@ class MMBertPreTrainer(nn.Module):
         print(s)
     
     
-    def save_model(self, savepath: Path):
+    def save_model(self, savepath: Path = None):
         if not savepath:
             savepath = self.results_dir / "model_state.pt"
         torch.save(self.best_model_state, savepath)
@@ -654,7 +654,7 @@ class MMBertFineTuner():
     ):
         super(MMBertFineTuner, self).__init__()
         
-        config_ft = config["fine_tune"]
+        config_ft = config["fine_tuning"]
         self.random_state = config_ft['random_state']
         np.random.seed(self.random_state)
         torch.manual_seed(self.random_state)
@@ -737,9 +737,9 @@ class MMBertFineTuner():
         print("="*self._splitter_size)
     
     def __call__(self):      
-        if not self.model.pheno_only:
-            self.model.pheno_only = True
+        assert self.model.pheno_only == True, "Model must be in pheno_only mode"
         self.wandb_run = self._init_wandb()
+        print("Initializing training...")
         self.val_set.prepare_dataset()
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
         
@@ -775,7 +775,7 @@ class MMBertFineTuner():
                     "Losses/final_val_loss": self.best_val_loss, 
                     "Accuracies/final_val_acc": self.val_accs[self.best_epoch],
                     "Accuracies/final_val_iso_acc": self.val_iso_accs[self.best_epoch],
-                    "final_epoch": self.best_epoch+1
+                    "best_epoch": self.best_epoch+1
                 })
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
@@ -787,7 +787,7 @@ class MMBertFineTuner():
                     "Losses/final_val_loss": self.best_val_loss, 
                     "Accuracies/final_val_acc": self.val_accs[-1],
                     "Accuracies/final_val_iso_acc": self.val_iso_accs[-1],
-                    "final_epoch": self.current_epoch+1
+                    "best_epoch": self.current_epoch+1
                 })
         self.model.is_pretrained = True
         if self.save_model_:
@@ -805,14 +805,14 @@ class MMBertFineTuner():
             print(s)
         
         results = {
-            "best epoch": self.best_epoch,
+            "train_time": train_time,
+            "best_epoch": self.current_epoch,
             "train_losses": self.losses,
             "val_losses": self.val_losses,
             "val_accs": self.val_accs,
             "val_iso_accs": self.val_iso_accs,
-            "train_time": train_time,
-            "val_iso_stats": self.val_iso_stats,
-            "val_ab_stats": self.val_ab_stats
+            "val_iso_stats": self.val_iso_stats[self.best_epoch],
+            "val_ab_stats": self.val_ab_stats[self.best_epoch]
         }
         return results
     
@@ -1040,12 +1040,12 @@ class MMBertFineTuner():
         
      
     def _init_wandb(self):
-        print("Initializing wandb...")
         self.wandb_run = wandb.init(
             project=self.project_name, # name of the project
             name=self.wandb_name, # name of the run
             
             config={
+                "trainer_type": "fine-tuning",
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
                 "hidden_dim": self.model.hidden_dim,
@@ -1067,8 +1067,6 @@ class MMBertFineTuner():
                 'val_share': self.val_share,
                 "val_size": self.val_size,
                 "is_pretrained": self.model.is_pretrained,
-                # "early_stopping_patience": self.patience,
-                # "dropout_prob": self.model.dropout_prob,
             }
         )
         self.wandb_run.watch(self.model) # watch the model for gradients and parameters
@@ -1085,7 +1083,7 @@ class MMBertFineTuner():
         self.wandb_run.define_metric("Accuracies/final_val_acc")
         self.wandb_run.define_metric("Accuracies/final_val_iso_acc")
         
-        self.wandb_run.define_metric("final_epoch")
+        self.wandb_run.define_metric("best_epoch", hidden=True)
 
         return self.wandb_run
      
@@ -1121,8 +1119,9 @@ class MMBertFineTuner():
         print(s)
     
     
-    def save_model(self, savepath: Path):
-        print(type(self.best_model_state))
+    def save_model(self, savepath: Path = None):
+        if not savepath:
+            savepath = self.results_dir / "model_state.pt"
         torch.save(self.best_model_state, savepath)
         print(f"Model saved to {savepath}")
         print("="*self._splitter_size)

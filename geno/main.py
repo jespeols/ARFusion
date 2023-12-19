@@ -21,7 +21,7 @@ from geno.trainers import BertMLMTrainer
 
 # user-defined functions
 from construct_vocab import construct_geno_vocab
-from utils import get_split_indices
+from utils import get_split_indices, export_results
 from data_preprocessing import preprocess_NCBI
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -124,9 +124,8 @@ if __name__ == "__main__":
     
     trainer.print_model_summary()
     trainer.print_trainer_summary()
-    iso_stats, best_epoch = trainer()
-    print("Best epoch: ", best_epoch+1)
+    results = trainer()
+    print("Training finished!")
     print("Exporting results...")
-    iso_stats[best_epoch].to_csv(results_dir / "iso_stats.csv", index=False)
-    print("isolate statistics: \n", iso_stats[best_epoch].head(n=10))
+    export_results(results, results_dir / "results.pkl")
     print("Done!")

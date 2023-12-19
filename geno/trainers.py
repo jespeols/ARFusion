@@ -129,13 +129,13 @@ class BertMLMTrainer(nn.Module):
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
                 s = f"Best validation loss {self.best_val_loss:.4f}"
-                s += f" | Validation accuracy {self.val_accuracies[self.best_epoch]:.2%}"
-                s += f" | Validation sequence accuracy {self.val_iso_accuracies[self.best_epoch]:.2%}"
+                s += f" | Validation accuracy {self.val_accs[self.best_epoch]:.2%}"
+                s += f" | Validation sequence accuracy {self.val_iso_accs[self.best_epoch]:.2%}"
                 s += f" at epoch {self.best_epoch+1}"
                 print(s)
                 self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
-                           "Accuracies/final_val_acc":self.val_accuracies[self.best_epoch],
-                           "Accuracies/final_val_iso_acc": self.val_iso_accuracies[self.best_epoch],
+                           "Accuracies/final_val_acc":self.val_accs[self.best_epoch],
+                           "Accuracies/final_val_iso_acc": self.val_iso_accs[self.best_epoch],
                            "final_epoch": self.best_epoch+1})
                 print("="*self._splitter_size)
                 self.model.load_state_dict(self.best_model_state) 
@@ -146,8 +146,8 @@ class BertMLMTrainer(nn.Module):
         
         if not early_stop:    
             self.wandb_run.log({"Losses/final_val_loss": self.val_losses[-1], 
-                    "Accuracies/final_val_acc":self.val_accuracies[-1],
-                    "Accuracies/final_val_iso_acc": self.val_iso_accuracies[-1],
+                    "Accuracies/final_val_acc":self.val_accs[-1],
+                    "Accuracies/final_val_iso_acc": self.val_iso_accs[-1],
                     "final_epoch": self.current_epoch+1})
         if self.save_model:
             self.save_model(self.results_dir / "model_state.pt") 
@@ -157,10 +157,20 @@ class BertMLMTrainer(nn.Module):
         print(f"Training completed in {disp_time}")
         if not early_stop:
             s = f"Final validation loss {self.val_losses[-1]:.4f}"
-            s += f" | Final validation accuracy {self.val_accuracies[-1]:.2%}"
-            s += f" | Final validation sequence accuracy {self.val_iso_accuracies[-1]:.2%}"
+            s += f" | Final validation accuracy {self.val_accs[-1]:.2%}"
+            s += f" | Final validation sequence accuracy {self.val_iso_accs[-1]:.2%}"
             print(s)
-        return self.val_iso_stats, self.current_epoch
+        
+        results = {
+            "train_time": train_time,
+            "best_epoch": self.current_epoch,
+            "train_losses": self.losses,
+            "val_losses": self.val_losses,
+            "val_accs": self.val_accs,
+            "val_iso_accs": self.val_iso_accs,
+            "val_iso_stats": self.val_iso_stats[self.best_epoch],
+        }
+        return results
     
         
     def train(self, epoch: int):
@@ -245,15 +255,15 @@ class BertMLMTrainer(nn.Module):
     def _init_result_lists(self):
         self.losses = []
         self.val_losses = []
-        self.val_accuracies = []
-        self.val_iso_accuracies = []
+        self.val_accs = []
+        self.val_iso_accs = []
         self.val_iso_stats = []
     
     
     def _update_val_lists(self, val_results: dict):
         self.val_losses.append(val_results["loss"])
-        self.val_accuracies.append(val_results["acc"])
-        self.val_iso_accuracies.append(val_results["iso_acc"])
+        self.val_accs.append(val_results["acc"])
+        self.val_iso_accs.append(val_results["iso_acc"])
         self.val_iso_stats.append(val_results["iso_stats"])
 
 
@@ -322,8 +332,8 @@ class BertMLMTrainer(nn.Module):
             "epoch": self.current_epoch+1,
             "Losses/train_loss": self.losses[-1],
             "Losses/val_loss": self.val_losses[-1],
-            "Accuracies/val_acc": self.val_accuracies[-1],
-            "Accuracies/val_iso_acc": self.val_iso_accuracies[-1]
+            "Accuracies/val_acc": self.val_accs[-1],
+            "Accuracies/val_iso_acc": self.val_iso_accs[-1]
         }
         self.wandb_run.log(wandb_dict)
     

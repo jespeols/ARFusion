@@ -133,5 +133,5 @@ if __name__ == "__main__":
     results = trainer()
     print("Finished training!")
     print("Exporting results...")
-    export_results(results, results_dir)
+    export_results(results, results_dir / "results.pkl")
     print("Done!")

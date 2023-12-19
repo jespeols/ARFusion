@@ -123,6 +123,7 @@ if __name__ == "__main__":
         )
     else:
         ds_NCBI = pd.read_pickle(os.path.join(BASE_DIR, data_dict['NCBI']['load_path']))
+    
         
     specials = config['specials']
     pad_token = specials['PAD']
@@ -141,6 +142,9 @@ if __name__ == "__main__":
     )
     vocab_size = len(vocab)
     
+    ds_geno = ds_geno.iloc[:50000]
+    ds_pheno = ds_pheno.iloc[:150000]
+    
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
@@ -151,10 +155,6 @@ if __name__ == "__main__":
         val_share=config['val_share'], 
         random_state=config['random_state']
     )
-    
-    # ds_geno = ds_geno.iloc[:50000]
-    # ds_pheno = ds_pheno.iloc[:250000]
-    
     ds_pt_train = MMPretrainDataset(
         ds_geno=ds_geno.iloc[train_indices[0]],
         ds_pheno=ds_pheno.iloc[train_indices[1]],
@@ -184,20 +184,11 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         train_set=ds_pt_train,
         val_set=ds_pt_val,
+        results_dir=results_dir,
     )
     trainer.print_model_summary()
     trainer.print_trainer_summary()
-    # results = trainer()    
-    # print("Finished training!")
-    # print("Exporting results...") 
-    # export_results(results, results_dir / "ft_results.pkl")
-    # best_epoch = results['best_epoch']
-    # results['val_ab_stats'][best_epoch].to_csv(os.path.join(results_dir, "ab_stats.csv"), index=False)
-    # print("ab_stats")
-    # print(results['val_ab_stats'][best_epoch])
-    # results['val_iso_stats_pheno'][best_epoch].to_csv(os.path.join(results_dir, "iso_stats_pheno.csv"), index=False)
-    # print("iso_stats_pheno")
-    # print(results['val_iso_stats_pheno'][best_epoch].head(n=10))
-    # results['val_iso_stats_geno'][best_epoch].to_csv(os.path.join(results_dir, "iso_stats_geno.csv"), index=False)
-    # print("iso_stats_geno")
-    # print(results['val_iso_stats_geno'][best_epoch].head(n=10))
+    results = trainer()    
+    print("Finished training!")
+    print("Exporting results...") 
+    export_results(results, results_dir / "pt_results.pkl")

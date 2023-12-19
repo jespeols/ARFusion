@@ -358,7 +358,12 @@ class MMFinetuneDataset(Dataset):
             for pheno_seq in pheno_sequences:
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
-                indices = np.random.choice(seq_len, self.num_known_ab, replace=False)
+                print(self.num_known_ab)
+                if self.num_known_ab == 0:
+                    indices = range(seq_len)
+                else:
+                    indices = np.random.choice(seq_len, self.num_known_ab, replace=False)
+                    
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]

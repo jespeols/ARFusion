@@ -25,22 +25,23 @@ save_model: True
 random_state: 42
 
 #################### FINE-TUNING ####################
-fine_tune:
+fine_tuning:
   wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
   project_name: Multimodal-MLM
   name: baseline_ft
   ds_path: 'data/NCBI.pkl'
-  model_path: 'results/baseline_pt/model_state.pt'
+  model_path: 'baseline_pt/model_state.pt'
+  naive_model: False # if True, use a model that is not pretrained on the unimodal tasks
   batch_size: 16
   val_share: 0.15
   epochs: 100
-  mask_prob: 0.25
+  mask_prob:
   num_known_ab: 
   lr: 0.00001
   weight_decay: 0.01
   early_stopping_patience: 3
-  print_progress_every: 1000
-  report_every: 500
+  print_progress_every: 100
+  report_every: 15
   save_model: False
   random_state: 42
 
@@ -56,7 +57,7 @@ data:
   exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK']
   pathogens: ['ESCCOL']
   NCBI:
-    prepare_data: True
+    prepare_data: False
     raw_path: 'data/raw/NCBI.tsv'
     save_path: 'data/NCBI.pkl'
     load_path: 'data/NCBI.pkl'
