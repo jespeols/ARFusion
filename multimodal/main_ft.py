@@ -31,7 +31,8 @@ if __name__ == "__main__":
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--naive_model", type=bool)
-    argparser.add_argument("--mask_prob", type=float)
+    argparser.add_argument("--mask_prob_geno", type=float)
+    argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
@@ -59,26 +60,27 @@ if __name__ == "__main__":
     config_ft['name'] = args.name if args.name else config_ft['name']
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
     config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
-    assert not (args.mask_prob and args.num_known_ab), "'mask_prob' and 'num_known_ab' cannot be set at the same time"
-    if args.mask_prob:
-        config_ft['mask_prob'] = args.mask_prob
+    config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
+    assert not (args.mask_prob_geno and args.num_known_ab), "'mask_prob_pheno' and 'num_known_ab' cannot be set at the same time"
+    if args.mask_prob_pheno:
+        config_ft['mask_prob_pheno'] = args.mask_prob_pheno
         config_ft['num_known_ab'] = None
     elif args.num_known_ab:
         config_ft['num_known_ab'] = args.num_known_ab
-        config_ft['mask_prob'] = None
-    assert not (config_ft['mask_prob'] and config['num_known_ab']), "'mask_prob' and 'num_known_ab' cannot be set at the same time"
+        config_ft['mask_prob_pheno'] = None
+    assert not (config_ft['mask_prob_pheno'] and config['num_known_ab']), "'mask_prob_pheno' and 'num_known_ab' cannot be set at the same time"
     config_ft['batch_size'] = args.batch_size if args.batch_size else config_ft['batch_size']
     config_ft['epochs'] = args.epochs if args.epochs else config_ft['epochs']
     config_ft['lr'] = args.lr if args.lr else config['lr']
     config_ft['random_state'] = args.random_state if args.random_state else config_ft['random_state']
         
-    os.environ['WANDB_MODE'] = config['wandb_mode']
+    os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     if config['name']:
         results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config_ft['name']))
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
         results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", "experiment_" + str(time_str)))
-    print(f"Name of experiment: {config['name']}")
+    print(f"Name of experiment: {config_ft['name']}")
     print(f"Results directory: {results_dir}")
     
     print("\nLoading dataset...")
@@ -108,7 +110,8 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         specials=specials,
         max_seq_len=max_seq_len,
-        mask_prob=config_ft['mask_prob'],
+        mask_prob_geno=config_ft['mask_prob_geno'],
+        mask_prob_pheno=config_ft['mask_prob_pheno'],
         num_known_ab=config_ft['num_known_ab'],
         random_state=config_ft['random_state']
     )
@@ -118,7 +121,8 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         specials=specials,
         max_seq_len=max_seq_len,
-        mask_prob=config_ft['mask_prob'],
+        mask_prob_geno=config_ft['mask_prob_geno'],
+        mask_prob_pheno=config_ft['mask_prob_pheno'],
         num_known_ab=config_ft['num_known_ab'],
         random_state=config_ft['random_state']
     )

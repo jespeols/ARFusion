@@ -680,7 +680,8 @@ class MMBertFineTuner():
         self.patience = config_ft["early_stopping_patience"]
         self.save_model_ = config_ft["save_model"]
         
-        self.mask_prob = self.train_set.mask_prob
+        self.mask_prob_geno = self.train_set.mask_prob_geno
+        self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
         
         self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
@@ -726,8 +727,9 @@ class MMBertFineTuner():
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
-        if self.mask_prob:
-            print(f"Mask probability: {self.mask_prob:.0%}")
+        print(f"Mask probability for genotype: {self.train_set.mask_prob_geno:.0%}")
+        if self.mask_prob_pheno:
+            print(f"Mask probability for prediction task (phenotype): {self.mask_prob_pheno:.0%}")
         if self.num_known_ab:
             print(f"Number of known antibiotics: {self.num_known_ab}")
         print(f"Number of epochs: {self.epochs}")
@@ -1055,7 +1057,8 @@ class MMBertFineTuner():
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
-                "mask_prob": self.mask_prob,
+                "mask_prob_geno": self.mask_prob_geno,
+                "mask_prob_pheno": self.mask_prob_pheno,
                 "num_known_ab": self.num_known_ab,
                 "max_seq_len": self.model.max_seq_len,
                 "vocab_size": len(self.vocab),

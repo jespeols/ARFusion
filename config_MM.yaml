@@ -35,7 +35,8 @@ fine_tuning:
   batch_size: 16
   val_share: 0.15
   epochs: 100
-  mask_prob:
+  mask_prob_geno:
+  mask_prob_pheno:
   num_known_ab: 
   lr: 0.00001
   weight_decay: 0.01
