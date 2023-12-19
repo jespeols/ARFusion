@@ -7,5 +7,5 @@ data/NCBI_genotype_parsed.pkl
 ARFusion.def
 data/*.pkl
 # results
-*/.pt
 *.pt
+*.png

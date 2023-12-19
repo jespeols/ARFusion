@@ -358,7 +358,6 @@ class MMFinetuneDataset(Dataset):
             for pheno_seq in pheno_sequences:
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
-                print(self.num_known_ab)
                 if self.num_known_ab == 0:
                     indices = range(seq_len)
                 else:

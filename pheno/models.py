@@ -17,30 +17,21 @@ class JointEmbedding(nn.Module):
         self.dropout_prob = config['dropout_prob']
         
         self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim, padding_idx=self.pad_idx) 
-        # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
-        self.position_emb = nn.Embedding(self.max_seq_len, self.emb_dim) 
+        # self.position_emb = nn.Embedding(self.max_seq_len, self.emb_dim) 
         
         self.dropout = nn.Dropout(self.dropout_prob)
         self.layer_norm = nn.LayerNorm(self.emb_dim)
         
     def forward(self, input_tensor):
         # input_tensor: (batch_size, seq_len)
-        # token_type_ids: (batch_size, seq_len)
-        # position_ids: (batch_size, seq_len)
-        seq_len = input_tensor.size(-1)
-        
-        # token_type not relevant for unimodal data
-        # token_type_tensor = torch.zeros_like(input_tensor).to(device) # (batch_size, seq_len)
-        # token_type_tensor[:, (seq_len//2 + 1):] = 1 # here, we assume that the sentence is split in half
+        # seq_len = input_tensor.size(-1)        
         
         token_emb = self.token_emb(input_tensor) # (batch_size, seq_len, emb_dim)
-        # token_type_emb = self.token_type_emb(token_type_tensor) # (batch_size, seq_len, emb_dim)
-        pos_tensor = torch.arange(seq_len, dtype=torch.long, device=device).expand_as(input_tensor) # (batch_size, seq_len)
-        position_emb = self.position_emb(pos_tensor) # (batch_size, seq_len, emb_dim)
+        # pos_tensor = torch.arange(seq_len, dtype=torch.long, device=device).expand_as(input_tensor) # (batch_size, seq_len)
+        # position_emb = self.position_emb(pos_tensor) # (batch_size, seq_len, emb_dim)
         
-        # emb = token_emb + token_type_emb + position_emb
-        emb = token_emb + position_emb
-        emb = self.layer_norm(emb) 
+        # emb = token_emb + position_emb
+        emb = self.layer_norm(token_emb) 
         emb = self.dropout(emb)
         return emb
     
