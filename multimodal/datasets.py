@@ -332,6 +332,7 @@ class MMFinetuneDataset(Dataset):
         masked_geno_sequences = list()
         
         for geno_seq in geno_sequences:
+            # np.random.shuffle(geno_seq) # if positional encoding is used, sequences ought to be shuffled
             seq_len = len(geno_seq)
             token_mask = np.random.rand(seq_len) < self.mask_prob_geno
             if not token_mask.any():
@@ -350,6 +351,7 @@ class MMFinetuneDataset(Dataset):
 
         if self.mask_prob_pheno:
             for pheno_seq in pheno_sequences:
+                # np.random.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(pheno_seq)
                 token_mask = np.random.rand(seq_len) < self.mask_prob_pheno
                 target_res = [-1]*self.num_ab
@@ -375,6 +377,7 @@ class MMFinetuneDataset(Dataset):
                 target_resistances.append(target_res)
         else:
             for pheno_seq in pheno_sequences:
+                # np.random.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
                 if self.num_known_ab == 0:

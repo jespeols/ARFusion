@@ -133,6 +133,7 @@ class PhenotypeDataset(Dataset):
         
         if self.mask_prob:
             for i, seq in enumerate(sequences):
+                # np.random.shuffle(seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(seq)
             
                 target_res = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
@@ -160,6 +161,7 @@ class PhenotypeDataset(Dataset):
                 target_resistances.append(target_res) 
         else:
             for i, seq in enumerate(sequences):
+                # np.random.shuffle(seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(seq) 
                 target_res = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
 

@@ -26,6 +26,7 @@ specials:
   MASK: '[MASK]'
   UNK: '[UNK]'
 data:
+  raw_path: 'data/raw/NCBI.tsv'
   threshold_year: 1970
   exclude_genotypes:
   # exclude_assembly_variants: 

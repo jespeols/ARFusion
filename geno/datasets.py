@@ -93,6 +93,7 @@ class GenotypeDataset(Dataset):
         
         seq_starts = [[self.CLS, self.ds['year'].iloc[i], self.ds['country'].iloc[i]] for i in range(self.ds.shape[0])]
         for i, geno_seq in enumerate(sequences):
+            # np.random.shuffle(geno_seq) # if positional encoding is used, sequences ought to be shuffled
             seq_len = len(geno_seq)
             token_mask = np.random.rand(seq_len) < self.mask_prob   
             target_indices = np.array([-1]*seq_len)

@@ -30,7 +30,7 @@ if __name__ == "__main__":
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--model_path", type=str)
-    argparser.add_argument("--naive_model", type=bool)
+    argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
     argparser.add_argument("--mask_prob_geno", type=float)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)

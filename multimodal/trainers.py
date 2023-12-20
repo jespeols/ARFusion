@@ -146,6 +146,7 @@ class MMBertPreTrainer(nn.Module):
                 val_results['pheno_acc'], val_results['pheno_iso_acc']))
             print("Genotype accuracy: {:.2%} | Genotype isolate accuracy: {:.2%}".format(
                 val_results['geno_acc'], val_results['geno_iso_acc']))
+            print("="*self._splitter_size)
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             self._update_val_lists(val_results)
             self._report_epoch_results()
@@ -1136,4 +1137,3 @@ class MMBertFineTuner():
         self.model.load_state_dict(torch.load(savepath))
         self.model.to(device)
         print("Model loaded")
-        print("="*self._splitter_size)
