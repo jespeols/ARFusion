@@ -142,8 +142,8 @@ if __name__ == "__main__":
     )
     vocab_size = len(vocab)
     
-    ds_geno = ds_geno.iloc[:5000]
-    ds_pheno = ds_pheno.iloc[:15000]
+    # ds_geno = ds_geno.iloc[:5000]
+    # ds_pheno = ds_pheno.iloc[:15000]
     
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
