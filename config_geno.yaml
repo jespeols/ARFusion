@@ -7,7 +7,7 @@ hidden_dim:  # for classifier, not used for MLM
 num_heads: 4
 num_layers: 6
 dropout_prob: 0.1
-mask_prob: 0.15
+mask_prob: 0.25
 batch_size: 32
 val_share: 0.15 # CV split
 max_seq_len: 'auto'
