@@ -40,7 +40,7 @@ fine_tuning:
   num_known_ab: 
   lr: 0.00001
   weight_decay: 0.01
-  early_stopping_patience: 5
+  early_stopping_patience: 10
   print_progress_every: 100
   report_every: 15
   save_model: False

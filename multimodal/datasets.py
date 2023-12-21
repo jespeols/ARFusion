@@ -35,8 +35,8 @@ class MMPretrainDataset(Dataset):
         antibiotics: list,
         specials: dict,
         max_seq_len: int,
-        mask_prob_pheno_geno: float,
-        mask_prob_pheno_pheno: float = None,
+        mask_prob_geno: float,
+        mask_prob_pheno: float = None,
         num_known_ab: int = None,
         include_sequences: bool = False,
         random_state: int = 42
@@ -58,10 +58,10 @@ class MMPretrainDataset(Dataset):
         self.max_seq_len = max_seq_len
         self.CLS, self.PAD, self.MASK, self.UNK = specials.values()
         
-        self.mask_prob_pheno_geno = mask_prob_pheno_geno
-        self.mask_prob_pheno_pheno = mask_prob_pheno_pheno
+        self.mask_prob_geno = mask_prob_geno
+        self.mask_prob_pheno = mask_prob_pheno
         self.num_known_ab = num_known_ab
-        assert not (self.mask_prob_pheno_pheno and self.num_known_ab), "Either mask_prob_pheno_pheno or num_known_ab should be given, not both"
+        assert not (self.mask_prob_pheno and self.num_known_ab), "Either mask_prob_pheno or num_known_ab should be given, not both"
         
         self.ds_geno['source'] = 'geno'
         self.ds_pheno['source'] = 'pheno'
@@ -134,7 +134,7 @@ class MMPretrainDataset(Dataset):
         seq_starts = [[self.CLS, years[i], countries[i]] for i in range(self.ds_geno.shape[0])]
         for i, geno_seq in enumerate(geno_sequences):
             seq_len = len(geno_seq)
-            token_mask = np.random.rand(seq_len) < self.mask_prob_pheno_geno   
+            token_mask = np.random.rand(seq_len) < self.mask_prob_geno   
             target_indices = np.array([-1]*seq_len)
             if not token_mask.any():
                 # if no tokens are masked, mask one random token
@@ -174,10 +174,10 @@ class MMPretrainDataset(Dataset):
         ages = self.ds_pheno['age'].astype(int).astype(str).tolist()
         seq_starts = [[self.CLS, years[i], countries[i], genders[i], ages[i]] for i in range(self.num_pheno)]
 
-        if self.mask_prob_pheno_pheno:
+        if self.mask_prob_pheno:
             for i, pheno_seq in enumerate(pheno_sequences):
                 seq_len = len(pheno_seq)
-                token_mask = np.random.rand(seq_len) < self.mask_prob_pheno_pheno
+                token_mask = np.random.rand(seq_len) < self.mask_prob_pheno
                 target_res = [-1]*self.num_ab
                 if not token_mask.any():
                     idx = np.random.randint(seq_len)
