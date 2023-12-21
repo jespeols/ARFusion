@@ -1,10 +1,10 @@
-code/__pycache__
-logs
-results
+*__pycache__
 wandb
 runs
 data/raw
 data/NCBI_genotype_parsed.pkl
 ARFusion.def
-data/TESSy_parsed.pkl
-data/TESSy.pkl
+data/*.pkl
+# results
+*.pt
+*.png
