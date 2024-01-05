@@ -237,6 +237,7 @@ class MMFinetuneDataset(Dataset):
     # TARGET_INDICES = 'target_indices' # target indices of the masked sequence ## USE IF GENOTYPES ARE ALSO MASKED ##
     TARGET_RESISTANCES = 'target_resistances' # resistance of the target antibiotics, what we want to predict
     TOKEN_TYPES = 'token_types' # # 0 for patient info, 1 for genotype, 2 for phenotype
+    KEPT_CLASSES = 'kept_classes' # classes that are kept in the sequence
     # if sequences are included
     MASKED_SEQUENCE = 'masked_sequence'
     
@@ -247,6 +248,7 @@ class MMFinetuneDataset(Dataset):
         antibiotics: list,
         specials: dict,
         max_seq_len: int,
+        masking_method: str,
         mask_prob_geno: float,
         mask_prob_pheno: float,
         num_known_ab: int,
@@ -268,18 +270,22 @@ class MMFinetuneDataset(Dataset):
         self.max_seq_len = max_seq_len
         self.CLS, self.PAD, self.MASK, self.UNK = specials.values()
         
+        self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_geno = mask_prob_geno
         self.mask_prob_pheno = mask_prob_pheno
         self.num_known_ab = num_known_ab
-        assert not (self.num_known_ab and self.mask_prob_pheno), "Cannot specify both num_known_ab and mask_prob_pheno"
+        if self.masking_method == 'random':
+            assert self.mask_prob_pheno, "mask_prob_pheno must be given if masking_method is 'random'"
+        elif self.masking_method == 'num_known':
+            assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
         
         self.include_sequences = include_sequences
+        self.columns = [self.INDICES_MASKED, self.TARGET_RESISTANCES, self.TOKEN_TYPES]
+        if self.masking_method == "keep_one_class":
+            self.columns += [self.KEPT_CLASSES]
         if self.include_sequences:
-            self.columns = [self.INDICES_MASKED, self.TARGET_RESISTANCES, self.TOKEN_TYPES,
-                            self.MASKED_SEQUENCE]
-        else:
-            self.columns = [self.INDICES_MASKED, self.TARGET_RESISTANCES, self.TOKEN_TYPES]
-    
+            self.columns += [self.MASKED_SEQUENCE]
+            
     
     def __len__(self):
         return self.num_samples
@@ -292,12 +298,19 @@ class MMFinetuneDataset(Dataset):
         target_res = torch.tensor(item[self.TARGET_RESISTANCES], dtype=torch.float32, device=device)
         token_types = torch.tensor(item[self.TOKEN_TYPES], dtype=torch.long, device=device)
         attn_mask = (input != self.vocab[self.PAD]).unsqueeze(0).unsqueeze(1) # one dim for batch, one for heads
-        
-        if self.include_sequences:
-            masked_sequence = item[self.MASKED_SEQUENCE]
-            return input, target_res, token_types, attn_mask, masked_sequence
-        else:
-            return input, target_res, token_types, attn_mask   
+        if self.masking_method == "keep_one_class":
+            kept_classes = torch.tensor(item['kept_classes'], dtype=torch.long, device=device)
+            if self.include_sequences:
+                masked_sequence = item[self.MASKED_SEQUENCE]
+                return input, target_res, token_types, kept_classes, attn_mask, masked_sequence
+            else:
+                return input, target_res, token_types, attn_mask, kept_classes
+        else: 
+            if self.include_sequences:
+                masked_sequence = item[self.MASKED_SEQUENCE]
+                return input, target_res, token_types, attn_mask, masked_sequence
+            else:
+                return input, target_res, token_types, attn_mask   
     
     
     def prepare_dataset(self):
@@ -305,8 +318,12 @@ class MMFinetuneDataset(Dataset):
         pheno_sequences = deepcopy(self.ds_MM['phenotypes'].tolist())
         years = self.ds_MM['year'].astype(str).tolist()
         countries = self.ds_MM['country'].tolist()
-        
-        masked_pheno_sequences, target_resistances = self._mask_pheno_sequences(pheno_sequences)
+        if self.masking_method == "keep_one_class":
+            ab_classes = deepcopy(self.ds_MM['ab_classes'].tolist())
+            masked_pheno_sequences, target_resistances, kept_classes = self._mask_pheno_sequences(pheno_sequences, ab_classes)
+        else:
+            masked_pheno_sequences, target_resistances = self._mask_pheno_sequences(pheno_sequences, None)
+            
         pheno_token_types = [[2]*len(seq) for seq in masked_pheno_sequences]
         
         masked_geno_sequences = self._mask_geno_sequences(geno_sequences)
@@ -322,9 +339,15 @@ class MMFinetuneDataset(Dataset):
         token_types = [seq + [2]*(self.max_seq_len - len(seq)) for seq in token_types]
         
         if self.include_sequences:
-            rows = zip(indices_masked, target_resistances, token_types, masked_sequences)
+            if self.masking_method == "keep_one_class":
+                rows = zip(indices_masked, target_resistances, token_types, masked_sequences, kept_classes)
+            else:
+                rows = zip(indices_masked, target_resistances, token_types, masked_sequences)
         else:
-            rows = zip(indices_masked, target_resistances, token_types)
+            if self.masking_method == "keep_one_class":
+                rows = zip(indices_masked, target_resistances, token_types, kept_classes)
+            else:
+                rows = zip(indices_masked, target_resistances, token_types)
         self.df = pd.DataFrame(rows, columns=self.columns)
          
     
@@ -345,9 +368,11 @@ class MMFinetuneDataset(Dataset):
         return masked_geno_sequences
     
     
-    def _mask_pheno_sequences(self, pheno_sequences):
+    def _mask_pheno_sequences(self, pheno_sequences, ab_classes):
         masked_pheno_sequences = list()
         target_resistances = list()
+        if self.masking_method == "keep_one_class":
+            kept_classes = list()
 
         if self.mask_prob_pheno:
             for pheno_seq in pheno_sequences:
@@ -375,7 +400,7 @@ class MMFinetuneDataset(Dataset):
                             pheno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
-        else:
+        elif self.num_known_ab:
             for pheno_seq in pheno_sequences:
                 # np.random.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(pheno_seq)
@@ -394,6 +419,28 @@ class MMFinetuneDataset(Dataset):
                     elif r < 0.9:
                         pheno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
-                target_resistances.append(target_res)    
-        return masked_pheno_sequences, target_resistances
+                target_resistances.append(target_res)  
+        elif self.masking_method == "keep_one_class":
+            for i, pheno_seq in enumerate(pheno_sequences):
+                # np.random.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
+                classes = ab_classes[i]
+                # randomly choose one class to keep
+                keep_class = np.random.choice(np.unique(classes)) # all classes are equally likely
+                # keep_class = np.random.choice(classes) # overrepresented classes are more likely
+                kept_classes.append(keep_class)
+                seq_len = len(pheno_seq)
+                target_res = [-1]*self.num_ab
+                indices = [idx for idx in range(seq_len) if classes[idx] != keep_class] 
+                for idx in indices:
+                    ab, res = pheno_seq[idx].split('_')
+                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]
+                masked_pheno_sequences.append(pheno_seq)
+                target_resistances.append(target_res)
+        else:
+            raise ValueError(f"Unknown masking method: {self.masking_method}")
+        
+        if self.masking_method == "keep_one_class":
+            return masked_pheno_sequences, target_resistances, kept_classes
+        else:
+            return masked_pheno_sequences, target_resistances
         

@@ -641,7 +641,6 @@ class MMBertPreTrainer(nn.Module):
 ############################################### FINE-TUNING TRAINER ####################################################
 ########################################################################################################################
 
-    
 class MMBertFineTuner():
     
     def __init__(
@@ -681,6 +680,7 @@ class MMBertFineTuner():
         self.patience = config_ft["early_stopping_patience"]
         self.save_model_ = config_ft["save_model"]
         
+        self.masking_method = self.train_set.masking_method
         self.mask_prob_geno = self.train_set.mask_prob_geno
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
@@ -729,6 +729,7 @@ class MMBertFineTuner():
         print(f"Antibiotics: {self.antibiotics}")
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
         print(f"Mask probability for genotype: {self.train_set.mask_prob_geno:.0%}")
+        print(f"Masking method: {self.masking_method}")
         if self.mask_prob_pheno:
             print(f"Mask probability for prediction task (phenotype): {self.mask_prob_pheno:.0%}")
         if self.num_known_ab:
@@ -829,8 +830,10 @@ class MMBertFineTuner():
             batch_index = i + 1
             self.optimizer.zero_grad() # zero out gradients
             
-            input, target_res, token_types, attn_mask = batch 
-            # input, target_indices, target_res, token_types, attn_mask, masked_sequences = batch   
+            if self.masking_method == "keep_one_class":
+                input, target_res, token_types, attn_mask, kept_classes  = batch
+            else: 
+                input, target_res, token_types, attn_mask = batch 
             pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
@@ -886,8 +889,10 @@ class MMBertFineTuner():
             ## General tracking ##
             loss = 0
             for i, batch in enumerate(loader):                
-                input, target_res, token_types, attn_mask = batch   
-                 
+                if self.masking_method == "keep_one_class":
+                    input, target_res, token_types, attn_mask, kept_classes  = batch
+                else: 
+                    input, target_res, token_types, attn_mask = batch                 
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
@@ -1058,6 +1063,7 @@ class MMBertFineTuner():
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
+                "masking_method": self.masking_method, 
                 "mask_prob_geno": self.mask_prob_geno,
                 "mask_prob_pheno": self.mask_prob_pheno,
                 "num_known_ab": self.num_known_ab,

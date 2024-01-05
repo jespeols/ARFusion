@@ -35,8 +35,9 @@ fine_tuning:
   batch_size: 16
   val_share: 0.15
   epochs: 100
-  mask_prob_geno:
-  mask_prob_pheno:
+  mask_prob_geno: 0.25
+  masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
+  mask_prob_pheno: 0.25
   num_known_ab: 
   lr: 0.00001
   weight_decay: 0.01
@@ -223,7 +224,7 @@ data:
       COL: 'Polypeptides'
       POL: 'Polypeptides'
       TGC: 'Tetracyclines'
-    class_encoding:
+    class_enc:
       Aminoglycosides: 0
       Carbapenems: 1
       Cephalosporins: 2
@@ -231,6 +232,41 @@ data:
       Penicillins: 4
       Polypeptides: 5
       Tetracyclines: 6
+    class_enc_to_class:
+      0: 'Aminoglycosides'
+      1: 'Carbapenems'
+      2: 'Cephalosporins'
+      3: 'Fluoroquinolones'
+      4: 'Penicillins'
+      5: 'Polypeptides'
+      6: 'Tetracyclines'
+    abbr_to_class_enc:
+      AMK: 0
+      GEN: 0
+      TOB: 0
+      NET: 0
+      IPM: 1
+      MEM: 1
+      DOR: 1
+      ETP: 1
+      CTX: 2
+      CRO: 2
+      CAZ: 2
+      FEP: 2
+      CIP: 3
+      OFX: 3
+      LVX: 3
+      NOR: 3
+      MFX: 3
+      NAL: 3
+      AMP: 4
+      AMX: 4
+      AMC: 4
+      PIP: 4
+      TZP: 4
+      COL: 5
+      POL: 5
+      TGC: 6
   region_mapping:
     'Afghanistan': 'Asia'
     'Albania': 'Europe'
