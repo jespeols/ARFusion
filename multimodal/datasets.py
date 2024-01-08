@@ -424,14 +424,19 @@ class MMFinetuneDataset(Dataset):
             for i, pheno_seq in enumerate(pheno_sequences):
                 # np.random.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
                 classes = ab_classes[i]
+                print("classes:", classes)
                 # randomly choose one class to keep
                 # keep_class = np.random.choice(np.unique(classes)) # all classes are equally likely
-                # keep_class = np.random.choice(classes) # overrepresented classes are more likely
+                # keep_class = np.random.choice(classes) # more frequent classes are more likely
                 unique_classes, counts = np.unique(classes, return_counts=True)
+                print("unique classes", unique_classes)
+                print("counts:", counts)
                 freq = counts / counts.sum()
                 inv_freq = 1 / freq
                 prob = inv_freq / inv_freq.sum()
-                keep_class = np.random.choice(unique_classes, p=prob) # underrepresented classes are more likely
+                keep_class = np.random.choice(unique_classes, p=prob) # less frequent classes are more likely
+                print("chosen class", keep_class)
+                print()
                 kept_classes.append(keep_class)
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
