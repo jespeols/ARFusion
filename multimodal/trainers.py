@@ -919,21 +919,21 @@ class MMBertFineTuner():
                     ab_num_preds[j, :] += self._get_num_preds(ab_pred_res)
                 loss += sum(losses) / len(losses) # average loss over antibiotics
                     
-        avg_loss = loss / len(loader)
+            avg_loss = loss / len(loader)
         
-        ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
-        iso_stats = self._calculate_iso_stats(iso_stats)
+            ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
+            iso_stats = self._calculate_iso_stats(iso_stats)
         
-        acc = iso_stats['num_correct'].sum() / iso_stats['num_masked'].sum()
-        iso_acc = iso_stats['all_correct'].sum() / iso_stats.shape[0]
+            acc = iso_stats['num_correct'].sum() / iso_stats['num_masked'].sum()
+            iso_acc = iso_stats['all_correct'].sum() / iso_stats.shape[0]
 
-        results = {
-            "loss": avg_loss, 
-            "acc": acc,
-            "iso_acc": iso_acc,
-            "ab_stats": ab_stats,
-            "iso_stats": iso_stats,
-        }
+            results = {
+                "loss": avg_loss, 
+                "acc": acc,
+                "iso_acc": iso_acc,
+                "ab_stats": ab_stats,
+                "iso_stats": iso_stats,
+            }
         return results
             
     
