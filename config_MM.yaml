@@ -33,7 +33,7 @@ fine_tuning:
   model_path: 'baseline_pt/model_state.pt'
   naive_model: False # if True, use a model that is not pretrained on the unimodal tasks
   batch_size: 16
-  val_share: 0.15
+  val_share: 0.25
   epochs: 100
   mask_prob_geno: 0.25
   masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'

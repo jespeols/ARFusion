@@ -960,7 +960,7 @@ class MMBertFineTuner():
             'num_correct', 'num_correct_S', 'num_correct_R',
             'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
         ])
-        ab_stats['antibiotic'] = self.antibiotics
+        ab_stats['antibiotic'] = self.antibiotics #TODO: change to antibiotics present in the validation set
         ab_stats['num_tot'], ab_stats['num_S'], ab_stats['num_R'] = 0, 0, 0
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
