@@ -12,7 +12,7 @@ mask_prob_geno: 0.25
 mask_prob_pheno: 0.25
 num_known_ab: 
 batch_size: 64
-val_share: 0.25 # CV split
+val_share: 0.15 # CV split
 max_seq_len: 'auto'
 epochs: 30
 early_stopping_patience: 3
@@ -56,7 +56,8 @@ specials:
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
-  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK']
+  # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET'] # standard
+  exclude_antibiotics: ['IPM', 'MEM', 'ETP', 'DOR', 'TGC', 'POL', 'AMK', 'COL', 'NET', 'TZP', 'GEN', 'CAZ', 'TOB', 'CRO', 'FEP', 'CTX'] # keeps 10 least unbalanced
   pathogens: ['ESCCOL']
   NCBI:
     prepare_data: False
