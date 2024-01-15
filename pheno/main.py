@@ -101,7 +101,7 @@ if __name__ == "__main__":
     specials = config['specials']
     pad_token = specials['PAD']
     pad_idx = list(specials.values()).index(pad_token)
-    antibiotics = list(set(config['antibiotics']['abbr_to_names'].keys()) - set(config['data']['exclude_antibiotics']))
+    antibiotics = sorted(list(set(config['antibiotics']['abbr_to_names'].keys()) - set(config['data']['exclude_antibiotics'])))
     savepath_vocab = os.path.join(results_dir, "vocab.pt") if config['save_vocab'] else None
     vocab = construct_pheno_vocab(ds, specials, antibiotics, savepath_vocab=savepath_vocab)
     vocab_size = len(vocab)

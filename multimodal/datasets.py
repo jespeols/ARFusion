@@ -56,7 +56,7 @@ class MMPretrainDataset(Dataset):
         self.ab_to_idx = {ab: idx for idx, ab in enumerate(antibiotics)}
         self.enc_res = {'S': 0, 'R': 1}
         self.max_seq_len = max_seq_len
-        self.CLS, self.PAD, self.MASK, self.UNK = specials.values()
+        self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
         
         self.mask_prob_geno = mask_prob_geno
         self.mask_prob_pheno = mask_prob_pheno
@@ -266,9 +266,10 @@ class MMFinetuneDataset(Dataset):
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics)
         self.ab_to_idx = {ab: idx for idx, ab in enumerate(self.antibiotics)}
+        print("ab_to_idx:", self.ab_to_idx)
         self.enc_res = {'S': 0, 'R': 1}
         self.max_seq_len = max_seq_len
-        self.CLS, self.PAD, self.MASK, self.UNK = specials.values()
+        self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
         
         self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_geno = mask_prob_geno
