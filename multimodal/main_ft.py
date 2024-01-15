@@ -104,8 +104,6 @@ if __name__ == "__main__":
     pad_token = specials['PAD']
     ds_MM.fillna(pad_token, inplace=True)
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
-    print("Antiobiotics:", antibiotics)
-    print("sorted antibiotics:", sorted(antibiotics))
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:

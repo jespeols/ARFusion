@@ -191,7 +191,6 @@ class MMBertPreTrainer(nn.Module):
                     "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[-1],
                     "best_epoch": self.current_epoch+1
                 })
-        self.model.is_pretrained = True
         if self.save_model_:
             self.save_model() 
         train_time = (time.time() - start_time)/60
@@ -315,7 +314,7 @@ class MMBertPreTrainer(nn.Module):
             for i, batch in enumerate(loader):                
                 input, target_indices, target_res, token_types, attn_mask = batch   
                 # input, target_indices, target_res, token_types, attn_mask, sequences, masked_sequences = batch  
-                 
+                
                 pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
@@ -892,7 +891,8 @@ class MMBertFineTuner():
                 if self.masking_method == "keep_one_class":
                     input, target_res, token_types, attn_mask, kept_classes  = batch
                 else: 
-                    input, target_res, token_types, attn_mask = batch                 
+                    input, target_res, token_types, attn_mask = batch
+                       
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
