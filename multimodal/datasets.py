@@ -42,7 +42,7 @@ class MMPretrainDataset(Dataset):
         random_state: int = 42
     ):
         self.random_state = random_state
-        np.random.seed(random_state)
+        self.rng = np.random.default_rng(self.random_state) # creates a new generator
         
         self.ds_geno = ds_geno.reset_index(drop=True)
         self.num_geno = ds_geno.shape[0]
@@ -134,26 +134,26 @@ class MMPretrainDataset(Dataset):
         seq_starts = [[self.CLS, years[i], countries[i]] for i in range(self.ds_geno.shape[0])]
         for i, geno_seq in enumerate(geno_sequences):
             seq_len = len(geno_seq)
-            token_mask = np.random.rand(seq_len) < self.mask_prob_geno   
+            token_mask = self.rng.random(seq_len) < self.mask_prob_geno   
             target_indices = np.array([-1]*seq_len)
             if not token_mask.any():
                 # if no tokens are masked, mask one random token
-                idx = np.random.randint(seq_len)
+                idx = self.rng.integers(seq_len)
                 target_indices[idx] = self.vocab[geno_seq[idx]]
-                r = np.random.rand()
+                r = self.rng.random()
                 if r < 0.8:
                     geno_seq[idx] = self.MASK
                 elif r < 0.9:
-                    geno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                    geno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
             else:
                 indices = token_mask.nonzero()[0]
                 target_indices[indices] = self.vocab.lookup_indices([geno_seq[i] for i in indices])
                 for i in indices:
-                    r = np.random.rand()
+                    r = self.rng.random()
                     if r < 0.8:
                         geno_seq[i] = self.MASK
                     elif r < 0.9:
-                        geno_seq[i] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                        geno_seq[i] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
             geno_seq = seq_starts[i] + geno_seq
             target_indices = [-1]*3 + target_indices.tolist() 
             masked_geno_sequences.append(geno_seq)
@@ -177,26 +177,26 @@ class MMPretrainDataset(Dataset):
         if self.mask_prob_pheno:
             for i, pheno_seq in enumerate(pheno_sequences):
                 seq_len = len(pheno_seq)
-                token_mask = np.random.rand(seq_len) < self.mask_prob_pheno
+                token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
                 target_res = [-1]*self.num_ab
                 if not token_mask.any():
-                    idx = np.random.randint(seq_len)
+                    idx = self.rng.integers(seq_len)
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]  
-                    r = np.random.rand()
+                    r = self.rng.random()
                     if r < 0.8:
                         pheno_seq[idx] = self.MASK
                     elif r < 0.9:
-                        pheno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size)) 
+                        pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size)) 
                 else:
                     for idx in token_mask.nonzero()[0]:
                         ab, res = pheno_seq[idx].split('_')
                         target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        r = np.random.rand()
+                        r = self.rng.random()
                         if r < 0.8:
                             pheno_seq[idx] = self.MASK
                         elif r < 0.9:
-                            pheno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                            pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 pheno_seq = seq_starts[i] + pheno_seq
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
@@ -204,15 +204,15 @@ class MMPretrainDataset(Dataset):
             for i, pheno_seq in enumerate(pheno_sequences):
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
-                indices = np.random.choice(seq_len, self.num_known_ab, replace=False)
+                indices = self.rng.choice(seq_len, self.num_known_ab, replace=False)
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    r = np.random.rand()
+                    r = self.rng.random()
                     if r < 0.8:
                         pheno_seq[idx] = self.MASK
                     elif r < 0.9:
-                        pheno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                        pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 pheno_seq = seq_starts[i] + pheno_seq
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
@@ -256,7 +256,7 @@ class MMFinetuneDataset(Dataset):
         include_sequences: bool = False
     ):
         self.random_state = random_state
-        np.random.seed(self.random_state)
+        self.rng = np.random.default_rng(self.random_state) # creates a new generator 
         
         self.ds_MM = df_MM.reset_index(drop=True)
         assert all(self.ds_MM['num_ab'] > 0), "Dataset contains isolates without phenotypes"
@@ -355,11 +355,11 @@ class MMFinetuneDataset(Dataset):
         masked_geno_sequences = list()
         
         for geno_seq in geno_sequences:
-            # np.random.shuffle(geno_seq) # if positional encoding is used, sequences ought to be shuffled
+            # self.rngshuffle(geno_seq) # if positional encoding is used, sequences ought to be shuffled
             seq_len = len(geno_seq)
-            token_mask = np.random.rand(seq_len) < self.mask_prob_geno
+            token_mask = self.rng.random(seq_len) < self.mask_prob_geno
             if not token_mask.any():
-                idx = np.random.randint(seq_len)
+                idx = self.rng.integers(seq_len)
                 geno_seq[idx] = self.PAD            ## TODO: maybe change to an '[NA]' token 
             else:
                 for idx in token_mask.nonzero()[0]:
@@ -376,65 +376,65 @@ class MMFinetuneDataset(Dataset):
 
         if self.mask_prob_pheno:
             for pheno_seq in pheno_sequences:
-                # np.random.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
+                # self.rng.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(pheno_seq)
-                token_mask = np.random.rand(seq_len) < self.mask_prob_pheno
+                token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
                 target_res = [-1]*self.num_ab
                 if not token_mask.any():
-                    idx = np.random.randint(seq_len)
+                    idx = self.rng.integers(seq_len)
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]  
-                    r = np.random.rand()
+                    r = self.rng.random()
                     if r < 0.8:
                         pheno_seq[idx] = self.MASK
                     elif r < 0.9:
-                        pheno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size)) 
+                        pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size)) 
                 else:
                     for idx in token_mask.nonzero()[0]:
                         ab, res = pheno_seq[idx].split('_')
                         target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        r = np.random.rand()
+                        r = self.rng.random()
                         if r < 0.8:
                             pheno_seq[idx] = self.MASK
                         elif r < 0.9:
-                            pheno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                            pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
         elif self.num_known_ab:
             for pheno_seq in pheno_sequences:
-                # np.random.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
+                # self.rng.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
                 if self.num_known_ab == 0:
                     indices = range(seq_len)
                 else:
-                    indices = np.random.choice(seq_len, self.num_known_ab, replace=False)
+                    indices = self.rng.choice(seq_len, self.num_known_ab, replace=False)
                     
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    r = np.random.rand()
+                    r = self.rng.random()
                     if r < 0.8:
                         pheno_seq[idx] = self.MASK
                     elif r < 0.9:
-                        pheno_seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                        pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)  
         elif self.masking_method == "keep_one_class":
             for i, pheno_seq in enumerate(pheno_sequences):
-                # np.random.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
+                # self.rng.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
                 classes = ab_classes[i]
                 print("classes:", classes)
                 # randomly choose one class to keep
-                # keep_class = np.random.choice(np.unique(classes)) # all classes are equally likely
-                # keep_class = np.random.choice(classes) # more frequent classes are more likely
+                # keep_class = self.rng.choice(np.unique(classes)) # all classes are equally likely
+                # keep_class = self.rng.choice(classes) # more frequent classes are more likely
                 unique_classes, counts = np.unique(classes, return_counts=True)
                 print("unique classes", unique_classes)
                 print("counts:", counts)
                 freq = counts / counts.sum()
                 inv_freq = 1 / freq
                 prob = inv_freq / inv_freq.sum()
-                keep_class = np.random.choice(unique_classes, p=prob) # less frequent classes are more likely
+                keep_class = self.rng.choice(unique_classes, p=prob) # less frequent classes are more likely
                 print("chosen class", keep_class)
                 print()
                 kept_classes.append(keep_class)
