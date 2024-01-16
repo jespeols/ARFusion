@@ -204,7 +204,7 @@ class MMPretrainDataset(Dataset):
             for i, pheno_seq in enumerate(pheno_sequences):
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
-                indices = self.rng.choice(seq_len, self.num_known_ab, replace=False)
+                indices = self.rng.choice(seq_len, seq_len - self.num_known_ab, replace=False)
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
@@ -408,7 +408,7 @@ class MMFinetuneDataset(Dataset):
                 if self.num_known_ab == 0:
                     indices = range(seq_len)
                 else:
-                    indices = self.rng.choice(seq_len, self.num_known_ab, replace=False)
+                    indices = self.rng.choice(seq_len, seq_len - self.num_known_ab, replace=False)
                     
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
