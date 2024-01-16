@@ -90,6 +90,7 @@ if __name__ == "__main__":
     print("\nLoading dataset...")
     ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].reset_index(drop=True)
+    # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
     
     abbr_to_class_enc = config['data']['antibiotics']['abbr_to_class_enc']
     ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
