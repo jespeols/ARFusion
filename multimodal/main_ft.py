@@ -155,4 +155,4 @@ if __name__ == "__main__":
     tuner.print_model_summary()
     tuner.print_trainer_summary()
     ft_results = tuner()
-    export_results(ft_results, results_dir / 'new_results.pkl')
+    export_results(ft_results, results_dir / 'results.pkl')
