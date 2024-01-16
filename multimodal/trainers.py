@@ -921,7 +921,7 @@ class MMBertFineTuner():
                     ab_num_preds[j, :] += self._get_num_preds(ab_pred_res)
                 loss += sum(losses) / len(losses) # average loss over antibiotics
                     
-            avg_loss = loss / len(loader)
+            avg_loss = loss.item() / len(loader)
         
             ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
             iso_stats = self._calculate_iso_stats(iso_stats)
