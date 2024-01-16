@@ -34,7 +34,6 @@ fine_tuning:
   loadpath_vocab: 'MM_vocab.pt'
   # loadpath_vocab: 'MM_vocab_small.pt'
   model_path: 'baseline_pt/model_state.pt'
-  naive_model: False # if True, use a model that is not pretrained on the unimodal tasks
   batch_size: 16
   val_share: 0.25
   epochs: 100
@@ -47,7 +46,7 @@ fine_tuning:
   early_stopping_patience: 10
   print_progress_every: 100
   report_every: 15
-  save_model: False
+  save_model: True
   random_state: 42
 
 #################### DATA & MISC. ####################

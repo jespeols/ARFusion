@@ -1126,7 +1126,7 @@ class MMBertFineTuner():
         mlm_loss = tot_loss / self.print_progress_every
           
         s = f"{time.strftime('%H:%M:%S', time_elapsed)}" 
-        s += f" | Epoch: {self.current_epoch+1}/{self.epochs} | {batch_index}/{self.num_batches} ({progress:.2%}) | "\
+        s += f" | {batch_index}/{self.num_batches} ({progress:.2%}) | "\
                 f"Loss: {mlm_loss:.4f}"
         print(s)
     

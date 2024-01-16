@@ -60,7 +60,7 @@ if __name__ == "__main__":
     config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
     config_ft['name'] = args.name if args.name else config_ft['name']
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
-    config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
+    config_ft['naive_model'] = args.naive_model if args.naive_model else False
     config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
     config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
     assert config_ft['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
