@@ -33,6 +33,7 @@ fine_tuning:
   ds_path: 'data/NCBI.pkl'
   loadpath_vocab: 'MM_vocab.pt'
   # loadpath_vocab: 'MM_vocab_small.pt'
+  naive_model: False
   model_path: 'baseline_pt/model_state.pt'
   batch_size: 16
   val_share: 0.25
