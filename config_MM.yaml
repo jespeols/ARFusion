@@ -21,6 +21,7 @@ weight_decay: 0.01
 print_progress_every: 1500
 report_every: 1000
 savepath_vocab: 'MM_vocab.pt'
+# savepath_vocab: 'MM_vocab_small.pt'
 save_model: True
 random_state: 42
 
@@ -30,6 +31,8 @@ fine_tuning:
   project_name: Multimodal-MLM
   name: baseline_ft
   ds_path: 'data/NCBI.pkl'
+  loadpath_vocab: 'MM_vocab.pt'
+  # loadpath_vocab: 'MM_vocab_small.pt'
   model_path: 'baseline_pt/model_state.pt'
   naive_model: False # if True, use a model that is not pretrained on the unimodal tasks
   batch_size: 16
@@ -56,8 +59,8 @@ specials:
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
-  # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET'] # standard
-  exclude_antibiotics: ['IPM', 'MEM', 'ETP', 'DOR', 'TGC', 'POL', 'AMK', 'COL', 'NET', 'TZP', 'GEN', 'CAZ', 'TOB', 'CRO', 'FEP', 'CTX'] # keeps 10 least unbalanced
+  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET'] # standard
+  # exclude_antibiotics: ['IPM', 'MEM', 'ETP', 'DOR', 'TGC', 'POL', 'AMK', 'COL', 'NET', 'TZP', 'GEN', 'CAZ', 'TOB', 'CRO', 'FEP', 'CTX'] # small, keeps 10 least unbalanced
   pathogens: ['ESCCOL']
   NCBI:
     prepare_data: False
@@ -77,6 +80,7 @@ data:
     raw_path: 'data/raw/AMR_TEST.csv'
     save_path: 'data/TESSy.pkl'
     load_path: 'data/TESSy.pkl'
+    # load_path: 'data/TESSy_small.pkl'
     impute_gender: False
     impute_age: False
     country_code_to_name:

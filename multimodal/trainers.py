@@ -34,6 +34,7 @@ class MMBertPreTrainer(nn.Module):
         np.random.seed(self.random_state)
         torch.manual_seed(self.random_state)
         torch.cuda.manual_seed(self.random_state)
+        torch.backends.cudnn.deterministic = True 
         
         self.model = model
         self.project_name = config["project_name"]
@@ -658,6 +659,7 @@ class MMBertFineTuner():
         np.random.seed(self.random_state)
         torch.manual_seed(self.random_state)
         torch.cuda.manual_seed(self.random_state)
+        torch.backends.cudnn.deterministic = True
         
         self.model = model
         self.project_name = config_ft["project_name"]

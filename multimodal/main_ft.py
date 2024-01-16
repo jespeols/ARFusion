@@ -98,11 +98,12 @@ if __name__ == "__main__":
         print(f"Removed {ds_NCBI[ds_NCBI['num_ab'] > 0].shape[0] - ds_MM.shape[0]} samples with only one antibiotic class")
     
     print("Loading vocabulary...")
-    vocab = torch.load(BASE_DIR / config['savepath_vocab'])
+    vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
     vocab_size = len(vocab)
     specials = config['specials']
     pad_token = specials['PAD']
     ds_MM.fillna(pad_token, inplace=True)
+    
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
@@ -154,4 +155,4 @@ if __name__ == "__main__":
     tuner.print_model_summary()
     tuner.print_trainer_summary()
     ft_results = tuner()
-    export_results(ft_results, results_dir / 'ft_results.pkl')
+    export_results(ft_results, results_dir / 'new_results.pkl')
