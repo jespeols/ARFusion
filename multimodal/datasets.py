@@ -429,14 +429,10 @@ class MMFinetuneDataset(Dataset):
                 # keep_class = self.rng.choice(np.unique(classes)) # all classes are equally likely
                 # keep_class = self.rng.choice(classes) # more frequent classes are more likely
                 unique_classes, counts = np.unique(classes, return_counts=True)
-                print("unique classes", unique_classes)
-                print("counts:", counts)
                 freq = counts / counts.sum()
                 inv_freq = 1 / freq
                 prob = inv_freq / inv_freq.sum()
                 keep_class = self.rng.choice(unique_classes, p=prob) # less frequent classes are more likely
-                print("chosen class", keep_class)
-                print()
                 kept_classes.append(keep_class)
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab

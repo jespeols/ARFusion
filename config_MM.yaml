@@ -60,8 +60,8 @@ specials:
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
-  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET'] # standard
-  # exclude_antibiotics: ['IPM', 'MEM', 'ETP', 'DOR', 'TGC', 'POL', 'AMK', 'COL', 'NET', 'TZP', 'GEN', 'CAZ', 'TOB', 'CRO', 'FEP', 'CTX'] # small, keeps 10 least unbalanced
+  # OFX, AMC, TZP, PIP don't occur in NCBI
+  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP'] # standard
   pathogens: ['ESCCOL']
   NCBI:
     prepare_data: False
