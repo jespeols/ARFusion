@@ -31,6 +31,7 @@ fine_tuning:
   project_name: Multimodal-MLM
   name: baseline_ft
   ds_path: 'data/NCBI.pkl'
+  # ds_path: 'data/NCBI_small.pkl'
   loadpath_vocab: 'MM_vocab.pt'
   # loadpath_vocab: 'MM_vocab_small.pt'
   naive_model: False
