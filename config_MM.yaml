@@ -16,7 +16,7 @@ val_share: 0.15 # CV split
 max_seq_len: 'auto'
 epochs: 30
 early_stopping_patience: 3
-lr: 0.0001 
+lr: 0.00005 
 weight_decay: 0.01
 print_progress_every: 1500
 report_every: 1000
@@ -36,14 +36,14 @@ fine_tuning:
   # loadpath_vocab: 'MM_vocab_small.pt'
   naive_model: False
   model_path: 'baseline_pt/model_state.pt'
-  batch_size: 16
+  batch_size: 32
   val_share: 0.25
   epochs: 100
   mask_prob_geno: 0.25
   masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
   mask_prob_pheno: 0.25
   num_known_ab: 
-  lr: 0.00001
+  lr: 0.00005
   weight_decay: 0.01
   early_stopping_patience: 10
   print_progress_every: 100

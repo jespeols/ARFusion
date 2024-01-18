@@ -423,9 +423,7 @@ class MMFinetuneDataset(Dataset):
         elif self.masking_method == "keep_one_class":
             for i, pheno_seq in enumerate(pheno_sequences):
                 # self.rng.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
-                classes = ab_classes[i]
-                print("classes:", classes)
-                # randomly choose one class to keep
+                classes = ab_classes[i]                # randomly choose one class to keep
                 # keep_class = self.rng.choice(np.unique(classes)) # all classes are equally likely
                 # keep_class = self.rng.choice(classes) # more frequent classes are more likely
                 unique_classes, counts = np.unique(classes, return_counts=True)
