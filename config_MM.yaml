@@ -56,7 +56,6 @@ specials:
   CLS: '[CLS]'
   PAD: '[PAD]'
   MASK: '[MASK]'
-  # SEP: '[SEP]'
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
