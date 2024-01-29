@@ -832,7 +832,7 @@ class MMBertFineTuner():
             self.optimizer.zero_grad() # zero out gradients
             
             if self.masking_method == "keep_one_class":
-                input, target_res, token_types, attn_mask, kept_classes  = batch
+                input, target_res, token_types, attn_mask, kept_classes = batch
             else: 
                 input, target_res, token_types, attn_mask = batch 
             pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics

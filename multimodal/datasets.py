@@ -260,7 +260,6 @@ class MMFinetuneDataset(Dataset):
         
         self.ds_MM = df_MM.reset_index(drop=True)
         assert all(self.ds_MM['num_ab'] > 0), "Dataset contains isolates without phenotypes"
-        self.num_samples = self.ds_MM.shape[0]
         self.vocab = vocab
         self.vocab_size = len(self.vocab)
         self.antibiotics = antibiotics
@@ -278,7 +277,11 @@ class MMFinetuneDataset(Dataset):
             assert self.mask_prob_pheno, "mask_prob_pheno must be given if masking_method is 'random'"
         elif self.masking_method == 'num_known':
             assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
-        
+            self.ds_MM = self.ds_MM[self.ds_MM['num_ab'] > self.num_known_ab].reset_index(drop=True)
+        elif self.masking_method == 'keep_one_class':            
+            self.ds_MM = self.ds_MM[self.ds_MM['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
+        self.num_samples = self.ds_MM.shape[0]
+                    
         self.include_sequences = include_sequences
         self.columns = [self.INDICES_MASKED, self.TARGET_RESISTANCES, self.TOKEN_TYPES]
         if self.masking_method == "keep_one_class":
@@ -340,7 +343,7 @@ class MMFinetuneDataset(Dataset):
         
         if self.include_sequences:
             if self.masking_method == "keep_one_class":
-                rows = zip(indices_masked, target_resistances, token_types, masked_sequences, kept_classes)
+                rows = zip(indices_masked, target_resistances, token_types, kept_classes, masked_sequences)
             else:
                 rows = zip(indices_masked, target_resistances, token_types, masked_sequences)
         else:
@@ -438,6 +441,11 @@ class MMFinetuneDataset(Dataset):
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
+                    r = self.rng.random()
+                    if r < 0.8:
+                        pheno_seq[idx] = self.MASK
+                    elif r < 0.9:
+                        pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
         else:

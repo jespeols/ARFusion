@@ -94,9 +94,9 @@ if __name__ == "__main__":
     
     abbr_to_class_enc = config['data']['antibiotics']['abbr_to_class_enc']
     ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
-    if config_ft['masking_method'] == 'keep_one_class':
-        ds_MM = ds_MM[ds_MM['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
-        print(f"Removed {ds_NCBI[ds_NCBI['num_ab'] > 0].shape[0] - ds_MM.shape[0]} samples with only one antibiotic class")
+    # if config_ft['masking_method'] == 'keep_one_class':
+    #     ds_MM = ds_MM[ds_MM['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
+    #     print(f"Removed {ds_NCBI[ds_NCBI['num_ab'] > 0].shape[0] - ds_MM.shape[0]} samples with only one antibiotic class")
     
     print("Loading vocabulary...")
     vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
