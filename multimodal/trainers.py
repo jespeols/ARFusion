@@ -34,6 +34,7 @@ class MMBertPreTrainer(nn.Module):
         np.random.seed(self.random_state)
         torch.manual_seed(self.random_state)
         torch.cuda.manual_seed(self.random_state)
+        torch.backends.cudnn.deterministic = True 
         
         self.model = model
         self.project_name = config["project_name"]
@@ -191,7 +192,6 @@ class MMBertPreTrainer(nn.Module):
                     "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[-1],
                     "best_epoch": self.current_epoch+1
                 })
-        self.model.is_pretrained = True
         if self.save_model_:
             self.save_model() 
         train_time = (time.time() - start_time)/60
@@ -315,7 +315,7 @@ class MMBertPreTrainer(nn.Module):
             for i, batch in enumerate(loader):                
                 input, target_indices, target_res, token_types, attn_mask = batch   
                 # input, target_indices, target_res, token_types, attn_mask, sequences, masked_sequences = batch  
-                 
+                
                 pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
@@ -641,7 +641,6 @@ class MMBertPreTrainer(nn.Module):
 ############################################### FINE-TUNING TRAINER ####################################################
 ########################################################################################################################
 
-    
 class MMBertFineTuner():
     
     def __init__(
@@ -660,6 +659,7 @@ class MMBertFineTuner():
         np.random.seed(self.random_state)
         torch.manual_seed(self.random_state)
         torch.cuda.manual_seed(self.random_state)
+        torch.backends.cudnn.deterministic = True
         
         self.model = model
         self.project_name = config_ft["project_name"]
@@ -681,6 +681,7 @@ class MMBertFineTuner():
         self.patience = config_ft["early_stopping_patience"]
         self.save_model_ = config_ft["save_model"]
         
+        self.masking_method = self.train_set.masking_method
         self.mask_prob_geno = self.train_set.mask_prob_geno
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
@@ -729,6 +730,7 @@ class MMBertFineTuner():
         print(f"Antibiotics: {self.antibiotics}")
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
         print(f"Mask probability for genotype: {self.train_set.mask_prob_geno:.0%}")
+        print(f"Masking method: {self.masking_method}")
         if self.mask_prob_pheno:
             print(f"Mask probability for prediction task (phenotype): {self.mask_prob_pheno:.0%}")
         if self.num_known_ab:
@@ -829,8 +831,10 @@ class MMBertFineTuner():
             batch_index = i + 1
             self.optimizer.zero_grad() # zero out gradients
             
-            input, target_res, token_types, attn_mask = batch 
-            # input, target_indices, target_res, token_types, attn_mask, masked_sequences = batch   
+            if self.masking_method == "keep_one_class":
+                input, target_res, token_types, attn_mask, kept_classes  = batch
+            else: 
+                input, target_res, token_types, attn_mask = batch 
             pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
@@ -886,8 +890,11 @@ class MMBertFineTuner():
             ## General tracking ##
             loss = 0
             for i, batch in enumerate(loader):                
-                input, target_res, token_types, attn_mask = batch   
-                 
+                if self.masking_method == "keep_one_class":
+                    input, target_res, token_types, attn_mask, kept_classes  = batch
+                else: 
+                    input, target_res, token_types, attn_mask = batch
+                       
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
@@ -914,21 +921,21 @@ class MMBertFineTuner():
                     ab_num_preds[j, :] += self._get_num_preds(ab_pred_res)
                 loss += sum(losses) / len(losses) # average loss over antibiotics
                     
-        avg_loss = loss / len(loader)
+            avg_loss = loss.item() / len(loader)
         
-        ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
-        iso_stats = self._calculate_iso_stats(iso_stats)
+            ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
+            iso_stats = self._calculate_iso_stats(iso_stats)
         
-        acc = iso_stats['num_correct'].sum() / iso_stats['num_masked'].sum()
-        iso_acc = iso_stats['all_correct'].sum() / iso_stats.shape[0]
+            acc = iso_stats['num_correct'].sum() / iso_stats['num_masked'].sum()
+            iso_acc = iso_stats['all_correct'].sum() / iso_stats.shape[0]
 
-        results = {
-            "loss": avg_loss, 
-            "acc": acc,
-            "iso_acc": iso_acc,
-            "ab_stats": ab_stats,
-            "iso_stats": iso_stats,
-        }
+            results = {
+                "loss": avg_loss, 
+                "acc": acc,
+                "iso_acc": iso_acc,
+                "ab_stats": ab_stats,
+                "iso_stats": iso_stats,
+            }
         return results
             
     
@@ -955,7 +962,7 @@ class MMBertFineTuner():
             'num_correct', 'num_correct_S', 'num_correct_R',
             'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
         ])
-        ab_stats['antibiotic'] = self.antibiotics
+        ab_stats['antibiotic'] = self.antibiotics #TODO: change to antibiotics present in the validation set
         ab_stats['num_tot'], ab_stats['num_S'], ab_stats['num_R'] = 0, 0, 0
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
@@ -1058,6 +1065,7 @@ class MMBertFineTuner():
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
+                "masking_method": self.masking_method, 
                 "mask_prob_geno": self.mask_prob_geno,
                 "mask_prob_pheno": self.mask_prob_pheno,
                 "num_known_ab": self.num_known_ab,
@@ -1118,7 +1126,7 @@ class MMBertFineTuner():
         mlm_loss = tot_loss / self.print_progress_every
           
         s = f"{time.strftime('%H:%M:%S', time_elapsed)}" 
-        s += f" | Epoch: {self.current_epoch+1}/{self.epochs} | {batch_index}/{self.num_batches} ({progress:.2%}) | "\
+        s += f" | {batch_index}/{self.num_batches} ({progress:.2%}) | "\
                 f"Loss: {mlm_loss:.4f}"
         print(s)
     

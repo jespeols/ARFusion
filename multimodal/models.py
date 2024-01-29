@@ -133,7 +133,12 @@ class BERT(nn.Module):
             pheno_only: bool = False
         ):
         super(BERT, self).__init__()
-                
+        
+        self.random_state = config['random_state']
+        torch.manual_seed(self.random_state)
+        torch.cuda.manual_seed(self.random_state)
+        torch.backends.cudnn.deterministic = True
+        
         self.vocab_size = vocab_size
         self.num_ab = num_ab
         self.max_seq_len = max_seq_len

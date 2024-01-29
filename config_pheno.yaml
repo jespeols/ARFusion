@@ -128,11 +128,38 @@ antibiotics:
     COL: 'Polypeptides'
     POL: 'Polypeptides'
     TGC: 'Tetracyclines'
-  class_encoding:
-      Aminoglycosides: 0
-      Carbapenems: 1
-      Cephalosporins: 2
-      Fluoroquinolones: 3
-      Penicillins: 4
-      Polypeptides: 5
-      Tetracyclines: 6
+  class_enc:
+    Aminoglycosides: 0
+    Carbapenems: 1
+    Cephalosporins: 2
+    Fluoroquinolones: 3
+    Penicillins: 4
+    Polypeptides: 5
+    Tetracyclines: 6
+  abbr_to_class_enc:
+    AMK: 0
+    GEN: 0
+    TOB: 0
+    NET: 0
+    IPM: 1
+    MEM: 1
+    DOR: 1
+    ETP: 1
+    CTX: 2
+    CRO: 2
+    CAZ: 2
+    FEP: 2
+    CIP: 3
+    OFX: 3
+    LVX: 3
+    NOR: 3
+    MFX: 3
+    NAL: 3
+    AMP: 4
+    AMX: 4
+    AMC: 4
+    PIP: 4
+    TZP: 4
+    COL: 5
+    POL: 5
+    TGC: 6

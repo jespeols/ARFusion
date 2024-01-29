@@ -31,6 +31,7 @@ if __name__ == "__main__":
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
+    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_geno", type=float)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
@@ -61,14 +62,17 @@ if __name__ == "__main__":
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
     config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
     config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
-    assert not (args.mask_prob_geno and args.num_known_ab), "'mask_prob_pheno' and 'num_known_ab' cannot be set at the same time"
-    if args.mask_prob_pheno:
-        config_ft['mask_prob_pheno'] = args.mask_prob_pheno
+    config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
+    assert config_ft['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
+    if config_ft['masking_method'] == 'random':
+        config_ft['mask_prob_pheno'] = args.mask_prob_pheno if args.mask_prob_pheno else config_ft['mask_prob_pheno']
         config_ft['num_known_ab'] = None
-    elif args.num_known_ab:
-        config_ft['num_known_ab'] = args.num_known_ab
+    elif config_ft['masking_method'] == 'num_known':
+        config_ft['num_known_ab'] = args.num_known_ab if args.num_known_ab else config_ft['num_known_ab']
         config_ft['mask_prob_pheno'] = None
-    assert not (config_ft['mask_prob_pheno'] and config['num_known_ab']), "'mask_prob_pheno' and 'num_known_ab' cannot be set at the same time"
+    elif config_ft['masking_method'] == 'keep_one_class':
+        config_ft['num_known_ab'] = None
+        config_ft['mask_prob_pheno'] = None
     config_ft['batch_size'] = args.batch_size if args.batch_size else config_ft['batch_size']
     config_ft['epochs'] = args.epochs if args.epochs else config_ft['epochs']
     config_ft['lr'] = args.lr if args.lr else config['lr']
@@ -86,14 +90,22 @@ if __name__ == "__main__":
     print("\nLoading dataset...")
     ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].reset_index(drop=True)
+    # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
+    
+    abbr_to_class_enc = config['data']['antibiotics']['abbr_to_class_enc']
+    ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
+    if config_ft['masking_method'] == 'keep_one_class':
+        ds_MM = ds_MM[ds_MM['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
+        print(f"Removed {ds_NCBI[ds_NCBI['num_ab'] > 0].shape[0] - ds_MM.shape[0]} samples with only one antibiotic class")
     
     print("Loading vocabulary...")
-    vocab = torch.load(BASE_DIR / config['savepath_vocab'])
+    vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
     vocab_size = len(vocab)
     specials = config['specials']
     pad_token = specials['PAD']
     ds_MM.fillna(pad_token, inplace=True)
-    antibiotics = list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics']))
+    
+    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
@@ -110,6 +122,7 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         specials=specials,
         max_seq_len=max_seq_len,
+        masking_method=config_ft['masking_method'],
         mask_prob_geno=config_ft['mask_prob_geno'],
         mask_prob_pheno=config_ft['mask_prob_pheno'],
         num_known_ab=config_ft['num_known_ab'],
@@ -121,6 +134,7 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         specials=specials,
         max_seq_len=max_seq_len,
+        masking_method=config_ft['masking_method'],
         mask_prob_geno=config_ft['mask_prob_geno'],
         mask_prob_pheno=config_ft['mask_prob_pheno'],
         num_known_ab=config_ft['num_known_ab'],
@@ -142,4 +156,4 @@ if __name__ == "__main__":
     tuner.print_model_summary()
     tuner.print_trainer_summary()
     ft_results = tuner()
-    export_results(ft_results, results_dir / 'ft_results.pkl')
+    export_results(ft_results, results_dir / 'results.pkl')
