@@ -780,6 +780,9 @@ class MMBertFineTuner():
                     "Losses/final_val_loss": self.best_val_loss, 
                     "Accuracies/final_val_acc": self.val_accs[self.best_epoch],
                     "Accuracies/final_val_iso_acc": self.val_iso_accs[self.best_epoch],
+                    "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
+                    "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
+                    "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
                     "best_epoch": self.best_epoch+1
                 })
                 self.model.load_state_dict(self.best_model_state) 
@@ -792,9 +795,11 @@ class MMBertFineTuner():
                     "Losses/final_val_loss": self.best_val_loss, 
                     "Accuracies/final_val_acc": self.val_accs[-1],
                     "Accuracies/final_val_iso_acc": self.val_iso_accs[-1],
+                    "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
+                    "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
+                    "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
                     "best_epoch": self.current_epoch+1
                 })
-        self.model.is_pretrained = True
         if self.save_model_:
             self.save_model(self.results_dir / "model_state.pt") 
         train_time = (time.time() - start_time)/60
@@ -813,11 +818,14 @@ class MMBertFineTuner():
             "train_time": train_time,
             "best_epoch": self.current_epoch,
             "train_losses": self.losses,
-            "val_losses": self.val_losses,
-            "val_accs": self.val_accs,
-            "val_iso_accs": self.val_iso_accs,
-            "val_iso_stats": self.val_iso_stats[self.best_epoch],
-            "val_ab_stats": self.val_ab_stats[self.best_epoch]
+            "losses": self.val_losses,
+            "accs": self.val_accs,
+            "iso_accs": self.val_iso_accs,
+            "sensitivities": self.val_sensitivities,
+            "specificities": self.val_specificities,
+            "F1_scores": self.val_F1_scores,
+            "iso_stats": self.val_iso_stats[self.best_epoch],
+            "ab_stats": self.val_ab_stats[self.best_epoch]
         }
         return results
     
@@ -926,13 +934,20 @@ class MMBertFineTuner():
             ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
             iso_stats = self._calculate_iso_stats(iso_stats)
         
-            acc = iso_stats['num_correct'].sum() / iso_stats['num_masked'].sum()
+            acc = ab_stats['num_correct'].sum() / ab_stats['num_tot'].sum()
             iso_acc = iso_stats['all_correct'].sum() / iso_stats.shape[0]
+            sens = ab_stats['num_correct_R'].sum() / ab_stats['num_R'].sum() 
+            spec = ab_stats['num_correct_S'].sum() / ab_stats['num_S'].sum()
+            prec = ab_stats['num_correct_R'].sum() / ab_stats['num_pred_R'].sum()
+            F1_score = 2 * sens * prec / (sens + prec)
 
             results = {
                 "loss": avg_loss, 
                 "acc": acc,
                 "iso_acc": iso_acc,
+                "sensitivity": sens,
+                "specificity": spec,
+                "F1": F1_score,
                 "ab_stats": ab_stats,
                 "iso_stats": iso_stats,
             }
@@ -944,6 +959,9 @@ class MMBertFineTuner():
         self.val_losses = []
         self.val_accs = []
         self.val_iso_accs = []
+        self.val_sensitivities = []
+        self.val_specificities = []
+        self.val_F1_scores = []
         self.val_ab_stats = []
         self.val_iso_stats = []
         
@@ -952,6 +970,9 @@ class MMBertFineTuner():
         self.val_losses.append(results["loss"])
         self.val_accs.append(results["acc"])
         self.val_iso_accs.append(results["iso_acc"])
+        self.val_sensitivities.append(results["sensitivity"])
+        self.val_specificities.append(results["specificity"])
+        self.val_F1_scores.append(results["F1"])
         self.val_ab_stats.append(results["ab_stats"])
         self.val_iso_stats.append(results["iso_stats"])
     
@@ -962,7 +983,7 @@ class MMBertFineTuner():
             'num_correct', 'num_correct_S', 'num_correct_R',
             'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
         ])
-        ab_stats['antibiotic'] = self.antibiotics #TODO: change to antibiotics present in the validation set
+        ab_stats['antibiotic'] = self.antibiotics # TODO: change to antibiotics present in the validation set
         ab_stats['num_tot'], ab_stats['num_S'], ab_stats['num_R'] = 0, 0, 0
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
@@ -1090,10 +1111,16 @@ class MMBertFineTuner():
         self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_iso_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Class_metrics/val_sens", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Class_metrics/val_spec", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Class_metrics/val_F1", summary="max", step_metric="epoch")
         
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
         self.wandb_run.define_metric("Accuracies/final_val_iso_acc")
+        self.wandb_run.define_metric("Class_metrics/final_val_sens")
+        self.wandb_run.define_metric("Class_metrics/final_val_spec")
+        self.wandb_run.define_metric("Class_metrics/final_val_F1")
         
         self.wandb_run.define_metric("best_epoch", hidden=True)
 
@@ -1106,6 +1133,9 @@ class MMBertFineTuner():
             "Losses/val_loss": self.val_losses[-1],
             # "Losses/val_geno_loss": self.val_geno_losses[-1],
             "Losses/val_loss": self.val_losses[-1],
+            "Class_metrics/val_sens": self.val_sensitivities[-1],
+            "Class_metrics/val_spec": self.val_specificities[-1],
+            "Class_metrics/val_F1": self.val_F1_scores[-1],
             "Accuracies/val_acc": self.val_accs[-1],
             "Accuracies/val_iso_acc": self.val_iso_accs[-1],
             # "Accuracies/val_geno_acc": self.val_geno_accs[-1],
