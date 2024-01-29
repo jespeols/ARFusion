@@ -59,11 +59,11 @@ specials:
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
-  # OFX, AMC, TZP, PIP don't occur in NCBI
-  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP'] # standard
+  # OFX, AMC, TZP, PIP don't occur in NCBI (or not frequently enough)
+  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # standard
   pathogens: ['ESCCOL']
   NCBI:
-    prepare_data: False
+    prepare_data: True
     raw_path: 'data/raw/NCBI.tsv'
     save_path: 'data/NCBI.pkl'
     load_path: 'data/NCBI.pkl'
@@ -76,7 +76,7 @@ data:
     # exclusion_chars: ['-']  
     gene_count_threshold: 35
   TESSy:
-    prepare_data: False
+    prepare_data: True
     raw_path: 'data/raw/AMR_TEST.csv'
     save_path: 'data/TESSy.pkl'
     load_path: 'data/TESSy.pkl'
