@@ -48,7 +48,7 @@ fine_tuning:
   early_stopping_patience: 10
   print_progress_every: 100
   report_every: 15
-  save_model: True
+  save_model: False
   random_state: 42
 
 #################### DATA & MISC. ####################
@@ -63,7 +63,7 @@ data:
   exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # standard
   pathogens: ['ESCCOL']
   NCBI:
-    prepare_data: True
+    prepare_data: False
     raw_path: 'data/raw/NCBI.tsv'
     save_path: 'data/NCBI.pkl'
     load_path: 'data/NCBI.pkl'
@@ -76,7 +76,7 @@ data:
     # exclusion_chars: ['-']  
     gene_count_threshold: 35
   TESSy:
-    prepare_data: True
+    prepare_data: False
     raw_path: 'data/raw/AMR_TEST.csv'
     save_path: 'data/TESSy.pkl'
     load_path: 'data/TESSy.pkl'
