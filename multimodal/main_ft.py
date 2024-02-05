@@ -31,8 +31,8 @@ if __name__ == "__main__":
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
-    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_geno", type=float)
+    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].reset_index(drop=True)
     # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
     
-    abbr_to_class_enc = config['data']['antibiotics']['abbr_to_class_enc']
+    abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
     # if config_ft['masking_method'] == 'keep_one_class':
     #     ds_MM = ds_MM[ds_MM['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)

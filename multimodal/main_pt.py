@@ -32,6 +32,7 @@ if __name__ == "__main__":
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--mask_prob_geno", type=float)
+    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--num_layers", type=int)
@@ -64,14 +65,17 @@ if __name__ == "__main__":
     config['wandb_mode'] = args.wandb_mode if args.wandb_mode else config['wandb_mode']
     config['name'] = args.name if args.name else config['name']
     config['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config['mask_prob_geno']
-    assert not (args.mask_prob_pheno and args.num_known_ab), "'mask_prob_pheno' and 'num_known_ab' cannot be set at the same time"
-    if args.mask_prob_pheno:
-        config['mask_prob_pheno'] = args.mask_prob_pheno
+    config['masking_method'] = args.masking_method if args.masking_method else config['masking_method']
+    assert config['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
+    if config['masking_method'] == 'random':
+        config['mask_prob_pheno'] = args.mask_prob_pheno if args.mask_prob_pheno else config['mask_prob_pheno']
         config['num_known_ab'] = None
-    elif args.num_known_ab:
-        config['num_known_ab'] = args.num_known_ab
+    elif config['masking_method'] == 'num_known':
+        config['num_known_ab'] = args.num_known_ab if args.num_known_ab else config['num_known_ab']
         config['mask_prob_pheno'] = None
-    assert not (config['mask_prob_pheno'] and config['num_known_ab']), "'mask_prob_pheno' and 'num_known_ab' cannot be set at the same time"
+    elif config['masking_method'] == 'keep_one_class':
+        config['num_known_ab'] = None
+        config['mask_prob_pheno'] = None
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
@@ -107,6 +111,10 @@ if __name__ == "__main__":
         ds_TESSy = pd.read_pickle(os.path.join(BASE_DIR, data_dict['TESSy']['load_path']))
     ds_pheno = ds_TESSy.copy()
     ds_pheno['country'] = ds_pheno['country'].map(config['data']['TESSy']['country_code_to_name'])
+    abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
+    ds_pheno['ab_classes'] = ds_pheno['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
+    print(f"Number of samples in TESSy: {ds_pheno.shape[0]:,}")
+    print(f"Number of samples with only one class: {ds_pheno[ds_pheno['ab_classes'].apply(lambda x: len(set(x)) == 1)].shape[0]:,}")
     
     if data_dict['NCBI']['prepare_data']:
         ds_NCBI = preprocess_NCBI(
@@ -163,7 +171,9 @@ if __name__ == "__main__":
         specials=specials,
         max_seq_len=max_seq_len,
         mask_prob_geno=config['mask_prob_geno'],
+        masking_method=config['masking_method'],
         mask_prob_pheno=config['mask_prob_pheno'],
+        num_known_ab=config['num_known_ab'],
         random_state=config['random_state']
     )
     ds_pt_val = MMPretrainDataset(
@@ -174,7 +184,9 @@ if __name__ == "__main__":
         specials=specials,
         max_seq_len=max_seq_len,
         mask_prob_geno=config['mask_prob_geno'],
+        masking_method=config['masking_method'],
         mask_prob_pheno=config['mask_prob_pheno'],
+        num_known_ab=config['num_known_ab'],
         random_state=config['random_state']
     )
     bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx=pad_idx).to(device)

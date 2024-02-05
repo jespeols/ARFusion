@@ -47,7 +47,9 @@ class MMBertPreTrainer(nn.Module):
         assert round(self.val_size / (self.train_size + self.val_size), 2) == config["val_share"], "Validation set size does not match intended val_share"
         self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
-        self.num_batches = round(self.train_size / self.batch_size)
+        # self.num_batches = round(self.train_size / self.batch_size)
+        self.num_batches = np.ceil(self.train_size / self.batch_size).astype(int)
+        print(self.train_size / self.batch_size, self.num_batches)
         self.vocab = self.train_set.vocab
          
         self.lr = config["lr"]
@@ -106,6 +108,7 @@ class MMBertPreTrainer(nn.Module):
         print(f"Antibiotics: {self.antibiotics}")
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
         print(f"Mask probability (genotypes): {self.mask_prob_geno:.0%}")
+        print(f"Masking method: {self.train_set.masking_method}")
         if self.mask_prob_pheno:
             print(f"Mask probability (phenotypes): {self.mask_prob_pheno:.0%}")
         if self.num_known_ab:
@@ -839,10 +842,7 @@ class MMBertFineTuner():
             batch_index = i + 1
             self.optimizer.zero_grad() # zero out gradients
             
-            if self.masking_method == "keep_one_class":
-                input, target_res, token_types, attn_mask, kept_classes = batch
-            else: 
-                input, target_res, token_types, attn_mask = batch 
+            input, target_res, token_types, attn_mask = batch 
             pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
@@ -897,11 +897,8 @@ class MMBertFineTuner():
             ab_num_correct = np.zeros_like(ab_num) # tracks the number of correct predictions for each antibiotic & resistance
             ## General tracking ##
             loss = 0
-            for i, batch in enumerate(loader):                
-                if self.masking_method == "keep_one_class":
-                    input, target_res, token_types, attn_mask, kept_classes  = batch
-                else: 
-                    input, target_res, token_types, attn_mask = batch
+            for i, batch in enumerate(loader):                  
+                input, target_res, token_types, attn_mask = batch
                        
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
