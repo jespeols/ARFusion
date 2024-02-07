@@ -113,8 +113,6 @@ if __name__ == "__main__":
     ds_pheno['country'] = ds_pheno['country'].map(config['data']['TESSy']['country_code_to_name'])
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_pheno['ab_classes'] = ds_pheno['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
-    print(f"Number of samples in TESSy: {ds_pheno.shape[0]:,}")
-    print(f"Number of samples with only one class: {ds_pheno[ds_pheno['ab_classes'].apply(lambda x: len(set(x)) == 1)].shape[0]:,}")
     
     if data_dict['NCBI']['prepare_data']:
         ds_NCBI = preprocess_NCBI(
