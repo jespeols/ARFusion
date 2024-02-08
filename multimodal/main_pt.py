@@ -46,6 +46,7 @@ if __name__ == "__main__":
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--prepare_TESSy", type=bool)
     argparser.add_argument("--prepare_NCBI", type=bool)
+    argparser.add_argument("--do_eval", type=bool)
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -86,6 +87,7 @@ if __name__ == "__main__":
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['data']['TESSy']['prepare_data'] = args.prepare_TESSy if args.prepare_TESSy else config['data']['TESSy']['prepare_data']
     config['data']['NCBI']['prepare_data'] = args.prepare_NCBI if args.prepare_NCBI else config['data']['NCBI']['prepare_data']
+    config['do_eval'] = args.do_eval if args.do_eval else config['do_eval']
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
     if config['name']:

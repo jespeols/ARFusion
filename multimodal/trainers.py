@@ -56,7 +56,8 @@ class MMBertPreTrainer(nn.Module):
         self.weight_decay = config["weight_decay"]
         self.epochs = config["epochs"]
         self.patience = config["early_stopping_patience"]
-        self.save_model_ = config["save_model"] if config["save_model"] else False
+        self.save_model_ = config["save_model"]
+        self.do_eval = config["do_eval"] 
         
         self.mask_prob_geno = self.train_set.mask_prob_geno
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
@@ -123,10 +124,12 @@ class MMBertPreTrainer(nn.Module):
     def __call__(self):      
         self._init_wandb()
         print("="*self._splitter_size)
+        if self.do_eval:
+            print("Preparing validation set...")
+            self.val_set.prepare_dataset()
+            self.val_set.shuffle() # to avoid batches of only genotypes or only phenotypes
+            self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
         print("Initializing training...")
-        self.val_set.prepare_dataset()
-        self.val_set.shuffle() # to avoid batches of only genotypes or only phenotypes
-        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
         
         start_time = time.time()
         self.best_val_loss = float('inf') 
@@ -142,49 +145,27 @@ class MMBertPreTrainer(nn.Module):
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
             print("Loss: {:.4f} | Genotype loss: {:.4f} | Phenotype loss: {:.4f}".format(
                 train_losses['loss'], train_losses['geno_loss'], train_losses['pheno_loss']))
-            print("Evaluating on validation set...")
-            val_results = self.evaluate(self.val_loader, self.val_set)
-            print("Val loss: {:.4f} | Genotype loss: {:.4f} | Phenotype loss: {:.4f}".format(
-                val_results['loss'], val_results['geno_loss'], val_results['pheno_loss']))
-            print("Phenotype accuracy: {:.2%} | Phenotype isolate accuracy: {:.2%}".format(
-                val_results['pheno_acc'], val_results['pheno_iso_acc']))
-            print("Genotype accuracy: {:.2%} | Genotype isolate accuracy: {:.2%}".format(
-                val_results['geno_acc'], val_results['geno_iso_acc']))
+            if self.do_eval:
+                print("Evaluating on validation set...")
+                val_results = self.evaluate(self.val_loader, self.val_set)
+                self.print_val_results(val_results)
+                self._update_val_lists(val_results)
             print("="*self._splitter_size)
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
-            self._update_val_lists(val_results)
             self._report_epoch_results()
             early_stop = self.early_stopping()
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
-                print(f"Validation stats at best epoch ({self.best_epoch+1}):")
-                s1 = f"Loss: {self.val_losses[self.best_epoch]:.4f}" 
-                s1 += f"| Phenotype Loss: {self.val_pheno_losses[self.best_epoch]:.4f}"
-                s1 += f" | Genotype Loss: {self.val_geno_losses[self.best_epoch]:.4f}"
-                print(s1)
-                s2 = f" | Phenotype accuracy: {self.val_pheno_accs[self.best_epoch]:.2%}"
-                s2 += f" | Phenotype isolate accuracy: {self.val_pheno_iso_accs[self.best_epoch]:.2%}"
-                print(s2)
-                s3 = f" | Genotype accuracy: {self.val_geno_accs[self.best_epoch]:.2%}"
-                s3 += f" | Genotype isolate accuracy: {self.val_geno_iso_accs[self.best_epoch]:.2%}"
-                print(s3)
-                self.wandb_run.log({
-                    "Losses/final_val_loss": self.best_val_loss, 
-                    "Losses/final_val_geno_loss": self.val_geno_losses[self.best_epoch],
-                    "Losses/final_val_pheno_loss": self.val_pheno_losses[self.best_epoch],
-                    "Accuracies/final_val_pheno_acc": self.val_pheno_accs[self.best_epoch],
-                    "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[self.best_epoch],
-                    "Accuracies/final_val_geno_acc": self.val_geno_accs[self.best_epoch],
-                    "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[self.best_epoch],
-                    "best_epoch": self.best_epoch+1
-                })
+                if self.do_eval:
+                    self.print_early_stop_results()
+                    self.report_early_stop_results()
                 print("="*self._splitter_size)
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
             if self.scheduler:
                 self.scheduler.step()
-        if not early_stop:    
+        if not early_stop and self.do_eval:    
             self.wandb_run.log({
                     "Losses/final_val_loss": self.best_val_loss, 
                     "Losses/final_val_geno_loss": self.val_geno_losses[-1],
@@ -202,7 +183,7 @@ class MMBertPreTrainer(nn.Module):
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
         print("="*self._splitter_size)
-        if not early_stop:
+        if not early_stop and self.do_eval:
             print("Final validation stats:")
             s1 = f"Loss: {self.val_losses[-1]:.4f} | Phenotype Loss: {self.val_pheno_losses[-1]:.4f}"
             s1 += f" | Genotype Loss: {self.val_geno_losses[-1]:.4f}"
@@ -213,22 +194,28 @@ class MMBertPreTrainer(nn.Module):
             s3 = f" Genotype accuracy: {self.val_geno_accs[-1]:.2%}"
             s3 += f" | Genotype isolate accuracy: {self.val_geno_iso_accs[-1]:.2%}"
             print(s3)
-        
-        results = {
-            "best_epoch": self.current_epoch,
-            "train_losses": self.losses,
-            "val_losses": self.val_losses,
-            "val_pheno_losses": self.val_pheno_losses,
-            "val_geno_losses": self.val_geno_losses,
-            "val_pheno_accs": self.val_pheno_accs,
-            "val_geno_accs": self.val_geno_accs,
-            "val_pheno_iso_accs": self.val_pheno_iso_accs,
-            "val_geno_iso_accs": self.val_geno_iso_accs,
-            "train_time": train_time,
-            "val_iso_stats_geno": self.val_iso_stats_geno[self.best_epoch],
-            "val_iso_stats_pheno": self.val_iso_stats_pheno[self.best_epoch],
-            "val_ab_stats": self.val_ab_stats[self.best_epoch]
-        }
+        if self.do_eval:
+            results = {
+                "best_epoch": self.current_epoch,
+                "train_losses": self.losses,
+                "val_losses": self.val_losses,
+                "val_pheno_losses": self.val_pheno_losses,
+                "val_geno_losses": self.val_geno_losses,
+                "val_pheno_accs": self.val_pheno_accs,
+                "val_geno_accs": self.val_geno_accs,
+                "val_pheno_iso_accs": self.val_pheno_iso_accs,
+                "val_geno_iso_accs": self.val_geno_iso_accs,
+                "train_time": train_time,
+                "val_iso_stats_geno": self.val_iso_stats_geno[self.best_epoch],
+                "val_iso_stats_pheno": self.val_iso_stats_pheno[self.best_epoch],
+                "val_ab_stats": self.val_ab_stats[self.best_epoch]
+            }
+        else:
+            results = {
+                "best_epoch": self.current_epoch,
+                "train_losses": self.losses,
+                "train_time": train_time
+            }
         return results
     
     
@@ -591,19 +578,34 @@ class MMBertPreTrainer(nn.Module):
         
         self.wandb_run.define_metric("best_epoch", hidden=True)
     
+    
+    def print_val_results(self, val_results: dict):
+        print("Val loss: {:.4f} | Genotype loss: {:.4f} | Phenotype loss: {:.4f}".format(
+            val_results['loss'], val_results['geno_loss'], val_results['pheno_loss']))
+        print("Phenotype accuracy: {:.2%} | Phenotype isolate accuracy: {:.2%}".format(
+            val_results['pheno_acc'], val_results['pheno_iso_acc']))
+        print("Genotype accuracy: {:.2%} | Genotype isolate accuracy: {:.2%}".format(
+            val_results['geno_acc'], val_results['geno_iso_acc']))
+    
      
     def _report_epoch_results(self):
-        wandb_dict = {
-            "epoch": self.current_epoch+1,
-            "Losses/train_loss": self.losses[-1],
-            "Losses/val_loss": self.val_losses[-1],
-            "Losses/val_geno_loss": self.val_geno_losses[-1],
-            "Losses/val_pheno_loss": self.val_pheno_losses[-1],
-            "Accuracies/val_pheno_acc": self.val_pheno_accs[-1],
-            "Accuracies/val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
-            "Accuracies/val_geno_acc": self.val_geno_accs[-1],
-            "Accuracies/val_geno_iso_acc": self.val_geno_iso_accs[-1],
-        }
+        if self.do_eval:
+            wandb_dict = {
+                "epoch": self.current_epoch+1,
+                "Losses/train_loss": self.losses[-1],
+                "Losses/val_loss": self.val_losses[-1],
+                "Losses/val_geno_loss": self.val_geno_losses[-1],
+                "Losses/val_pheno_loss": self.val_pheno_losses[-1],
+                "Accuracies/val_pheno_acc": self.val_pheno_accs[-1],
+                "Accuracies/val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
+                "Accuracies/val_geno_acc": self.val_geno_accs[-1],
+                "Accuracies/val_geno_iso_acc": self.val_geno_iso_accs[-1],
+            }
+        else:
+            wandb_dict = {
+                "epoch": self.current_epoch+1,
+                "Losses/train_loss": self.losses[-1]
+            }
         self.wandb_run.log(wandb_dict)
     
         
@@ -622,6 +624,33 @@ class MMBertPreTrainer(nn.Module):
         s += f" | Epoch: {self.current_epoch+1}/{self.epochs} | {batch_index}/{self.num_batches} ({progress:.2%}) | "\
                 f"Loss: {mlm_loss:.4f}"
         print(s)
+    
+    
+    def print_early_stop_results(self):
+        print(f"Validation stats at best epoch ({self.best_epoch+1}):")
+        s1 = f"Loss: {self.val_losses[self.best_epoch]:.4f}" 
+        s1 += f"| Phenotype Loss: {self.val_pheno_losses[self.best_epoch]:.4f}"
+        s1 += f" | Genotype Loss: {self.val_geno_losses[self.best_epoch]:.4f}"
+        print(s1)
+        s2 = f" | Phenotype accuracy: {self.val_pheno_accs[self.best_epoch]:.2%}"
+        s2 += f" | Phenotype isolate accuracy: {self.val_pheno_iso_accs[self.best_epoch]:.2%}"
+        print(s2)
+        s3 = f" | Genotype accuracy: {self.val_geno_accs[self.best_epoch]:.2%}"
+        s3 += f" | Genotype isolate accuracy: {self.val_geno_iso_accs[self.best_epoch]:.2%}"
+        print(s3)
+    
+    
+    def report_early_stop_results(self):
+        self.wandb_run.log({
+            "Losses/final_val_loss": self.best_val_loss, 
+            "Losses/final_val_geno_loss": self.val_geno_losses[self.best_epoch],
+            "Losses/final_val_pheno_loss": self.val_pheno_losses[self.best_epoch],
+            "Accuracies/final_val_pheno_acc": self.val_pheno_accs[self.best_epoch],
+            "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[self.best_epoch],
+            "Accuracies/final_val_geno_acc": self.val_geno_accs[self.best_epoch],
+            "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[self.best_epoch],
+            "best_epoch": self.best_epoch+1
+        })
     
     
     def save_model(self, savepath: Path = None):
