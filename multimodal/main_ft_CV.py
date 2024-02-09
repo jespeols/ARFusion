@@ -40,6 +40,7 @@ if __name__ == "__main__":
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--val_share", type=str)
+    argparser.add_argument("--num_folds", type=int)
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -79,6 +80,7 @@ if __name__ == "__main__":
     config_ft['lr'] = args.lr if args.lr else config['lr']
     config_ft['random_state'] = args.random_state if args.random_state else config_ft['random_state']
     config_ft['val_share'] = args.val_share if args.val_share else config_ft['val_share']
+    config_ft['num_folds'] = args.num_folds if args.num_folds else config_ft['num_folds']
         
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     if config['name']:
@@ -112,50 +114,95 @@ if __name__ == "__main__":
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
         max_seq_len = config['max_seq_len']
+        
 
-    train_indices, val_indices = get_split_indices(
-        ds_MM.shape[0], 
-        val_share=config_ft['val_share'], 
-        random_state=config_ft['random_state']
-    )  
-    ds_ft_train = MMFinetuneDataset(
-        df_MM=ds_MM.iloc[train_indices],
-        vocab=vocab,
-        antibiotics=antibiotics,
-        specials=specials,
-        max_seq_len=max_seq_len,
-        masking_method=config_ft['masking_method'],
-        mask_prob_geno=config_ft['mask_prob_geno'],
-        mask_prob_pheno=config_ft['mask_prob_pheno'],
-        num_known_ab=config_ft['num_known_ab'],
-        random_state=config_ft['random_state']
-    )
-    ds_ft_val = MMFinetuneDataset(
-        df_MM=ds_MM.iloc[val_indices],
-        vocab=vocab,
-        antibiotics=antibiotics,
-        specials=specials,
-        max_seq_len=max_seq_len,
-        masking_method=config_ft['masking_method'],
-        mask_prob_geno=config_ft['mask_prob_geno'],
-        mask_prob_pheno=config_ft['mask_prob_pheno'],
-        num_known_ab=config_ft['num_known_ab'],
-        random_state=config_ft['random_state']
-    )
-    pad_idx = vocab[pad_token]
-    bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
-    tuner = MMBertFineTuner(
-        config=config,
-        model=bert,
-        antibiotics=antibiotics,
-        train_set=ds_ft_train,
-        val_set=ds_ft_val,
-        results_dir=results_dir,
-    )
-    if not config_ft['naive_model']:
-        tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
-        tuner.model.is_pretrained = True
-    tuner.print_model_summary()
-    tuner.print_trainer_summary()
-    ft_results = tuner()
-    export_results(ft_results, results_dir / 'results.pkl')
+    seeds = [config_ft['random_state'] + i for i in range(config_ft['num_folds'])]
+    
+    best_epoch_list = []
+    train_losses_list = []
+    losses_list = []
+    accs_list = []
+    iso_accs_list = []
+    sensitivities_list = []
+    specificities_list = []
+    F1_scores_list = []
+    iso_stats_list = []
+    ab_stats_list = []
+    
+    for i, seed in enumerate(seeds):
+        print("="*80)
+        print("="*80)
+        print(f"\nTraining fold {i+1} of {config_ft['num_folds']}...")
+        print("="*80)
+    
+        train_indices, val_indices = get_split_indices(
+            ds_MM.shape[0], 
+            val_share=config_ft['val_share'], 
+            random_state=seed
+        )  
+        ds_ft_train = MMFinetuneDataset(
+            df_MM=ds_MM.iloc[train_indices],
+            vocab=vocab,
+            antibiotics=antibiotics,
+            specials=specials,
+            max_seq_len=max_seq_len,
+            masking_method=config_ft['masking_method'],
+            mask_prob_geno=config_ft['mask_prob_geno'],
+            mask_prob_pheno=config_ft['mask_prob_pheno'],
+            num_known_ab=config_ft['num_known_ab'],
+            random_state=seed
+        )
+        ds_ft_val = MMFinetuneDataset(
+            df_MM=ds_MM.iloc[val_indices],
+            vocab=vocab,
+            antibiotics=antibiotics,
+            specials=specials,
+            max_seq_len=max_seq_len,
+            masking_method=config_ft['masking_method'],
+            mask_prob_geno=config_ft['mask_prob_geno'],
+            mask_prob_pheno=config_ft['mask_prob_pheno'],
+            num_known_ab=config_ft['num_known_ab'],
+            random_state=seed
+        )
+        pad_idx = vocab[pad_token]
+        bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
+        tuner = MMBertFineTuner(
+            config=config,
+            model=bert,
+            antibiotics=antibiotics,
+            train_set=ds_ft_train,
+            val_set=ds_ft_val,
+            results_dir=results_dir,
+        )
+        if not config_ft['naive_model']:
+            tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
+            tuner.model.is_pretrained = True
+        if i == 0:
+            tuner.print_model_summary()
+            tuner.print_trainer_summary()
+        ft_results = tuner()
+        
+        best_epoch_list.append(ft_results['best_epoch'])
+        train_losses_list.append(ft_results['train_losses'])
+        losses_list.append(ft_results['losses'])
+        accs_list.append(ft_results['accs'])
+        iso_accs_list.append(ft_results['iso_accs'])
+        sensitivities_list.append(ft_results['sensitivities'])
+        specificities_list.append(ft_results['specificities'])
+        F1_scores_list.append(ft_results['F1_scores'])
+        iso_stats_list.append(ft_results['iso_stats'])
+        ab_stats_list.append(ft_results['ab_stats'])
+        
+    CV_results = {
+        'best_epoch': best_epoch_list,
+        'train_losses': train_losses_list,
+        'losses': losses_list,
+        'accs': accs_list,
+        'iso_accs': iso_accs_list,
+        'sensitivities': sensitivities_list,
+        'specificities': specificities_list,
+        'F1_scores': F1_scores_list,
+        'iso_stats': iso_stats_list,
+        'ab_stats': ab_stats_list
+    }  
+    export_results(CV_results, results_dir / 'CV_results.pkl')
