@@ -61,7 +61,9 @@ data:
   # exclude_antibiotics: 
   # OFX, AMC, TZP, PIP don't occur in NCBI (or not frequently enough)
   # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # standard
-  exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'DOR', 'TGC', 'MEM', 'AMK', 'IPM', 'ETP', 'COL', 'AMX', 'NET'] # more inclusive
+  # IPM: 99% S in TESSy, but 98% in NCBI
+  # MFX: Reasonable imbalance, but few samples
+  exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'NOR', 'POL', 'DOR', 'TGC', 'MEM', 'ETP', 'COL', 'AMX', 'AMK', 'NET', 'PIP'] # more inclusive
   pathogens: ['ESCCOL']
   NCBI:
     prepare_data: False

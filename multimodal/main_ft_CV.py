@@ -102,12 +102,19 @@ if __name__ == "__main__":
     
     print("Loading vocabulary...")
     vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
-    vocab_size = len(vocab)
     specials = config['specials']
     pad_token = specials['PAD']
     ds_MM.fillna(pad_token, inplace=True)
     
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+    if config_ft['naive_model']: ## REMOVE LATER 
+        for ab in antibiotics:
+            tokens = list(vocab.get_stoi().keys())
+            if not (ab+"_S") in tokens:
+                print(f"Adding antibiotic {ab} to vocabulary")
+                vocab.append_token(ab+"_S")
+                vocab.append_token(ab+"_R")
+    vocab_size = len(vocab)
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
