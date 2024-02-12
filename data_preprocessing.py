@@ -41,6 +41,7 @@ def preprocess_NCBI(path,
                        p.split("=")[0].casefold() in name_to_abbr_lower.keys() and p.split("=")[1] in ['R', 'S']]
         )
         if exclude_antibiotics:
+            print(f"Filtering out antibiotics: {exclude_antibiotics}")
             df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].apply(
                 lambda x: [p for p in x if p.split("_")[0] not in exclude_antibiotics]
             )
@@ -110,8 +111,9 @@ def preprocess_NCBI(path,
     print(f"Number of isolates after parsing: {df.shape[0]:,}")
     if include_phenotype:
         print(f"Number of isolates with phenotype info after parsing: {df[df['num_ab'] > 0].shape[0]:,}")
-    
-    df.to_pickle(save_path) if save_path else None
+    if save_path:
+        print(f"Saving to {save_path}")
+        df.to_pickle(save_path)
     
     return df
 
