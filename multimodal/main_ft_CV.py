@@ -130,9 +130,10 @@ if __name__ == "__main__":
     ab_stats_list = []
     
     for i, seed in enumerate(seeds):
+        print()
         print("="*80)
         print("="*80)
-        print(f"\nTraining fold {i+1} of {config_ft['num_folds']}...")
+        print(f"Training fold {i+1} of {config_ft['num_folds']}...")
         print("="*80)
     
         train_indices, val_indices = get_split_indices(
