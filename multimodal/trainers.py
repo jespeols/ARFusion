@@ -47,9 +47,7 @@ class MMBertPreTrainer(nn.Module):
         assert round(self.val_size / (self.train_size + self.val_size), 2) == config["val_share"], "Validation set size does not match intended val_share"
         self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
-        # self.num_batches = round(self.train_size / self.batch_size)
         self.num_batches = np.ceil(self.train_size / self.batch_size).astype(int)
-        print(self.train_size / self.batch_size, self.num_batches)
         self.vocab = self.train_set.vocab
          
         self.lr = config["lr"]
@@ -124,11 +122,10 @@ class MMBertPreTrainer(nn.Module):
     def __call__(self):      
         self._init_wandb()
         print("="*self._splitter_size)
-        if self.do_eval:
-            print("Preparing validation set...")
-            self.val_set.prepare_dataset()
-            self.val_set.shuffle() # to avoid batches of only genotypes or only phenotypes
-            self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        print("Preparing validation set...")
+        self.val_set.prepare_dataset()
+        self.val_set.shuffle() # to avoid batches of only genotypes or only phenotypes
+        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
         print("Initializing training...")
         
         start_time = time.time()
@@ -150,6 +147,9 @@ class MMBertPreTrainer(nn.Module):
                 val_results = self.evaluate(self.val_loader, self.val_set)
                 self.print_val_results(val_results)
                 self._update_val_lists(val_results)
+            else:
+                val_loss = self.get_val_loss(self.val_loader)
+                self.val_losses.append(val_loss)
             print("="*self._splitter_size)
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             self._report_epoch_results()
@@ -214,7 +214,8 @@ class MMBertPreTrainer(nn.Module):
             results = {
                 "best_epoch": self.current_epoch,
                 "train_losses": self.losses,
-                "train_time": train_time
+                "train_time": train_time,
+                "val_losses": self.val_losses
             }
         return results
     
@@ -289,6 +290,49 @@ class MMBertPreTrainer(nn.Module):
             self.early_stopping_counter += 1
             return True if self.early_stopping_counter >= self.patience else False
         
+    
+    def get_val_loss(self, loader: DataLoader):
+        self.model.eval()
+        with torch.no_grad():
+            tot_geno_loss, tot_pheno_loss = 0, 0
+            geno_batches, pheno_batches = 0, 0
+            for batch in loader:
+                input, target_indices, target_res, token_types, attn_mask = batch   
+                pred_logits, token_pred = self.model(input, token_types, attn_mask)
+                
+                ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
+                if ab_mask.any(): # if there are phenotypes in the batch
+                    
+                    ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
+                    losses = list()
+                    for j in ab_indices: 
+                        mask = ab_mask[:, j] # (batch_size,)
+                        
+                        # isolate the predictions and targets for the antibiotic
+                        ab_pred_logits = pred_logits[mask, j] # (num_masked_samples,)
+                        ab_targets = target_res[mask, j] # (num_masked_samples,)
+                        
+                        ab_loss = self.ab_criterions[j](ab_pred_logits, ab_targets)
+                        losses.append(ab_loss)
+                        
+                    pheno_loss = sum(losses) / len(losses) # average loss over antibiotics
+                    tot_pheno_loss += pheno_loss.item()
+                    pheno_batches += 1
+                    
+                ###### Genotype loss ######
+                token_mask = target_indices != -1 # (batch_size, max_seq_len), True if token is masked, False otherwise
+                if token_mask.any(): # if there are genotypes in the batch
+                    
+                    geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_indices) 
+                    tot_geno_loss += geno_loss.item()
+                    geno_batches += 1
+                    
+        avg_geno_loss = tot_geno_loss / geno_batches
+        avg_pheno_loss = tot_pheno_loss / pheno_batches
+        avg_loss = avg_geno_loss + avg_pheno_loss
+        
+        return avg_loss
+    
             
     def evaluate(self, loader: DataLoader, ds_obj):
         self.model.eval()

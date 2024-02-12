@@ -14,7 +14,7 @@ mask_prob_pheno: 0.25
 num_known_ab: 
 batch_size: 64
 val_share: 0.15 # CV split
-do_eval: True # whether or not to evaluate on validation set
+do_eval: True
 max_seq_len: 'auto'
 epochs: 30
 early_stopping_patience: 3
@@ -23,7 +23,6 @@ weight_decay: 0.01
 print_progress_every: 1500
 report_every: 1000
 savepath_vocab: 'MM_vocab.pt'
-# savepath_vocab: 'MM_vocab_small.pt'
 save_model: True
 random_state: 42
 
@@ -33,9 +32,7 @@ fine_tuning:
   project_name: Multimodal-MLM
   name: baseline_ft
   ds_path: 'data/NCBI.pkl'
-  # ds_path: 'data/NCBI_small.pkl'
   loadpath_vocab: 'MM_vocab.pt'
-  # loadpath_vocab: 'MM_vocab_small.pt'
   naive_model: False
   model_path: 'baseline_pt/model_state.pt'
   batch_size: 32
@@ -62,7 +59,8 @@ specials:
 data:
   # exclude_antibiotics: 
   # OFX, AMC, TZP, PIP don't occur in NCBI (or not frequently enough)
-  exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # standard
+  # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # standard
+  exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'DOR', 'TGC', 'MEM', 'AMK', 'IPM', 'ETP', 'COL', 'AMX', 'NET'] # more inclusive
   pathogens: ['ESCCOL']
   NCBI:
     prepare_data: False

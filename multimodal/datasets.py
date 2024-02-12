@@ -66,8 +66,8 @@ class MMPretrainDataset(Dataset):
         elif self.masking_method == 'num_known':
             assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
             self.ds_pheno = self.ds_pheno[self.ds_pheno['num_ab'] > self.num_known_ab].reset_index(drop=True)
-        elif self.masking_method == 'keep_one_class':
-            self.ds_pheno = self.ds_pheno[self.ds_pheno['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
+        # elif self.masking_method == 'keep_one_class':
+        self.ds_pheno = self.ds_pheno[self.ds_pheno['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
         self.num_pheno = self.ds_pheno.shape[0]
         self.num_samples = self.num_geno + self.num_pheno
         

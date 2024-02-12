@@ -44,9 +44,9 @@ if __name__ == "__main__":
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
-    argparser.add_argument("--prepare_TESSy", type=bool)
-    argparser.add_argument("--prepare_NCBI", type=bool)
-    argparser.add_argument("--do_eval", type=bool)
+    argparser.add_argument("--prepare_TESSy", action="store_true", help="Prepare TESSy data")
+    argparser.add_argument("--prepare_NCBI", action="store_true", help="Prepare NCBI data")
+    argparser.add_argument("--no_eval", action="store_true", help="Disable evaluation")
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -87,7 +87,8 @@ if __name__ == "__main__":
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['data']['TESSy']['prepare_data'] = args.prepare_TESSy if args.prepare_TESSy else config['data']['TESSy']['prepare_data']
     config['data']['NCBI']['prepare_data'] = args.prepare_NCBI if args.prepare_NCBI else config['data']['NCBI']['prepare_data']
-    config['do_eval'] = args.do_eval if args.do_eval else config['do_eval']
+    if args.no_eval:
+        config['do_eval'] = False
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
     if config['name']:
@@ -149,10 +150,7 @@ if __name__ == "__main__":
         savepath_vocab=BASE_DIR / config['savepath_vocab']
     )
     vocab_size = len(vocab)
-    
-    # ds_geno = ds_geno.iloc[:5000]
-    # ds_pheno = ds_pheno.iloc[:15000]
-    
+        
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
