@@ -7,12 +7,11 @@ import pandas as pd
 import os
 import sys
 from pathlib import Path
+from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 os.chdir(BASE_DIR)
 
-from datetime import datetime
-from pathlib import Path
 
 # user-defined modules
 from multimodal.models import BERT

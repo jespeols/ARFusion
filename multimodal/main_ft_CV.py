@@ -7,12 +7,10 @@ import pandas as pd
 import os
 import sys
 from pathlib import Path
+from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 os.chdir(BASE_DIR)
-
-from datetime import datetime
-from pathlib import Path
 
 # user-defined modules
 from multimodal.models import BERT
@@ -59,7 +57,7 @@ if __name__ == "__main__":
     
     # overwrite config with command line arguments
     args = argparser.parse_args()
-    config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
+    config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else 'disabled'
     config_ft['name'] = args.name if args.name else config_ft['name']
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
     config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
@@ -118,16 +116,15 @@ if __name__ == "__main__":
 
     seeds = [config_ft['random_state'] + i for i in range(config_ft['num_folds'])]
     
-    best_epoch_list = []
-    train_losses_list = []
-    losses_list = []
-    accs_list = []
-    iso_accs_list = []
-    sensitivities_list = []
-    specificities_list = []
-    F1_scores_list = []
-    iso_stats_list = []
-    ab_stats_list = []
+    train_losses = []
+    losses = []
+    accs = []
+    iso_accs = []
+    sensitivities = []
+    specificities = []
+    F1_scores = []
+    iso_stats = []
+    ab_stats = []
     
     for i, seed in enumerate(seeds):
         print()
@@ -183,29 +180,27 @@ if __name__ == "__main__":
             tuner.print_trainer_summary()
         ft_results = tuner()
         
-        best_epoch_list.append(ft_results['best_epoch'])
-        train_losses_list.append(ft_results['train_losses'])
-        losses_list.append(ft_results['losses'])
-        accs_list.append(ft_results['accs'])
-        iso_accs_list.append(ft_results['iso_accs'])
-        sensitivities_list.append(ft_results['sensitivities'])
-        specificities_list.append(ft_results['specificities'])
-        F1_scores_list.append(ft_results['F1_scores'])
-        iso_stats_list.append(ft_results['iso_stats'])
-        ab_stats_list.append(ft_results['ab_stats'])
+        train_losses.append(ft_results['train_loss'])
+        losses.append(ft_results['loss'])
+        accs.append(ft_results['acc'])
+        iso_accs.append(ft_results['iso_acc'])
+        sensitivities.append(ft_results['sens'])
+        specificities.append(ft_results['spec'])
+        F1_scores.append(ft_results['F1'])
+        iso_stats.append(ft_results['iso_stats'])
+        ab_stats.append(ft_results['ab_stats'])
     
     print("All folds completed!")
     print("Exporting results...")    
     CV_results = {
-        'best_epoch': best_epoch_list,
-        'train_losses': train_losses_list,
-        'losses': losses_list,
-        'accs': accs_list,
-        'iso_accs': iso_accs_list,
-        'sensitivities': sensitivities_list,
-        'specificities': specificities_list,
-        'F1_scores': F1_scores_list,
-        'iso_stats': iso_stats_list,
-        'ab_stats': ab_stats_list
+        'train_losses': train_losses,
+        'losses': losses,
+        'accs': accs,
+        'iso_accs': iso_accs,
+        'sensitivities': sensitivities,
+        'specificities': specificities,
+        'F1_scores': F1_scores,
+        'iso_stats': iso_stats,
+        'ab_stats': ab_stats
     }  
     export_results(CV_results, results_dir / 'CV_results.pkl')
