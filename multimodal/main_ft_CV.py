@@ -193,7 +193,9 @@ if __name__ == "__main__":
         F1_scores_list.append(ft_results['F1_scores'])
         iso_stats_list.append(ft_results['iso_stats'])
         ab_stats_list.append(ft_results['ab_stats'])
-        
+    
+    print("All folds completed!")
+    print("Exporting results...")    
     CV_results = {
         'best_epoch': best_epoch_list,
         'train_losses': train_losses_list,
