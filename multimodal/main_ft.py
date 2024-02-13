@@ -38,7 +38,7 @@ if __name__ == "__main__":
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
-    argparser.add_argument("--val_share", type=str)
+    argparser.add_argument("--val_share", type=float)
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")

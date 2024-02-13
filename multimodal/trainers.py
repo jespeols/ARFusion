@@ -886,7 +886,7 @@ class MMBertFineTuner():
         if not early_stop:
             print("Final validation stats:")
             s = f"Loss: {self.val_losses[-1]:.4f}"
-            s = f" | Accuracy: {self.val_accs[-1]:.2%}"
+            s += f" | Accuracy: {self.val_accs[-1]:.2%}"
             s += f" | Isolate accuracy: {self.val_iso_accs[-1]:.2%}"
             print(s)
         

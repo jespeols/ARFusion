@@ -37,7 +37,7 @@ if __name__ == "__main__":
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
-    argparser.add_argument("--val_share", type=str)
+    argparser.add_argument("--val_share", type=float)
     argparser.add_argument("--num_folds", type=int)
         
     if device.type == "cuda":

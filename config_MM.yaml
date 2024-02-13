@@ -37,7 +37,7 @@ fine_tuning:
   model_path: 'baseline_pt/model_state.pt'
   batch_size: 32
   val_share: 0.25
-  num_folds: 3
+  num_folds: 5
   epochs: 100
   mask_prob_geno: 0.25
   masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
@@ -59,10 +59,10 @@ specials:
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
-  # OFX, AMC, TZP, PIP don't occur in NCBI (or not frequently enough)
+  ## OFX, AMC, TZP, PIP don't occur in NCBI (or not frequently enough)
   # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # standard
-  # IPM: 99% S in TESSy, but 98% in NCBI
-  # MFX: Reasonable imbalance, but few samples
+  ## IPM: 99% S in TESSy, but 98% in NCBI
+  ## MFX: Reasonable imbalance, but few samples
   exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'NOR', 'POL', 'DOR', 'TGC', 'MEM', 'ETP', 'COL', 'AMX', 'AMK', 'NET', 'PIP'] # more inclusive
   pathogens: ['ESCCOL']
   NCBI:
