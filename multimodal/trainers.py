@@ -894,7 +894,7 @@ class MMBertFineTuner():
             "train_loss": self.losses[self.best_epoch],
             "loss": self.val_losses[self.best_epoch],
             "acc": self.val_accs[self.best_epoch],
-            "iso_acc": self.val_accs[self.best_epoch],
+            "iso_acc": self.val_iso_accs[self.best_epoch],
             "sens": self.val_sensitivities[self.best_epoch],
             "spec": self.val_specificities[self.best_epoch],
             "F1": self.val_F1_scores[self.best_epoch],
