@@ -18,9 +18,31 @@ from multimodal.datasets import MMFinetuneDataset
 from multimodal.trainers import MMBertFineTuner
 
 # user-defined functions
-from utils import get_split_indices, export_results
+from utils import get_split_indices, export_results, get_average_and_std_df, get_ab_stats_df
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def init_wandb(project_name: str, wandb_name: str, config: dict):
+    wandb_run = wandb.init(project=project_name, name=wandb_name, config=config)
+    wandb_run.define_metric("fold", hidden=True)
+    
+    wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="fold")
+    wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="fold")
+    wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="fold")
+    wandb_run.define_metric("Accuracies/val_iso_acc", summary="max", step_metric="fold")
+    wandb_run.define_metric("Class_metrics/val_sens", summary="max", step_metric="fold")
+    wandb_run.define_metric("Class_metrics/val_spec", summary="max", step_metric="fold")
+    wandb_run.define_metric("Class_metrics/val_F1", summary="max", step_metric="fold")
+    
+    wandb_run.define_metric("Losses/avg_val_loss")
+    wandb_run.define_metric("Accuracies/avg_val_acc")
+    wandb_run.define_metric("Accuracies/avg_val_iso_acc")
+    wandb_run.define_metric("Class_metrics/avg_val_sens")
+    wandb_run.define_metric("Class_metrics/avg_val_spec")
+    wandb_run.define_metric("Class_metrics/avg_val_F1")
+        
+    return wandb_run
 
 
 if __name__ == "__main__":    
@@ -57,7 +79,7 @@ if __name__ == "__main__":
     
     # overwrite config with command line arguments
     args = argparser.parse_args()
-    config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else 'disabled'
+    config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
     config_ft['name'] = args.name if args.name else config_ft['name']
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
     config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
@@ -93,13 +115,9 @@ if __name__ == "__main__":
     ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].reset_index(drop=True)
     # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
-    
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
-    # if config_ft['masking_method'] == 'keep_one_class':
-    #     ds_MM = ds_MM[ds_MM['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
-    #     print(f"Removed {ds_NCBI[ds_NCBI['num_ab'] > 0].shape[0] - ds_MM.shape[0]} samples with only one antibiotic class")
-    
+   
     print("Loading vocabulary...")
     vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
     specials = config['specials']
@@ -178,6 +196,7 @@ if __name__ == "__main__":
             train_set=ds_ft_train,
             val_set=ds_ft_val,
             results_dir=results_dir,
+            CV_mode=True,
         )
         if not config_ft['naive_model']:
             tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
@@ -185,7 +204,44 @@ if __name__ == "__main__":
         if i == 0:
             tuner.print_model_summary()
             tuner.print_trainer_summary()
+            wandb_config = {
+                "trainer_type": "fine-tuning",
+                "epochs": tuner.epochs,
+                "batch_size": tuner.batch_size,
+                "hidden_dim": tuner.model.hidden_dim,
+                "num_layers": tuner.model.num_layers,
+                "num_heads": tuner.model.num_heads,
+                "emb_dim": tuner.model.emb_dim,
+                'ff_dim': tuner.model.ff_dim,
+                "lr": tuner.lr,
+                "weight_decay": tuner.weight_decay,
+                "masking_method": tuner.masking_method, 
+                "mask_prob_geno": tuner.mask_prob_geno,
+                "mask_prob_pheno": tuner.mask_prob_pheno,
+                "num_known_ab": tuner.num_known_ab,
+                "max_seq_len": tuner.model.max_seq_len,
+                "vocab_size": len(vocab),
+                "num_parameters": sum(p.numel() for p in tuner.model.parameters() if p.requires_grad),
+                "num_antibiotics": tuner.num_ab,
+                "antibiotics": tuner.antibiotics,
+                "train_size": tuner.train_size,
+                'val_share': tuner.val_share,
+                "val_size": tuner.val_size,
+                "is_pretrained": tuner.model.is_pretrained,
+            }
+            wandb_run = init_wandb(config_ft['project_name'], config_ft['name'], wandb_config)
         ft_results = tuner()
+        log_dict = {
+            "fold": i+1,
+            "Losses/train_loss": ft_results['train_loss'],
+            "Losses/val_loss": ft_results['loss'],
+            "Accuracies/val_acc": ft_results['acc'],
+            "Accuracies/val_iso_acc": ft_results['iso_acc'],
+            "Class_metrics/val_sens": ft_results['sens'],
+            "Class_metrics/val_spec": ft_results['spec'],
+            "Class_metrics/val_F1": ft_results['F1']
+        }
+        wandb_run.log(log_dict)
         
         train_losses.append(ft_results['train_loss'])
         losses.append(ft_results['loss'])
@@ -198,7 +254,6 @@ if __name__ == "__main__":
         ab_stats.append(ft_results['ab_stats'])
     
     print("All folds completed!")
-    print("Exporting results...")    
     CV_results = {
         'train_losses': train_losses,
         'losses': losses,
@@ -210,4 +265,16 @@ if __name__ == "__main__":
         'iso_stats': iso_stats,
         'ab_stats': ab_stats
     }  
+    df_CV = get_average_and_std_df(CV_results, with_metric_as_index=True)
+    log_dict = {
+        "Losses/avg_val_loss": df_CV.loc['Loss', 'avg'],
+        "Accuracies/avg_val_acc": df_CV.loc['Accuracy', 'avg'],
+        "Accuracies/avg_val_iso_acc": df_CV.loc["Isolate accuracy", 'avg'],
+        "Class_metrics/avg_val_sens": df_CV.loc["Sensitivity", 'avg'],
+        "Class_metrics/avg_val_spec": df_CV.loc["Specificity", 'avg'],
+        "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg']
+    }
+    wandb_run.log(log_dict)
+    wandb_run.finish()
+    print("Exporting results...")    
     export_results(CV_results, results_dir / 'CV_results.pkl')

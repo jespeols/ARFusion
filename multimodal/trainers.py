@@ -726,7 +726,8 @@ class MMBertFineTuner():
         antibiotics: list,
         train_set,
         val_set,
-        results_dir: Path
+        results_dir: Path,
+        CV_mode: bool = False
     ):
         super(MMBertFineTuner, self).__init__()
         
@@ -769,6 +770,7 @@ class MMBertFineTuner():
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
         self.current_epoch = 0
+        self.CV_mode = CV_mode
         self.report_every = config_ft["report_every"] 
         self.print_progress_every = config_ft["print_progress_every"]
         self._splitter_size = 80
@@ -819,7 +821,8 @@ class MMBertFineTuner():
     
     def __call__(self):      
         assert self.model.pheno_only == True, "Model must be in pheno_only mode"
-        self.wandb_run = self._init_wandb()
+        if not self.CV_mode:
+            self.wandb_run = self._init_wandb()
         print("Initializing training...")
         self.val_set.prepare_dataset()
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
@@ -843,7 +846,8 @@ class MMBertFineTuner():
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             print("="*self._splitter_size)
             self._update_val_lists(val_results)
-            self._report_epoch_results()
+            if not self.CV_mode:
+                self._report_epoch_results()
             early_stop = self.early_stopping()
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
@@ -852,21 +856,22 @@ class MMBertFineTuner():
                 s += f" | Accuracy: {self.val_accs[self.best_epoch]:.2%}"
                 s += f" | Isolate accuracy: {self.val_iso_accs[self.best_epoch]:.2%}"
                 print(s)
-                self.wandb_run.log({
-                    "Losses/final_val_loss": self.best_val_loss, 
-                    "Accuracies/final_val_acc": self.val_accs[self.best_epoch],
-                    "Accuracies/final_val_iso_acc": self.val_iso_accs[self.best_epoch],
-                    "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
-                    "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
-                    "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
-                    "best_epoch": self.best_epoch+1
-                })
+                if not self.CV_mode:
+                    self.wandb_run.log({
+                        "Losses/final_val_loss": self.best_val_loss, 
+                        "Accuracies/final_val_acc": self.val_accs[self.best_epoch],
+                        "Accuracies/final_val_iso_acc": self.val_iso_accs[self.best_epoch],
+                        "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
+                        "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
+                        "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
+                        "best_epoch": self.best_epoch+1
+                    })
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
             if self.scheduler:
                 self.scheduler.step()
-        if not early_stop:    
+        if not early_stop and not self.CV_mode: 
             self.wandb_run.log({
                     "Losses/final_val_loss": self.best_val_loss, 
                     "Accuracies/final_val_acc": self.val_accs[-1],
@@ -879,7 +884,8 @@ class MMBertFineTuner():
         if self.save_model_:
             self.save_model(self.results_dir / "model_state.pt") 
         train_time = (time.time() - start_time)/60
-        self.wandb_run.log({"Training time (min)": train_time})
+        if not self.CV_mode:
+            self.wandb_run.log({"Training time (min)": train_time})
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
         print("="*self._splitter_size)
@@ -934,7 +940,8 @@ class MMBertFineTuner():
             loss.backward() 
             self.optimizer.step() 
             if batch_index % self.report_every == 0:
-                self._report_loss_results(batch_index, reporting_loss)
+                if not self.CV_mode:
+                    self._report_loss_results(batch_index, reporting_loss)
                 reporting_loss = 0 
                 
             if batch_index % self.print_progress_every == 0:
