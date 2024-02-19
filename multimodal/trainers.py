@@ -927,9 +927,9 @@ class MMBertFineTuner():
                 ab_loss = self.ab_criterions[j](ab_pred_logits, ab_targets)
                 losses.append(ab_loss)
             loss = sum(losses) / len(losses) # average loss over antibiotics
-            epoch_loss += loss
-            reporting_loss += loss
-            printing_loss += loss
+            epoch_loss += loss.item()
+            reporting_loss += loss.item()
+            printing_loss += loss.item()
             
             loss.backward() 
             self.optimizer.step() 
