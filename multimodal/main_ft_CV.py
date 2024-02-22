@@ -1,4 +1,3 @@
-# %%
 import torch
 import yaml
 import wandb
@@ -8,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
+from sklearn.model_selection import ShuffleSplit, KFold
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 os.chdir(BASE_DIR)
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
-    argparser.add_argument("--val_share", type=float)
+    argparser.add_argument("--train_share", type=float)
     argparser.add_argument("--num_folds", type=int)
         
     if device.type == "cuda":
@@ -99,8 +99,10 @@ if __name__ == "__main__":
     config_ft['epochs'] = args.epochs if args.epochs else config_ft['epochs']
     config_ft['lr'] = args.lr if args.lr else config['lr']
     config_ft['random_state'] = args.random_state if args.random_state else config_ft['random_state']
-    config_ft['val_share'] = args.val_share if args.val_share else config_ft['val_share']
     config_ft['num_folds'] = args.num_folds if args.num_folds else config_ft['num_folds']
+    config_ft['val_share'] = 1/config_ft['num_folds']
+    # if we want to train on a smaller dataset, we can adjust the train_share as share of the TOTAL dataset, not the train set of the fold
+    train_share = args.train_share if args.train_share else (1 - config_ft['val_share'])
         
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     if config['name']:
@@ -137,11 +139,7 @@ if __name__ == "__main__":
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
         max_seq_len = config['max_seq_len']
-        
-
-    num_folds = config_ft['num_folds']
-    
-    
+      
     train_losses = []
     losses = []
     accs = []
@@ -152,18 +150,22 @@ if __name__ == "__main__":
     iso_stats = []
     ab_stats = []
     
-    for i, seed in range(num_folds):
+    num_folds = config_ft['num_folds']
+    ds_MM = ds_MM.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True) # shuffle dataset
+    print("Dataset:")
+    print(f"Splitting dataset into {num_folds} folds...")
+    kf = KFold(n_splits=num_folds, shuffle=True, random_state=config_ft['random_state'])
+    for i, (train_indices, val_indices) in enumerate(kf.split(ds_MM.index)):
         print()
         print("="*80)
         print("="*80)
-        print(f"Training fold {i+1} of {config_ft['num_folds']}...")
+        print(f"Training fold {i+1} of {num_folds}...")
         print("="*80)
-    
-        # train_indices, val_indices = get_split_indices(
-        #     ds_MM.shape[0], 
-        #     val_share=config_ft['val_share'], 
-        #     random_state=seed
-        # )  
+
+        # adjust train size depending on train_share (intended as share of TOTAL dataset, not train set of fold)
+        train_size = int(len(train_indices) * train_share/(1-config_ft['val_share']))
+        train_indices = train_indices[:train_size] 
+        
         ds_ft_train = MMFinetuneDataset(
             df_MM=ds_MM.iloc[train_indices],
             vocab=vocab,
@@ -174,7 +176,7 @@ if __name__ == "__main__":
             mask_prob_geno=config_ft['mask_prob_geno'],
             mask_prob_pheno=config_ft['mask_prob_pheno'],
             num_known_ab=config_ft['num_known_ab'],
-            random_state=seed
+            random_state=config_ft['random_state']
         )
         ds_ft_val = MMFinetuneDataset(
             df_MM=ds_MM.iloc[val_indices],
@@ -186,7 +188,7 @@ if __name__ == "__main__":
             mask_prob_geno=config_ft['mask_prob_geno'],
             mask_prob_pheno=config_ft['mask_prob_pheno'],
             num_known_ab=config_ft['num_known_ab'],
-            random_state=seed
+            random_state=config_ft['random_state']
         )
         pad_idx = vocab[pad_token]
         bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
@@ -226,6 +228,7 @@ if __name__ == "__main__":
                 "num_antibiotics": tuner.num_ab,
                 "antibiotics": tuner.antibiotics,
                 "train_size": tuner.train_size,
+                "CV_mode": tuner.CV_mode,
                 'val_share': tuner.val_share,
                 "val_size": tuner.val_size,
                 "is_pretrained": tuner.model.is_pretrained,

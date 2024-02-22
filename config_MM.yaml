@@ -36,12 +36,12 @@ fine_tuning:
   naive_model: False
   model_path: 'baseline_pt/model_state.pt'
   batch_size: 32
-  val_share: 0.25
+  val_share: 0.2
   num_folds: 5
   epochs: 100
-  mask_prob_geno: 0.25
+  mask_prob_geno: 0.75
   masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
-  mask_prob_pheno: 0.25
+  mask_prob_pheno: 0.9
   num_known_ab: 
   lr: 0.00005
   weight_decay: 0.01

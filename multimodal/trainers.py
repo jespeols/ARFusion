@@ -746,8 +746,8 @@ class MMBertFineTuner():
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
-        assert round(self.val_size / (self.train_size + self.val_size), 2) == config_ft["val_share"], "Validation set size does not match intended val_share"
-        self.val_share, self.train_share = config_ft["val_share"], 1 - config_ft["val_share"]
+        self.dataset_size = self.train_size + self.val_size
+        self.val_share, self.train_share = self.val_size / self.dataset_size, self.train_size / self.dataset_size
         self.batch_size = config_ft["batch_size"]
         self.num_batches = round(self.train_size / self.batch_size)
         self.vocab = self.train_set.vocab
@@ -771,6 +771,8 @@ class MMBertFineTuner():
                  
         self.current_epoch = 0
         self.CV_mode = CV_mode
+        if self.CV_mode:
+            self.num_folds = config_ft["num_folds"]
         self.report_every = config_ft["report_every"] 
         self.print_progress_every = config_ft["print_progress_every"]
         self._splitter_size = 80
@@ -806,7 +808,11 @@ class MMBertFineTuner():
         print(f"Number of batches: {self.num_batches:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
-        print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
+        s = f"CV mode: {'Yes' if self.CV_mode else 'No'}"
+        if self.CV_mode:
+            s += f" ({self.num_folds} folds)"
+        print(s)
+        print(f"Data split: {self.train_share:.0%} train | {self.val_share:.0%} val (size: {self.dataset_size:,})")
         print(f"Mask probability for genotype: {self.train_set.mask_prob_geno:.0%}")
         print(f"Masking method: {self.masking_method}")
         if self.mask_prob_pheno:
@@ -1172,6 +1178,7 @@ class MMBertFineTuner():
                 "antibiotics": self.antibiotics,
                 "train_size": self.train_size,
                 "random_state": self.random_state,
+                "CV_mode": self.CV_mode,
                 'val_share': self.val_share,
                 "val_size": self.val_size,
                 "is_pretrained": self.model.is_pretrained,
