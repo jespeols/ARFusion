@@ -139,7 +139,8 @@ if __name__ == "__main__":
         max_seq_len = config['max_seq_len']
         
 
-    seeds = [config_ft['random_state'] + i for i in range(config_ft['num_folds'])]
+    num_folds = config_ft['num_folds']
+    
     
     train_losses = []
     losses = []
@@ -151,18 +152,18 @@ if __name__ == "__main__":
     iso_stats = []
     ab_stats = []
     
-    for i, seed in enumerate(seeds):
+    for i, seed in range(num_folds):
         print()
         print("="*80)
         print("="*80)
         print(f"Training fold {i+1} of {config_ft['num_folds']}...")
         print("="*80)
     
-        train_indices, val_indices = get_split_indices(
-            ds_MM.shape[0], 
-            val_share=config_ft['val_share'], 
-            random_state=seed
-        )  
+        # train_indices, val_indices = get_split_indices(
+        #     ds_MM.shape[0], 
+        #     val_share=config_ft['val_share'], 
+        #     random_state=seed
+        # )  
         ds_ft_train = MMFinetuneDataset(
             df_MM=ds_MM.iloc[train_indices],
             vocab=vocab,
