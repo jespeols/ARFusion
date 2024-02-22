@@ -44,6 +44,11 @@ def init_wandb(project_name: str, wandb_name: str, config: dict):
         
     return wandb_run
 
+def list_of_floats(arg):
+    try:
+        return list(map(float, arg.split(',')))
+    except:
+        raise argparse.ArgumentTypeError("Argument must be a list of floats separated by commas")
 
 if __name__ == "__main__":    
     argparser = argparse.ArgumentParser()
