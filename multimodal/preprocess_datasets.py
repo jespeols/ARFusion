@@ -29,6 +29,7 @@ if __name__ == "__main__":
     
     data_dict = config['data']
     if args.preprocess_NCBI:
+        print("Preprocessing NCBI data...")
         ds_NCBI = preprocess_NCBI(
             path=data_dict['NCBI']['raw_path'],
             save_path=data_dict['NCBI']['save_path'],
@@ -42,6 +43,7 @@ if __name__ == "__main__":
             gene_count_threshold=data_dict['NCBI']['gene_count_threshold']
         )
     if args.preprocess_TESSy:
+        print("Preprocessing TESSy data...")
         ds_TESSy = preprocess_TESSy(
             path=data_dict['TESSy']['raw_path'],
             pathogens=data_dict['pathogens'],
@@ -50,3 +52,4 @@ if __name__ == "__main__":
             impute_age=data_dict['TESSy']['impute_age'],
             impute_gender=data_dict['TESSy']['impute_gender']
         )
+    print("Preprocessing complete.")

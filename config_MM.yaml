@@ -31,7 +31,7 @@ fine_tuning:
   wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
   project_name: Multimodal-MLM
   name: baseline_ft
-  ds_path: 'data/NCBI.pkl'
+  ds_path: 'data/NCBI_17.pkl'
   loadpath_vocab: 'MM_vocab.pt'
   naive_model: False
   model_path: 'baseline_pt/model_state.pt'
@@ -60,16 +60,17 @@ specials:
 data:
   # exclude_antibiotics: 
   ## OFX, AMC, TZP, PIP don't occur in NCBI (or not frequently enough)
-  # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # standard
+  # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # 10 AB
   ## IPM: 99% S in TESSy, but 98% in NCBI
   ## MFX: Reasonable imbalance, but few samples
-  exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'NOR', 'POL', 'DOR', 'TGC', 'MEM', 'ETP', 'COL', 'AMX', 'AMK', 'NET', 'PIP'] # more inclusive
+  # exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'NOR', 'POL', 'DOR', 'TGC', 'MEM', 'ETP', 'COL', 'AMX', 'AMK', 'NET', 'PIP'] # 12 AB
+  exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 17 AB
   pathogens: ['ESCCOL']
   NCBI:
     prepare_data: False
     raw_path: 'data/raw/NCBI.tsv'
-    save_path: 'data/NCBI.pkl'
-    load_path: 'data/NCBI.pkl'
+    save_path: 'data/NCBI_17.pkl'
+    load_path: 'data/NCBI_17.pkl'
     threshold_year: 1970
     include_phenotype: True
     exclude_genotypes:
@@ -81,9 +82,8 @@ data:
   TESSy:
     prepare_data: False
     raw_path: 'data/raw/AMR_TEST.csv'
-    save_path: 'data/TESSy.pkl'
-    load_path: 'data/TESSy.pkl'
-    # load_path: 'data/TESSy_small.pkl'
+    save_path: 'data/TESSy_17.pkl'
+    load_path: 'data/TESSy_17.pkl'
     impute_gender: False
     impute_age: False
     country_code_to_name:

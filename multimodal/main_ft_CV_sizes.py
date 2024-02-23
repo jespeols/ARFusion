@@ -142,7 +142,8 @@ if __name__ == "__main__":
     run_name = config_ft['name']
     for i, train_share in enumerate(train_shares):
         print(f"Train share {i+1} of {len(train_shares)}: {train_share:.0%}")
-        config_ft['name'] = f"{run_name}_train_share{train_share}"
+        if not train_share == 1:
+            config_ft['name'] = f"{run_name}_train_share{train_share}"
         results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config_ft['name'])) 
         
         train_losses = []
@@ -235,7 +236,7 @@ if __name__ == "__main__":
                     "antibiotics": tuner.antibiotics,
                     "train_size": tuner.train_size,
                     "CV_mode": tuner.CV_mode,
-                    'val_share': tuner.val_share,
+                    'val_share': round(tuner.val_share, 2),
                     "val_size": tuner.val_size,
                     "is_pretrained": tuner.model.is_pretrained,
                 }

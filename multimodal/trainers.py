@@ -1179,7 +1179,7 @@ class MMBertFineTuner():
                 "train_size": self.train_size,
                 "random_state": self.random_state,
                 "CV_mode": self.CV_mode,
-                'val_share': self.val_share,
+                'val_share': round(self.val_share, 2),
                 "val_size": self.val_size,
                 "is_pretrained": self.model.is_pretrained,
             }
