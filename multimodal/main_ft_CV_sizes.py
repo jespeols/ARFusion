@@ -57,6 +57,7 @@ if __name__ == "__main__":
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--model_path", type=str)
+    argparser.add_argument("--ds_path", type=str)
     argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
     argparser.add_argument("--mask_prob_geno", type=float)
     argparser.add_argument("--masking_method", type=str)
@@ -89,6 +90,7 @@ if __name__ == "__main__":
     config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
     config_ft['name'] = args.name if args.name else config_ft['name']
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
+    config_ft['ds_path'] = args.ds_path if args.ds_path else config_ft['ds_path']
     config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
     config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
     config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
@@ -171,7 +173,7 @@ if __name__ == "__main__":
 
             # adjust train size depending on train_share (intended as share of TOTAL dataset, not train set of fold)
             train_size = int(len(train_indices) * train_share/(1-config_ft['val_share']))
-            train_indices = train_indices[:train_size] 
+            train_indices = train_indices[:train_size]
             
             ds_ft_train = MMFinetuneDataset(
                 df_MM=ds_MM.iloc[train_indices],
