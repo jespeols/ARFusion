@@ -54,6 +54,7 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
+    argparser.add_argument("--exp_folder", type=str)
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
     argparser.add_argument("--mask_prob_geno", type=float)
@@ -111,14 +112,22 @@ if __name__ == "__main__":
         
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     if config['name']:
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config_ft['name']))
+        if args.exp_folder:
+            p = Path(BASE_DIR / "results" / "MM" / args.exp_folder)
+        else:
+            p = Path(BASE_DIR / "results" / "MM")
+        results_dir = Path(os.path.join(p, config_ft['name']))
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", "experiment_" + str(time_str)))
+        if args.exp_folder:
+            p = Path(BASE_DIR / "results" / "MM" / args.exp_folder)
+        else:
+            p = Path(BASE_DIR / "results" / "MM")
+        results_dir = Path(os.path.join(p, "experiment_" + str(time_str)))
     print(f"Name of experiment: {config_ft['name']}")
     print(f"Results directory: {results_dir}")
     
-    print("\nLoading dataset...")
+    print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
     ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].reset_index(drop=True)
     # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset

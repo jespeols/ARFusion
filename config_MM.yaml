@@ -22,7 +22,7 @@ lr: 0.00005
 weight_decay: 0.01
 print_progress_every: 1500
 report_every: 1000
-savepath_vocab: 'MM_vocab.pt'
+savepath_vocab: 'MM_vocab_12.pt'
 save_model: True
 random_state: 42
 
@@ -32,7 +32,7 @@ fine_tuning:
   project_name: Multimodal-MLM
   name: baseline_ft
   ds_path: 'data/NCBI_15.pkl'
-  loadpath_vocab: 'MM_vocab.pt'
+  loadpath_vocab: 'MM_vocab_15.pt'
   naive_model: False
   model_path: 'baseline_pt/model_state.pt'
   batch_size: 32

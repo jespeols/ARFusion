@@ -56,6 +56,7 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
+    argparser.add_argument("--exp_folder", type=str, help="Name of experiment folder")
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--ds_path", type=str)
     argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
@@ -114,7 +115,7 @@ if __name__ == "__main__":
         
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     
-    print("\nLoading dataset...")
+    print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
     ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].reset_index(drop=True)
     # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
@@ -144,9 +145,13 @@ if __name__ == "__main__":
     run_name = config_ft['name']
     for i, train_share in enumerate(train_shares):
         print(f"Train share {i+1} of {len(train_shares)}: {train_share:.0%}")
-        if not train_share == 1:
+        if not train_share == 0.8:
             config_ft['name'] = f"{run_name}_train_share{train_share}"
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config_ft['name'])) 
+        if args.exp_folder:
+            p = Path(BASE_DIR / "results" / "MM" / args.exp_folder)
+        else:
+            p = Path(BASE_DIR / "results" / "MM")
+        results_dir = Path(os.path.join(p, config_ft['name'])) 
         
         train_losses = []
         losses = []
@@ -160,7 +165,6 @@ if __name__ == "__main__":
         
         num_folds = config_ft['num_folds']
         ds_MM = ds_MM.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True) # shuffle dataset
-        print("Dataset:")
         print(f"Splitting dataset into {num_folds} folds...")
         kf = KFold(n_splits=num_folds, shuffle=True, random_state=config_ft['random_state'])
         
