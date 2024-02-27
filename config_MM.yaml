@@ -31,7 +31,7 @@ fine_tuning:
   wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
   project_name: Multimodal-MLM
   name: baseline_ft
-  ds_path: 'data/NCBI_12.pkl'
+  ds_path: 'data/NCBI_15.pkl'
   loadpath_vocab: 'MM_vocab.pt'
   naive_model: False
   model_path: 'baseline_pt/model_state.pt'
@@ -69,8 +69,8 @@ data:
   NCBI:
     prepare_data: False
     raw_path: 'data/raw/NCBI.tsv'
-    save_path: 'data/NCBI_12.pkl'
-    load_path: 'data/NCBI_12.pkl'
+    save_path: 'data/NCBI_15.pkl'
+    load_path: 'data/NCBI_15.pkl'
     threshold_year: 1970
     include_phenotype: True
     exclude_genotypes:
@@ -82,8 +82,8 @@ data:
   TESSy:
     prepare_data: False
     raw_path: 'data/raw/AMR_TEST.csv'
-    save_path: 'data/TESSy_12.pkl'
-    load_path: 'data/TESSy_12.pkl'
+    save_path: 'data/TESSy_15.pkl'
+    load_path: 'data/TESSy_15.pkl'
     impute_gender: False
     impute_age: False
     country_code_to_name:
