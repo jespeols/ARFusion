@@ -147,6 +147,8 @@ if __name__ == "__main__":
         print(f"Train share {i+1} of {len(train_shares)}: {train_share:.0%}")
         if not train_share == 0.8:
             config_ft['name'] = f"{run_name}_train_share{train_share}"
+        else:
+            config_ft['name'] = run_name
         if args.exp_folder:
             p = Path(BASE_DIR / "results" / "MM" / args.exp_folder)
         else:
