@@ -92,7 +92,7 @@ def get_average_and_std_df(results_dict, with_metric_as_index=False):
     return df_CV
 
 
-def get_ab_stats_df(results_dict):
+def get_ab_stats_df(results_dict, with_ab_as_index=False):
     ab_stats_list = results_dict['ab_stats']
     
     data_dict = {}
@@ -125,4 +125,6 @@ def get_ab_stats_df(results_dict):
         data_dict.update({metric+"_avg": avg.tolist(), metric+"_std": std.tolist()})
 
     df_ab_CV = pd.DataFrame(data=data_dict)
+    if with_ab_as_index:
+        df_ab_CV.set_index("antibiotic", inplace=True)
     return df_ab_CV
