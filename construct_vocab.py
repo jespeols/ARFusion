@@ -8,7 +8,7 @@ from torchtext.vocab import vocab as Vocab
 from itertools import chain
 from collections import Counter
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent
 
 def construct_geno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: Path = None):
     token_counter = Counter()

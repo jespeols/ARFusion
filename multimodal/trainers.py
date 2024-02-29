@@ -138,7 +138,9 @@ class MMBertPreTrainer(nn.Module):
             self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
             epoch_start_time = time.time()
             train_losses = self.train(self.current_epoch) # returns loss, averaged over batches
-            self.losses.append(train_losses['loss']) 
+            self.losses.append(train_losses['loss'])
+            self.pheno_losses.append(train_losses['pheno_loss'])
+            self.geno_losses.append(train_losses['geno_loss']) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
             print("Loss: {:.4f} | Genotype loss: {:.4f} | Phenotype loss: {:.4f}".format(
                 train_losses['loss'], train_losses['geno_loss'], train_losses['pheno_loss']))
@@ -418,6 +420,8 @@ class MMBertPreTrainer(nn.Module):
     
     def _init_result_lists(self):
         self.losses = []
+        self.pheno_losses = []
+        self.geno_losses = []
         self.val_losses = []
         self.val_geno_losses = []
         self.val_pheno_losses = []
@@ -604,6 +608,8 @@ class MMBertPreTrainer(nn.Module):
         
         self.wandb_run.define_metric("Losses/live_loss", step_metric="batch")
         self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Losses/geno_train_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Losses/pheno_train_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_geno_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_pheno_loss", summary="min", step_metric="epoch")
@@ -648,7 +654,9 @@ class MMBertPreTrainer(nn.Module):
         else:
             wandb_dict = {
                 "epoch": self.current_epoch+1,
-                "Losses/train_loss": self.losses[-1]
+                "Losses/train_loss": self.losses[-1],
+                "Losses/geno_train_loss": self.geno_losses[-1],
+                "Losses/pheno_train_loss": self.pheno_losses[-1]
             }
         self.wandb_run.log(wandb_dict)
     
@@ -988,7 +996,7 @@ class MMBertFineTuner():
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
-                iso_stats = self._update_pheno_stats(i, pred_res, target_res, ab_mask, iso_stats)
+                iso_stats = self._update_iso_stats(i, pred_res, target_res, ab_mask, iso_stats) # TODO: implement more extensive info, e.g. num_masked_geno
                 
                 ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
                 losses = list()
@@ -1064,13 +1072,14 @@ class MMBertFineTuner():
             'num_correct', 'num_correct_S', 'num_correct_R',
             'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
         ])
-        ab_stats['antibiotic'] = self.antibiotics # TODO: change to antibiotics present in the validation set
+        ab_stats['antibiotic'] = self.antibiotics
         ab_stats['num_tot'], ab_stats['num_S'], ab_stats['num_R'] = 0, 0, 0
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
         
-        iso_stats = ds_obj.ds_MM.drop(columns=['genotypes', 'phenotypes'])
-        iso_stats['num_masked'], iso_stats['num_masked_S'], iso_stats['num_masked_R'] = 0, 0, 0
+        iso_stats = ds_obj.ds_MM.copy()
+        iso_stats['num_masked_pheno'], iso_stats['num_masked_geno'] = 0,0 
+        iso_stats['num_masked_S'], iso_stats['num_masked_R'] = 0, 0
         iso_stats['num_correct'], iso_stats['correct_S'], iso_stats['correct_R'] = 0, 0, 0
         iso_stats['sensitivity'], iso_stats['specificity'], iso_stats['accuracy'] = 0, 0, 0
         iso_stats['all_correct'] = False  
@@ -1111,7 +1120,8 @@ class MMBertFineTuner():
         return [num_pred_S, num_pred_R]
     
     
-    def _update_pheno_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, 
+    ## TODO: implement more extensive info, e.g. num_masked_geno, masks that indicate which predictions are correct etc.
+    def _update_iso_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, 
                           ab_mask: torch.Tensor, iso_stats: pd.DataFrame):
         for i in range(pred_res.shape[0]): 
             iso_ab_mask = ab_mask[i]
@@ -1140,7 +1150,7 @@ class MMBertFineTuner():
         return iso_stats
     
     def _calculate_iso_stats(self, iso_stats: pd.DataFrame): 
-        iso_stats['accuracy'] = iso_stats['num_correct'] / iso_stats['num_masked']
+        iso_stats['accuracy'] = iso_stats['num_correct'] / iso_stats['num_masked_pheno']
         iso_stats['sensitivity'] = iso_stats.apply(
             lambda row: row['correct_R']/row['num_masked_R'] if row['num_masked_R'] > 0 else np.nan, axis=1
         )
