@@ -150,8 +150,10 @@ class MMBertPreTrainer(nn.Module):
                 self.print_val_results(val_results)
                 self._update_val_lists(val_results)
             else:
-                val_loss = self.get_val_loss(self.val_loader)
-                self.val_losses.append(val_loss)
+                val_losses = self.get_val_loss(self.val_loader)
+                self.val_losses.append(val_losses['loss'])
+                self.val_geno_losses.append(val_losses['geno_loss'])
+                self.val_pheno_losses.append(val_losses['pheno_loss'])
             print("="*self._splitter_size)
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             self._report_epoch_results()
@@ -161,23 +163,40 @@ class MMBertPreTrainer(nn.Module):
                 if self.do_eval:
                     self.print_early_stop_results()
                     self.report_early_stop_results()
+                else:
+                    wandb_dict = {
+                        "Losses/final_val_loss": self.val_losses[self.best_epoch],
+                        "Losses/final_val_geno_loss": self.val_geno_losses[self.best_epoch],
+                        "Losses/final_val_pheno_loss": self.val_pheno_losses[self.best_epoch],
+                        "best_epoch": self.best_epoch+1
+                    }
+                    self.wandb_run.log(wandb_dict)
                 print("="*self._splitter_size)
                 self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
             if self.scheduler:
                 self.scheduler.step()
-        if not early_stop and self.do_eval:    
-            self.wandb_run.log({
-                    "Losses/final_val_loss": self.best_val_loss, 
+        if not early_stop:
+            if self.do_eval:    
+                self.wandb_run.log({
+                        "Losses/final_val_loss": self.best_val_loss, 
+                        "Losses/final_val_geno_loss": self.val_geno_losses[-1],
+                        "Losses/final_val_pheno_loss": self.val_pheno_losses[-1],
+                        "Accuracies/final_val_pheno_acc": self.val_pheno_accs[-1],
+                        "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
+                        "Accuracies/final_val_geno_acc": self.val_geno_accs[-1],
+                        "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[-1],
+                        "best_epoch": self.current_epoch+1
+                    })
+            else:
+                wandb_dict = {
+                    "Losses/final_val_loss": self.val_losses[-1],
                     "Losses/final_val_geno_loss": self.val_geno_losses[-1],
                     "Losses/final_val_pheno_loss": self.val_pheno_losses[-1],
-                    "Accuracies/final_val_pheno_acc": self.val_pheno_accs[-1],
-                    "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
-                    "Accuracies/final_val_geno_acc": self.val_geno_accs[-1],
-                    "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[-1],
                     "best_epoch": self.current_epoch+1
-                })
+                }
+                self.wandb_run.log(wandb_dict)
         if self.save_model_:
             self.save_model() 
         train_time = (time.time() - start_time)/60
@@ -332,8 +351,9 @@ class MMBertPreTrainer(nn.Module):
         avg_geno_loss = tot_geno_loss / geno_batches
         avg_pheno_loss = tot_pheno_loss / pheno_batches
         avg_loss = avg_geno_loss + avg_pheno_loss
+        val_losses = {"loss": avg_loss, "geno_loss": avg_geno_loss, "pheno_loss": avg_pheno_loss}
         
-        return avg_loss
+        return val_losses
     
             
     def evaluate(self, loader: DataLoader, ds_obj):
@@ -656,7 +676,10 @@ class MMBertPreTrainer(nn.Module):
                 "epoch": self.current_epoch+1,
                 "Losses/train_loss": self.losses[-1],
                 "Losses/geno_train_loss": self.geno_losses[-1],
-                "Losses/pheno_train_loss": self.pheno_losses[-1]
+                "Losses/pheno_train_loss": self.pheno_losses[-1],
+                "Losses/val_loss": self.val_losses[-1],
+                "Losses/val_geno_loss": self.val_geno_losses[-1],
+                "Losses/val_pheno_loss": self.val_pheno_losses[-1]
             }
         self.wandb_run.log(wandb_dict)
     
