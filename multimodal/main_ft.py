@@ -20,6 +20,8 @@ from multimodal.trainers import MMBertFineTuner
 
 # user-defined functions
 from utils import get_split_indices, export_results
+from construct_vocab import construct_MM_vocab
+from data_preprocessing import preprocess_TESSy
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -31,7 +33,7 @@ if __name__ == "__main__":
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
     argparser.add_argument("--mask_prob_geno", type=float)
-    argparser.add_argument("--masking_method", type=str)
+    argparser.add_argument("--masking_method", type=str, choices=['random', 'num_known', 'keep_one_class'], required=True)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
@@ -99,14 +101,39 @@ if __name__ == "__main__":
     #     ds_MM = ds_MM[ds_MM['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
     #     print(f"Removed {ds_NCBI[ds_NCBI['num_ab'] > 0].shape[0] - ds_MM.shape[0]} samples with only one antibiotic class")
     
-    print("Loading vocabulary...")
-    vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
-    vocab_size = len(vocab)
     specials = config['specials']
+    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+    if not config_ft['construct_vocab']:
+        print("Loading vocabulary...")
+        vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
+    else:
+        print("Constructing vocabulary...")
+        if data_dict['TESSy']['prepare_data']:
+            ds_TESSy = preprocess_TESSy(
+                path=data_dict['TESSy']['raw_path'],
+                pathogens=data_dict['pathogens'],
+                save_path=data_dict['TESSy']['save_path'],
+                exclude_antibiotics=data_dict['exclude_antibiotics'],
+                impute_age=data_dict['TESSy']['impute_age'],
+                impute_gender=data_dict['TESSy']['impute_gender']
+            )
+        else:
+            ds_TESSy = pd.read_pickle(os.path.join(BASE_DIR, data_dict['TESSy']['load_path']))
+        ds_pheno = ds_TESSy.copy()
+        ds_pheno['country'] = ds_pheno['country'].map(config['data']['TESSy']['country_code_to_name'])
+        abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
+        ds_pheno['ab_classes'] = ds_pheno['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
+        vocab = construct_MM_vocab(
+            df_geno=ds_NCBI,
+            df_pheno=ds_pheno,
+            antibiotics=antibiotics,
+            specials=specials,
+            savepath_vocab=BASE_DIR / config['savepath_vocab']
+        )       
+    vocab_size = len(vocab)
     pad_token = specials['PAD']
     ds_MM.fillna(pad_token, inplace=True)
     
-    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:

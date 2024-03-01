@@ -33,6 +33,7 @@ fine_tuning:
   name: baseline_ft
   ds_path: 'data/NCBI_15.pkl'
   loadpath_vocab: 'MM_vocab_15.pt'
+  construct_vocab: False
   naive_model: False
   model_path: 'baseline_pt/model_state.pt'
   batch_size: 32

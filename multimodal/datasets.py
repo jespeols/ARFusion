@@ -271,7 +271,7 @@ class MMFinetuneDataset(Dataset):
     # TARGET_INDICES = 'target_indices' # target indices of the masked sequence ## USE IF GENOTYPES ARE ALSO MASKED ##
     TARGET_RESISTANCES = 'target_resistances' # resistance of the target antibiotics, what we want to predict
     TOKEN_TYPES = 'token_types' # # 0 for patient info, 1 for genotype, 2 for phenotype
-    KEPT_CLASSES = 'kept_classes' # classes that are kept in the sequence
+    TARGET_INDICES = 'target_indices' # indices of the target tokens for the genotype masking
     # if sequences are included
     MASKED_SEQUENCE = 'masked_sequence'
     
@@ -317,7 +317,7 @@ class MMFinetuneDataset(Dataset):
         self.num_samples = self.ds_MM.shape[0]
                     
         self.include_sequences = include_sequences
-        self.columns = [self.INDICES_MASKED, self.TARGET_RESISTANCES, self.TOKEN_TYPES]
+        self.columns = [self.INDICES_MASKED, self.TARGET_RESISTANCES, self.TARGET_INDICES, self.TOKEN_TYPES]
         if self.include_sequences:
             self.columns += [self.MASKED_SEQUENCE]
             
@@ -333,11 +333,13 @@ class MMFinetuneDataset(Dataset):
         target_res = torch.tensor(item[self.TARGET_RESISTANCES], dtype=torch.float32, device=device)
         token_types = torch.tensor(item[self.TOKEN_TYPES], dtype=torch.long, device=device)
         attn_mask = (input != self.vocab[self.PAD]).unsqueeze(0).unsqueeze(1) # one dim for batch, one for heads
+        target_indices = torch.tensor(item[self.TARGET_INDICES], dtype=torch.long, device=device)
+        
         if self.include_sequences:
             masked_sequence = item[self.MASKED_SEQUENCE]
-            return input, target_res, token_types, attn_mask, masked_sequence
+            return input, target_res, target_indices, token_types, attn_mask, masked_sequence
         else:
-            return input, target_res, token_types, attn_mask   
+            return input, target_res, target_indices, token_types, attn_mask   
     
     
     def prepare_dataset(self):
@@ -345,19 +347,22 @@ class MMFinetuneDataset(Dataset):
         pheno_sequences = deepcopy(self.ds_MM['phenotypes'].tolist())
         years = self.ds_MM['year'].astype(str).tolist()
         countries = self.ds_MM['country'].tolist()
-        if self.masking_method == "keep_one_class":
-            ab_classes = deepcopy(self.ds_MM['ab_classes'].tolist())
-            masked_pheno_sequences, target_resistances = self._mask_pheno_sequences(pheno_sequences, ab_classes)
-        else:
-            masked_pheno_sequences, target_resistances = self._mask_pheno_sequences(pheno_sequences)
-            
-        pheno_token_types = [[2]*len(seq) for seq in masked_pheno_sequences]
-        
-        masked_geno_sequences = self._mask_geno_sequences(geno_sequences)
-        geno_token_types = [[1]*len(seq) for seq in masked_geno_sequences]
         seq_starts = [[self.CLS, years[i], countries[i]] for i in range(self.num_samples)]
         
+        if self.masking_method == "keep_one_class":
+            ab_classes = deepcopy(self.ds_MM['ab_classes'].tolist())
+            masked_pheno_sequences, target_resistances, target_indices_pheno = self._mask_pheno_sequences(pheno_sequences, ab_classes)
+        else:
+            masked_pheno_sequences, target_resistances, target_indices_pheno = self._mask_pheno_sequences(pheno_sequences)
+            
+        pheno_token_types = [[2]*len(seq) for seq in masked_pheno_sequences]
+        masked_geno_sequences, target_indices_geno = self._mask_geno_sequences(geno_sequences)
+        geno_token_types = [[1]*len(seq) for seq in masked_geno_sequences]
+        
         # combine sequences and pad
+        target_indices = [[-1]*3 + target_indices_geno[i] + target_indices_pheno[i] for i in range(self.num_samples)]
+        target_indices = [indices + [-1]*(self.max_seq_len - len(indices)) for indices in target_indices]
+        
         masked_sequences = [seq_starts[i] + masked_geno_sequences[i] + masked_pheno_sequences[i] for i in range(self.num_samples)]
         masked_sequences = [seq + [self.PAD]*(self.max_seq_len - len(seq)) for seq in masked_sequences]
         indices_masked = [self.vocab.lookup_indices(seq) for seq in masked_sequences]
@@ -366,32 +371,38 @@ class MMFinetuneDataset(Dataset):
         token_types = [seq + [2]*(self.max_seq_len - len(seq)) for seq in token_types]
         
         if self.include_sequences:
-            rows = zip(indices_masked, target_resistances, token_types, masked_sequences)
+            rows = zip(indices_masked, target_resistances, target_indices, token_types, masked_sequences)
         else:
-            rows = zip(indices_masked, target_resistances, token_types)
+            rows = zip(indices_masked, target_resistances, target_indices, token_types)
         self.df = pd.DataFrame(rows, columns=self.columns)
          
     
     def _mask_geno_sequences(self, geno_sequences): # Just to remove info, no prediction task
         masked_geno_sequences = list()
+        geno_target_indices = list() 
         
         for geno_seq in geno_sequences:
             # self.rngshuffle(geno_seq) # if positional encoding is used, sequences ought to be shuffled
             seq_len = len(geno_seq)
             token_mask = self.rng.random(seq_len) < self.mask_prob_geno
+            target_indices = np.array([-1]*seq_len)
             if not token_mask.any():
                 idx = self.rng.integers(seq_len)
+                target_indices[idx] = self.vocab[geno_seq[idx]]
                 geno_seq[idx] = self.PAD            ## TODO: maybe change to an '[NA]' token 
             else:
+                target_indices[token_mask] = self.vocab.lookup_indices([geno_seq[i] for i in token_mask.nonzero()[0]])
                 for idx in token_mask.nonzero()[0]:
                     geno_seq[idx] = self.PAD
             masked_geno_sequences.append(geno_seq)
-        return masked_geno_sequences
+            geno_target_indices.append(target_indices.tolist())
+        return masked_geno_sequences, geno_target_indices
     
     
     def _mask_pheno_sequences(self, pheno_sequences, ab_classes=None):
         masked_pheno_sequences = list()
         target_resistances = list()
+        pheno_target_indices = list()
 
         if self.mask_prob_pheno:
             for pheno_seq in pheno_sequences:
@@ -399,8 +410,10 @@ class MMFinetuneDataset(Dataset):
                 seq_len = len(pheno_seq)
                 token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
                 target_res = [-1]*self.num_ab
+                target_indices = np.array([-1]*seq_len)
                 if not token_mask.any():
                     idx = self.rng.integers(seq_len)
+                    target_indices[idx] = self.vocab[pheno_seq[idx]]
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]  
                     r = self.rng.random()
@@ -409,6 +422,7 @@ class MMFinetuneDataset(Dataset):
                     elif r < 0.9:
                         pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size)) 
                 else:
+                    target_indices[token_mask] = self.vocab.lookup_indices([pheno_seq[i] for i in token_mask.nonzero()[0]])
                     for idx in token_mask.nonzero()[0]:
                         ab, res = pheno_seq[idx].split('_')
                         target_res[self.ab_to_idx[ab]] = self.enc_res[res]
@@ -419,16 +433,18 @@ class MMFinetuneDataset(Dataset):
                             pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
+                pheno_target_indices.append(target_indices.tolist())
         elif self.num_known_ab:
             for pheno_seq in pheno_sequences:
                 # self.rng.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
+                target_indices = np.array([-1]*seq_len)
                 if self.num_known_ab == 0:
                     indices = range(seq_len)
                 else:
                     indices = self.rng.choice(seq_len, seq_len - self.num_known_ab, replace=False)
-                    
+                target_indices[indices] = self.vocab.lookup_indices([pheno_seq[i] for i in indices])
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
@@ -438,7 +454,8 @@ class MMFinetuneDataset(Dataset):
                     elif r < 0.9:
                         pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
-                target_resistances.append(target_res)  
+                target_resistances.append(target_res)
+                target_indices.append(target_indices.tolist())  
         elif self.masking_method == "keep_one_class":
             for i, pheno_seq in enumerate(pheno_sequences):
                 # self.rng.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled
@@ -451,8 +468,10 @@ class MMFinetuneDataset(Dataset):
                 # keep_class = self.rng.choice(unique_classes) # all classes are equally likely
                 # keep_class = self.rng.choice(classes) # more frequent classes are more likely
                 seq_len = len(pheno_seq)
+                target_indices = np.array([-1]*seq_len)
                 target_res = [-1]*self.num_ab
                 indices = [idx for idx in range(seq_len) if classes[idx] != keep_class] 
+                target_indices[indices] = self.vocab.lookup_indices([pheno_seq[i] for i in indices])
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
@@ -463,8 +482,9 @@ class MMFinetuneDataset(Dataset):
                         pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
+                pheno_target_indices.append(target_indices.tolist())
         else:
             raise ValueError(f"Unknown masking method: {self.masking_method}")
         
-        return masked_pheno_sequences, target_resistances
+        return masked_pheno_sequences, target_resistances, pheno_target_indices
         

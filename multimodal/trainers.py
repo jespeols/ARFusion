@@ -550,7 +550,7 @@ class MMBertPreTrainer(nn.Module):
             all_correct = eq.all().item()
             
             data = {
-                'num_masked': num_masked_tot, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
+                'num_masked_ab': num_masked_tot, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
                 'num_correct': num_correct, 'correct_S': num_correct_S, 'correct_R': num_correct_R,
                 'all_correct': all_correct
             }
@@ -782,6 +782,7 @@ class MMBertFineTuner():
         self.batch_size = config_ft["batch_size"]
         self.num_batches = round(self.train_size / self.batch_size)
         self.vocab = self.train_set.vocab
+        self.ab_to_idx = self.train_set.ab_to_idx
          
         self.lr = config_ft["lr"]
         self.weight_decay = config_ft["weight_decay"]
@@ -874,9 +875,19 @@ class MMBertFineTuner():
             epoch_start_time = time.time()
             train_loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(train_loss)
-            print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min | Loss: {train_loss:.4f}")
+            if time.time() - start_time > 60:
+                disp_time = f"{(time.time() - start_time)/60:.1f} min"
+            else:
+                disp_time = f"{time.time() - start_time:.0f} sec"
+            print(f"Epoch completed in " + disp_time + f" | Loss: {train_loss:.4f}")
+            val_start = time.time()
             print("Evaluating on validation set...")
             val_results = self.evaluate(self.val_loader, self.val_set)
+            if time.time() - val_start > 60:
+                disp_time = f"{(time.time() - val_start)/60:.1f} min"
+            else:
+                disp_time = f"{time.time() - val_start:.0f} sec"
+            print(f"Validation completed in " + disp_time)
             s = f"Val loss: {val_results['loss']:.4f}"
             s += f" | Accuracy {val_results['acc']:.2%} | Isolate accuracy {val_results['iso_acc']:.2%}"
             print(s)
@@ -956,7 +967,7 @@ class MMBertFineTuner():
             batch_index = i + 1
             self.optimizer.zero_grad() # zero out gradients
             
-            input, target_res, token_types, attn_mask = batch 
+            input, target_res, _, token_types, attn_mask = batch
             pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
@@ -1013,13 +1024,13 @@ class MMBertFineTuner():
             ## General tracking ##
             loss = 0
             for i, batch in enumerate(loader):                  
-                input, target_res, token_types, attn_mask = batch
+                input, target_res, target_indices, token_types, attn_mask = batch
                        
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
-                iso_stats = self._update_iso_stats(i, pred_res, target_res, ab_mask, iso_stats) # TODO: implement more extensive info, e.g. num_masked_geno
+                iso_stats = self._update_iso_stats(i, pred_res, target_res, target_indices, ab_mask, token_types, iso_stats) 
                 
                 ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
                 losses = list()
@@ -1046,10 +1057,10 @@ class MMBertFineTuner():
             ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
             iso_stats = self._calculate_iso_stats(iso_stats)
         
-            acc = ab_stats['num_correct'].sum() / ab_stats['num_tot'].sum()
+            acc = ab_stats['num_correct'].sum() / ab_stats['num_masked_tot'].sum()
             iso_acc = iso_stats['all_correct'].sum() / iso_stats.shape[0]
-            sens = ab_stats['num_correct_R'].sum() / ab_stats['num_R'].sum() 
-            spec = ab_stats['num_correct_S'].sum() / ab_stats['num_S'].sum()
+            sens = ab_stats['num_correct_R'].sum() / ab_stats['num_masked_R'].sum() 
+            spec = ab_stats['num_correct_S'].sum() / ab_stats['num_masked_S'].sum()
             prec = ab_stats['num_correct_R'].sum() / ab_stats['num_pred_R'].sum()
             F1_score = 2 * sens * prec / (sens + prec)
 
@@ -1091,37 +1102,38 @@ class MMBertFineTuner():
     
     def _init_eval_stats(self, ds_obj):
         ab_stats = pd.DataFrame(columns=[
-            'antibiotic', 'num_tot', 'num_S', 'num_R', 'num_pred_S', 'num_pred_R', 
+            'antibiotic', 'num_masked_tot', 'num_masked_S', 'num_masked_R', 'num_pred_S', 'num_pred_R', 
             'num_correct', 'num_correct_S', 'num_correct_R',
             'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
         ])
         ab_stats['antibiotic'] = self.antibiotics
-        ab_stats['num_tot'], ab_stats['num_S'], ab_stats['num_R'] = 0, 0, 0
+        ab_stats['num_masked_tot'], ab_stats['num_masked_S'], ab_stats['num_masked_R'] = 0, 0, 0
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
         
         iso_stats = ds_obj.ds_MM.copy()
-        iso_stats['num_masked_pheno'], iso_stats['num_masked_geno'] = 0,0 
+        iso_stats['num_masked_ab'], iso_stats['num_masked_genes'] = 0, 0 
         iso_stats['num_masked_S'], iso_stats['num_masked_R'] = 0, 0
         iso_stats['num_correct'], iso_stats['correct_S'], iso_stats['correct_R'] = 0, 0, 0
         iso_stats['sensitivity'], iso_stats['specificity'], iso_stats['accuracy'] = 0, 0, 0
+        iso_stats['masked_ab'], iso_stats['correct_ab'], iso_stats['masked_genes'] = None, None, None
         iso_stats['all_correct'] = False  
         return ab_stats, iso_stats
     
     
     def _update_ab_eval_stats(self, ab_stats: pd.DataFrame, num, num_preds, num_correct):
         for j in range(self.num_ab): 
-            ab_stats.loc[j, 'num_tot'] = num[j, :].sum()
-            ab_stats.loc[j, 'num_S'], ab_stats.loc[j, 'num_R'] = num[j, 0], num[j, 1]
+            ab_stats.loc[j, 'num_masked_tot'] = num[j, :].sum()
+            ab_stats.loc[j, 'num_masked_S'], ab_stats.loc[j, 'num_masked_R'] = num[j, 0], num[j, 1]
             ab_stats.loc[j, 'num_pred_S'], ab_stats.loc[j, 'num_pred_R'] = num_preds[j, 0], num_preds[j, 1]
             ab_stats.loc[j, 'num_correct'] = num_correct[j, :].sum()
             ab_stats.loc[j, 'num_correct_S'], ab_stats.loc[j, 'num_correct_R'] = num_correct[j, 0], num_correct[j, 1]
         ab_stats['accuracy'] = ab_stats.apply(
-            lambda row: row['num_correct']/row['num_tot'] if row['num_tot'] > 0 else np.nan, axis=1)
+            lambda row: row['num_correct']/row['num_masked_tot'] if row['num_masked_tot'] > 0 else np.nan, axis=1)
         ab_stats['sensitivity'] = ab_stats.apply(
-            lambda row: row['num_correct_R']/row['num_R'] if row['num_R'] > 0 else np.nan, axis=1)
+            lambda row: row['num_correct_R']/row['num_masked_R'] if row['num_masked_R'] > 0 else np.nan, axis=1)
         ab_stats['specificity'] = ab_stats.apply(
-            lambda row: row['num_correct_S']/row['num_S'] if row['num_S'] > 0 else np.nan, axis=1)
+            lambda row: row['num_correct_S']/row['num_masked_S'] if row['num_masked_S'] > 0 else np.nan, axis=1)
         ab_stats['precision'] = ab_stats.apply(
             lambda row: row['num_correct_R']/row['num_pred_R'] if row['num_pred_R'] > 0 else np.nan, axis=1)
         ab_stats['F1'] = ab_stats.apply(
@@ -1143,37 +1155,49 @@ class MMBertFineTuner():
         return [num_pred_S, num_pred_R]
     
     
-    ## TODO: implement more extensive info, e.g. num_masked_geno, masks that indicate which predictions are correct etc.
-    def _update_iso_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, 
-                          ab_mask: torch.Tensor, iso_stats: pd.DataFrame):
+    def _update_iso_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, target_indices: torch.Tensor,
+                          ab_mask: torch.Tensor, token_types:torch.tensor, iso_stats: pd.DataFrame):
         for i in range(pred_res.shape[0]): 
             iso_ab_mask = ab_mask[i]
+            iso_token_types = token_types[i][target_indices[i] != -1] # token types masked tokens
+            iso_target_indices = target_indices[i][target_indices[i] != -1] # token ids of the antibiotics and genes that are masked
             df_idx = batch_idx * self.batch_size + i # index of the isolate in the combined dataset
             
             # counts
-            num_masked_tot = iso_ab_mask.sum().item()
+            num_masked_ab = iso_ab_mask.sum().item()
             num_masked_R = target_res[i][iso_ab_mask].sum().item()
-            num_masked_S = num_masked_tot - num_masked_R
+            num_masked_S = num_masked_ab - num_masked_R
             
-            # statistics            
-            iso_target_res = target_res[i][iso_ab_mask]
-            eq = torch.eq(pred_res[i][iso_ab_mask], iso_target_res)
+            # statistics
+            masked_ab_indices = iso_ab_mask.nonzero().squeeze(-1).tolist() # ab-indexing index of the masked antibiotics 
+            iso_target_res = target_res[i][iso_ab_mask] # (num_masked_ab,)
+            eq = torch.eq(pred_res[i][iso_ab_mask], iso_target_res) # (num_masked_ab,)
             num_correct_R = eq[iso_target_res == 1].sum().item()
             num_correct_S = eq[iso_target_res == 0].sum().item()
             num_correct = num_correct_S + num_correct_R
             all_correct = eq.all().item()
             
+            # add masked genes and antibiotics
+            ab_indices = iso_target_indices[iso_token_types == 2].tolist() # token ids of the masked antibiotics, sequence order
+            masked_ab = [self.vocab.lookup_token(idx) for idx in ab_indices] # token, sequence order
+            masked_ab_indices_seq = [self.ab_to_idx[token.split('_')[0]] for token in masked_ab] # index in the ab-indexing, sequence order
+            correct_ab = [eq[masked_ab_indices.index(idx)].item() for idx in masked_ab_indices_seq]
+            
+            geno_indices = iso_target_indices[iso_token_types == 1].tolist()
+            masked_genes = [self.vocab.lookup_token(idx) for idx in geno_indices]
+            
             data = {
-                'num_masked': num_masked_tot, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
+                'num_masked_genes': len(geno_indices), 'masked_genes': masked_genes, 
+                'masked_ab': pd.Series(masked_ab), 'correct_ab': correct_ab,
+                'num_masked_ab': num_masked_ab, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
                 'num_correct': num_correct, 'correct_S': num_correct_S, 'correct_R': num_correct_R,
                 'all_correct': all_correct
             }
             iso_stats.loc[df_idx, data.keys()] = data.values()
-                          
         return iso_stats
     
     def _calculate_iso_stats(self, iso_stats: pd.DataFrame): 
-        iso_stats['accuracy'] = iso_stats['num_correct'] / iso_stats['num_masked_pheno']
+        iso_stats['accuracy'] = iso_stats['num_correct'] / iso_stats['num_masked_ab']
         iso_stats['sensitivity'] = iso_stats.apply(
             lambda row: row['correct_R']/row['num_masked_R'] if row['num_masked_R'] > 0 else np.nan, axis=1
         )
