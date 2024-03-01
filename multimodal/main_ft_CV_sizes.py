@@ -150,6 +150,7 @@ if __name__ == "__main__":
         else:
             config_ft['name'] = run_name
         if args.exp_folder:
+            config_ft['exp_folder'] = args.exp_folder
             p = Path(BASE_DIR / "results" / "MM" / args.exp_folder)
         else:
             p = Path(BASE_DIR / "results" / "MM")
@@ -224,6 +225,7 @@ if __name__ == "__main__":
                 tuner.print_trainer_summary()
                 wandb_config = {
                     "trainer_type": "fine-tuning",
+                    "exp_folder": config_ft['exp_folder'],
                     "epochs": tuner.epochs,
                     "batch_size": tuner.batch_size,
                     "hidden_dim": tuner.model.hidden_dim,

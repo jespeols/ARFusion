@@ -808,6 +808,7 @@ class MMBertFineTuner():
         self.report_every = config_ft["report_every"] 
         self.print_progress_every = config_ft["print_progress_every"]
         self._splitter_size = 80
+        self.exp_folder = config_ft["exp_folder"]
         self.results_dir = results_dir
         if self.results_dir:
             self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -876,9 +877,9 @@ class MMBertFineTuner():
             train_loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(train_loss)
             if time.time() - start_time > 60:
-                disp_time = f"{(time.time() - start_time)/60:.1f} min"
+                disp_time = f"{(time.time() - epoch_start_time)/60:.1f} min"
             else:
-                disp_time = f"{time.time() - start_time:.0f} sec"
+                disp_time = f"{time.time() - epoch_start_time:.0f} sec"
             print(f"Epoch completed in " + disp_time + f" | Loss: {train_loss:.4f}")
             val_start = time.time()
             print("Evaluating on validation set...")
@@ -1215,6 +1216,7 @@ class MMBertFineTuner():
             
             config={
                 "trainer_type": "fine-tuning",
+                "exp_folder": self.exp_folder,
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
                 "hidden_dim": self.model.hidden_dim,
