@@ -62,7 +62,12 @@ class MMBertPreTrainer(nn.Module):
         self.mask_probs = {'geno': self.mask_prob_geno, 'pheno': self.mask_prob_pheno}
         self.num_known_ab = self.train_set.num_known_ab
         
-        self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
+        if not config['use_weighted_loss']:
+            self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
+        else:
+            self.ab_criterions = [nn.BCEWithLogitsLoss(
+                weight=torch.tensor(v, requires_grad=False).to(device)) for v in config['data']['antibiotics']['abbr_to_weights'].values()
+            ]
         self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_indices == -1
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
@@ -795,7 +800,12 @@ class MMBertFineTuner():
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
         
-        self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
+        if not config['use_weighted_loss']:
+            self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
+        else:
+            self.ab_criterions = [nn.BCEWithLogitsLoss(
+                weight=torch.tensor(v, requires_grad=False).to(device)) for v in config['data']['antibiotics']['abbr_to_weights'].values()
+            ]
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)

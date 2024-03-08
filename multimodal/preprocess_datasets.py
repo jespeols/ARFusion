@@ -25,8 +25,10 @@ if __name__ == "__main__":
     
     args = argparser.parse_args()
     
-    assert args.preprocess_TESSy or args.preprocess_NCBI, "You must instruct the program to prepare at least one of the datasets."
-    
+    if not args.preprocess_TESSy and not args.preprocess_NCBI:
+        print("Since you did not specify any datasets to prepare, both will be prepared by default.")
+        args.preprocess_TESSy = True
+        args.preprocess_NCBI = True    
     data_dict = config['data']
     if args.preprocess_NCBI:
         print("Preprocessing NCBI data...")
