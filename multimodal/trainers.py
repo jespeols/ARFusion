@@ -40,7 +40,11 @@ class MMBertPreTrainer(nn.Module):
         self.project_name = config["project_name"]
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
-        self.num_ab = len(self.antibiotics) 
+        self.num_ab = len(self.antibiotics)
+        self.ab_weights = config['data']['antibiotics']['ab_weights']
+        print(f"Antibiotic weights: {self.ab_weights}")
+        self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
+        print(f"Positive weights: {self.pos_weights}")
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
@@ -66,7 +70,7 @@ class MMBertPreTrainer(nn.Module):
             self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
         else:
             self.ab_criterions = [nn.BCEWithLogitsLoss(
-                weight=torch.tensor(v, requires_grad=False).to(device)) for v in config['data']['antibiotics']['abbr_to_weights'].values()
+                pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
             ]
         self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_indices == -1
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -779,6 +783,9 @@ class MMBertFineTuner():
         self.wandb_name = config_ft["name"] if config_ft["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics) 
+        self.ab_weights = config['data']['antibiotics']['ab_weights']
+        self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+        self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
@@ -804,7 +811,7 @@ class MMBertFineTuner():
             self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
         else:
             self.ab_criterions = [nn.BCEWithLogitsLoss(
-                weight=torch.tensor(v, requires_grad=False).to(device)) for v in config['data']['antibiotics']['abbr_to_weights'].values()
+                pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
             ]
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
@@ -886,7 +893,7 @@ class MMBertFineTuner():
             epoch_start_time = time.time()
             train_loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(train_loss)
-            if time.time() - start_time > 60:
+            if time.time() - epoch_start_time > 60:
                 disp_time = f"{(time.time() - epoch_start_time)/60:.1f} min"
             else:
                 disp_time = f"{time.time() - epoch_start_time:.0f} sec"
