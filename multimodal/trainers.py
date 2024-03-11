@@ -42,9 +42,7 @@ class MMBertPreTrainer(nn.Module):
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics)
         self.ab_weights = config['data']['antibiotics']['ab_weights']
-        print(f"Antibiotic weights: {self.ab_weights}")
         self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
-        print(f"Positive weights: {self.pos_weights}")
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
@@ -969,6 +967,7 @@ class MMBertFineTuner():
             "iso_acc": self.val_iso_accs[self.best_epoch],
             "sens": self.val_sensitivities[self.best_epoch],
             "spec": self.val_specificities[self.best_epoch],
+            "prec": self.val_precisions[self.best_epoch],
             "F1": self.val_F1_scores[self.best_epoch],
             "iso_stats": self.val_iso_stats[self.best_epoch],
             "ab_stats": self.val_ab_stats[self.best_epoch]
@@ -1088,6 +1087,7 @@ class MMBertFineTuner():
                 "iso_acc": iso_acc,
                 "sensitivity": sens,
                 "specificity": spec,
+                "precision": prec,
                 "F1": F1_score,
                 "ab_stats": ab_stats,
                 "iso_stats": iso_stats,
@@ -1102,6 +1102,7 @@ class MMBertFineTuner():
         self.val_iso_accs = []
         self.val_sensitivities = []
         self.val_specificities = []
+        self.val_precisions = []
         self.val_F1_scores = []
         self.val_ab_stats = []
         self.val_iso_stats = []
@@ -1113,6 +1114,7 @@ class MMBertFineTuner():
         self.val_iso_accs.append(results["iso_acc"])
         self.val_sensitivities.append(results["sensitivity"])
         self.val_specificities.append(results["specificity"])
+        self.val_precisions.append(results["precision"])
         self.val_F1_scores.append(results["F1"])
         self.val_ab_stats.append(results["ab_stats"])
         self.val_iso_stats.append(results["iso_stats"])
