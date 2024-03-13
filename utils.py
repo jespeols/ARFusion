@@ -105,10 +105,10 @@ def get_ab_stats_df(results_dict, with_ab_as_index=False):
     antibiotics = ab_stats_list[0]['antibiotic'].tolist()
     data_dict.update({"antibiotic": antibiotics})
     for ab_stats in ab_stats_list:
-        ab_stats['S_share'] = ab_stats['num_S'] / ab_stats['num_tot']
-        ab_stats['R_share'] = ab_stats['num_R'] / ab_stats['num_tot']
+        ab_stats['S_share'] = ab_stats['num_masked_S'] / ab_stats['num_masked_tot']
+        ab_stats['R_share'] = ab_stats['num_masked_R'] / ab_stats['num_masked_tot']
 
-    num_tot = np.array([ab_stats['num_tot'].tolist() for ab_stats in ab_stats_list])
+    num_tot = np.array([ab_stats['num_masked_tot'].tolist() for ab_stats in ab_stats_list])
     avg_num = np.mean(num_tot, axis=0).astype(int).tolist()
     std_num = np.std(num_tot, axis=0).tolist()
     s_shares = np.array([ab_stats['S_share'].tolist() for ab_stats in ab_stats_list])
@@ -246,8 +246,8 @@ def plot_metric_by_ab_with_distr(
 
 def load_and_create_ab_df(
     train_params: str,
-    read_folder: str = '15_ab',
-    model_names = ['No PT', 'Easy PT', 'Easy CPT', 'Medium PT', 'Medium CPT', 'Hard PT', 'Hard CPT'],
+    read_folder: str = '2024_03_01',
+    model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
     train_share: str = None,
 ):
     results_dict_list = []
@@ -273,8 +273,8 @@ def load_and_create_ab_df(
 def load_and_create_abs_and_rel_diff_dfs(
     train_params: str,
     train_share: str = None,
-    read_folder: str = '15_ab',
-    model_names = ['No PT', 'Easy PT', 'Easy CPT', 'Medium PT', 'Medium CPT', 'Hard PT', 'Hard CPT'], 
+    read_folder: str = '2024_03_01',
+    model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'], 
 ):
     results_dict_list = []
     if train_share:
@@ -307,7 +307,7 @@ def load_and_create_abs_and_rel_diff_dfs(
 def load_and_create_train_share_df(
     model_prefix: str,
     train_params: str,
-    read_folder: str = '15_ab',
+    read_folder: str = '2024_03_01',
     train_shares = [0.01, 0.05, 0.1, 0.2, 0.3],
 ):
     model_names = [f'{model_prefix}_{share}' for share in train_shares]
@@ -330,7 +330,7 @@ def plot_metric_vs_train_shares(
     train_shares, 
     df_CV_list,
     metric,
-    model_names = ['No PT', 'Easy PT', 'Easy CPT', 'Medium PT', 'Medium CPT', 'Hard PT', 'Hard CPT'],
+    model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
     colors = ['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     legend_loc = None,
     plot_title = None,
