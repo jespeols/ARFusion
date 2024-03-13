@@ -173,7 +173,7 @@ data:
       TGC: 'Tigecycline'
       TOB: 'Tobramycin'
       TZP: 'Piperacillin/Tazobactam'
-    ab_weights: # S, R | Four levels: 40-60, 30-70, 20-80, 10-90 
+    ab_weights_strong: # S, R | Four levels: 40-60, 30-70, 20-80, 10-90 
       AMC: [0.4, 0.6]
       AMK: [0.1, 0.9]
       AMP: [0.4, 0.6]
@@ -200,7 +200,7 @@ data:
       TGC: [0.1, 0.9]
       TOB: [0.1, 0.9]
       TZP: [0.1, 0.9]
-    ab_weights_milder: # S, R
+    ab_weights_mild: # S, R
       AMC: [0.45, 0.55]
       AMK: [0.2, 0.8]
       AMP: [0.45, 0.55]
