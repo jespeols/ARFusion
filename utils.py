@@ -185,6 +185,7 @@ def plot_metric_by_ab(
     else:
         ax.set_xlabel(f'Antibiotic (desc. {sort_by_desc})')
     ax.set_ylabel(metric)
+    ax.set_yticks(np.arange(0, 1.1, 0.1))
     model_names = df_CV_ab[metric+'_avg'].columns.tolist()
     if use_legend:
         ax.legend(legend_labels if legend_labels else model_names, loc=legend_loc, framealpha=0)
@@ -227,8 +228,8 @@ def plot_metric_by_ab_with_distr(
     else:
         ax.bar(ind + 3*width, df_CV_ab['R_share_median'], width, bottom=df_CV_ab['S_share_median'], color='darkred', label='R share')
         ax.bar(ind + 3*width, df_CV_ab['S_share_median'], width, color='darkgreen', label='S share')
-    ax.set_xticks(ind + width)
-    ax.set_xticklabels(df_CV_ab.index)
+    ax.set_xticks(ind + width, df_CV_ab.index)
+    ax.set_yticks(np.arange(0, 1.1, 0.1))
     if title:
         if title == 'none':
             pass
@@ -246,7 +247,7 @@ def plot_metric_by_ab_with_distr(
 
 def load_and_create_ab_df(
     train_params: str,
-    read_folder: str = '2024_03_01',
+    exp_folder: str = None,
     model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
     train_share: str = None,
 ):
@@ -257,9 +258,12 @@ def load_and_create_ab_df(
             s = f"FT_{model_name}_{train_params}_train_share{train_share}"
         else:
             s = f"FT_{model_name}_{train_params}"
-        results_dict_list.append(
-            pd.read_pickle(os.path.join(BASE_DIR, 'results', 'MM', read_folder, s, 'CV_results.pkl'))
-        )
+        if exp_folder:
+            p = os.path.join(BASE_DIR, 'results', 'MM', exp_folder, s, 'CV_results.pkl')
+        else:
+            p = os.path.join(BASE_DIR, 'results', 'MM', s, 'CV_results.pkl')
+        results_dict_list.append(pd.read_pickle(p))
+        
     df_CV_ab_list = [get_ab_stats_df(results_dict) for results_dict in results_dict_list]
     df_CV_ab = pd.concat(df_CV_ab_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('antibiotic', append=True).unstack(level=0)
     df_CV_ab = df_CV_ab.reindex(columns=model_names, level=1)
@@ -273,24 +277,27 @@ def load_and_create_ab_df(
 def load_and_create_abs_and_rel_diff_dfs(
     train_params: str,
     train_share: str = None,
-    read_folder: str = '2024_03_01',
+    exp_folder: str = None,
     model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'], 
 ):
     results_dict_list = []
     if train_share:
         for model_name in model_names:
             model_name = model_name.replace(' ', '')
-            results_dict_list.append(
-                pd.read_pickle(
-                    os.path.join(BASE_DIR, 'results', 'MM', read_folder, f'FT_{model_name}_{train_params}_train_share{train_share}', 'CV_results.pkl')
-                )
-            )
+            if exp_folder:
+                p = os.path.join(BASE_DIR, 'results', 'MM', exp_folder, f'FT_{model_name}_{train_params}_train_share{train_share}', 'CV_results.pkl')
+            else:
+                p = os.path.join(BASE_DIR, 'results', 'MM', f'FT_{model_name}_{train_params}_train_share{train_share}', 'CV_results.pkl')
+            results_dict_list.append(pd.read_pickle(p))
     else:
         for model_name in model_names:
             model_name = model_name.replace(' ', '')
-            results_dict_list.append(
-                pd.read_pickle(os.path.join(BASE_DIR, 'results', 'MM', read_folder, f'FT_{model_name}_{train_params}', 'CV_results.pkl'))
-            )
+            if exp_folder:
+                p = os.path.join(BASE_DIR, 'results', 'MM', exp_folder, f'FT_{model_name}_{train_params}', 'CV_results.pkl')
+            else:
+                p = os.path.join(BASE_DIR, 'results', 'MM', f'FT_{model_name}_{train_params}', 'CV_results.pkl')
+            results_dict_list.append(pd.read_pickle(p))
+            
     df_CV_list = [get_average_and_std_df(results_dict) for results_dict in results_dict_list]
     df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('metric', append=True).unstack(level=0)
     df_CV = df_CV.reindex(columns=model_names, level=1)
@@ -307,7 +314,7 @@ def load_and_create_abs_and_rel_diff_dfs(
 def load_and_create_train_share_df(
     model_prefix: str,
     train_params: str,
-    read_folder: str = '2024_03_01',
+    exp_folder: str = None,
     train_shares = [0.01, 0.05, 0.1, 0.2, 0.3],
 ):
     model_names = [f'{model_prefix}_{share}' for share in train_shares]
@@ -317,9 +324,11 @@ def load_and_create_train_share_df(
             s = f"FT_{model_prefix.replace(' ', '')}_{train_params}_train_share{share}"
         else:
             s = f"FT_{model_prefix.replace(' ', '')}_{train_params}"
-        results_dict_list.append(
-            pd.read_pickle(os.path.join(BASE_DIR, 'results', 'MM', read_folder, s, 'CV_results.pkl'))
-        )
+        if exp_folder:
+            p = os.path.join(BASE_DIR, 'results', 'MM', exp_folder, s, 'CV_results.pkl')
+        else:
+            p = os.path.join(BASE_DIR, 'results', 'MM', s, 'CV_results.pkl')
+        results_dict_list.append(pd.read_pickle(p))
     df_CV_list = [get_average_and_std_df(results_dict) for results_dict in results_dict_list]
     df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('metric', append=True).unstack(level=0)
     df_CV = df_CV.reindex(columns=model_names, level=1)
