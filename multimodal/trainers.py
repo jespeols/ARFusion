@@ -782,8 +782,9 @@ class MMBertFineTuner():
         self.project_name = config_ft["project_name"]
         self.wandb_name = config_ft["name"] if config_ft["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
-        self.num_ab = len(self.antibiotics) 
-        if config_ft["use_weighted_loss"]:
+        self.num_ab = len(self.antibiotics)
+        self.use_weighted_loss = config_ft["use_weighted_loss"] 
+        if self.use_weighted_loss:
             self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
             self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
             self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
@@ -808,12 +809,12 @@ class MMBertFineTuner():
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
         
-        if not config['use_weighted_loss']:
-            self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
-        else:
+        if self.use_weighted_loss:
             self.ab_criterions = [nn.BCEWithLogitsLoss(
                 pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
             ]
+        else:
+            self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
@@ -859,6 +860,8 @@ class MMBertFineTuner():
         print(f"Number of batches: {self.num_batches:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
+        if self.use_weighted_loss:
+            print("Antibiotic weights:", self.ab_weights)
         s = f"CV mode: {'Yes' if self.CV_mode else 'No'}"
         if self.CV_mode:
             s += f" ({self.num_folds} folds)"
