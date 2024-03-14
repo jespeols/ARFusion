@@ -94,7 +94,7 @@ if __name__ == "__main__":
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
     config_ft['ds_path'] = args.ds_path if args.ds_path else config_ft['ds_path']
     config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
-    config['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config['use_weighted_loss']
+    config_ft['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config_ft['use_weighted_loss']
     config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
     config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
     assert config_ft['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     
     print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
     ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
-    ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].reset_index(drop=True)
+    ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)
     # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
@@ -169,9 +169,8 @@ if __name__ == "__main__":
         ab_stats = []
         
         num_folds = config_ft['num_folds']
-        ds_MM = ds_MM.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True) # shuffle dataset
         print(f"Splitting dataset into {num_folds} folds...")
-        kf = KFold(n_splits=num_folds, shuffle=True, random_state=config_ft['random_state'])
+        kf = KFold(n_splits=num_folds)
         
         for j, (train_indices, val_indices) in enumerate(kf.split(ds_MM.index)):
             print()
@@ -181,8 +180,9 @@ if __name__ == "__main__":
             print("="*80)
 
             # adjust train size depending on train_share (intended as share of TOTAL dataset, not train set of fold)
-            train_size = int(len(train_indices) * train_share/(1-config_ft['val_share']))
-            train_indices = train_indices[:train_size]
+            if train_share < 0.8:
+                train_size = int(len(train_indices) * train_share/(1-config_ft['val_share']))
+                train_indices = train_indices[:train_size]
             
             ds_ft_train = MMFinetuneDataset(
                 df_MM=ds_MM.iloc[train_indices],

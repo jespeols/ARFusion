@@ -42,6 +42,7 @@ if __name__ == "__main__":
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
+    argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss functions")
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--prepare_TESSy", action="store_true", help="Prepare TESSy data")
     argparser.add_argument("--prepare_NCBI", action="store_true", help="Prepare NCBI data")
@@ -83,6 +84,7 @@ if __name__ == "__main__":
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
+    config['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config['use_weighted_loss']
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['data']['TESSy']['prepare_data'] = args.prepare_TESSy if args.prepare_TESSy else config['data']['TESSy']['prepare_data']
     config['data']['NCBI']['prepare_data'] = args.prepare_NCBI if args.prepare_NCBI else config['data']['NCBI']['prepare_data']

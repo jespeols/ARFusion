@@ -48,6 +48,7 @@ fine_tuning:
   num_known_ab: 
   lr: 0.00005
   weight_decay: 0.01
+  use_weighted_loss: False
   early_stopping_patience: 10
   print_progress_every: 50
   report_every: 10

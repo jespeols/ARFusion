@@ -41,8 +41,10 @@ class MMBertPreTrainer(nn.Module):
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics)
-        self.ab_weights = config['data']['antibiotics']['ab_weights']
-        self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
+        if config['use_weighted_loss']:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
@@ -781,9 +783,10 @@ class MMBertFineTuner():
         self.wandb_name = config_ft["name"] if config_ft["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics) 
-        self.ab_weights = config['data']['antibiotics']['ab_weights']
-        self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
-        self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
+        if config_ft["use_weighted_loss"]:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
