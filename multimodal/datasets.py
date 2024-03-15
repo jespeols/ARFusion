@@ -286,6 +286,7 @@ class MMFinetuneDataset(Dataset):
         mask_prob_geno: float,
         mask_prob_pheno: float,
         num_known_ab: int,
+        filter_genes_containing: list = None,
         random_state: int = 42,
         include_sequences: bool = False
     ):
@@ -294,6 +295,18 @@ class MMFinetuneDataset(Dataset):
         
         self.ds_MM = df_MM.reset_index(drop=True)
         assert all(self.ds_MM['num_ab'] > 0), "Dataset contains isolates without phenotypes"
+        
+        self.filter_genes_containing = filter_genes_containing
+        if self.filter_genes_containing:
+            print("Filtering out genes containing:", self.filter_genes_containing)
+            self.ds_MM['genotypes_filtered'] = self.ds_MM['genotypes'].apply(
+                lambda x: [gene for gene in x if not any(f in gene for f in self.filter_genes_containing)]
+            )
+            self.ds_MM['num_genotypes_filtered'] = self.ds_MM['genotypes_filtered'].apply(len)
+            self.genotype_col = 'genotypes_filtered'
+        else:
+            self.genotype_col = 'genotypes'
+        
         self.vocab = vocab
         self.vocab_size = len(self.vocab)
         self.antibiotics = antibiotics
@@ -343,7 +356,7 @@ class MMFinetuneDataset(Dataset):
     
     
     def prepare_dataset(self):
-        geno_sequences = deepcopy(self.ds_MM['genotypes'].tolist())
+        geno_sequences = deepcopy(self.ds_MM[self.genotype_col].tolist())
         pheno_sequences = deepcopy(self.ds_MM['phenotypes'].tolist())
         years = self.ds_MM['year'].astype(str).tolist()
         countries = self.ds_MM['country'].tolist()
@@ -384,16 +397,17 @@ class MMFinetuneDataset(Dataset):
         for geno_seq in geno_sequences:
             # self.rngshuffle(geno_seq) # if positional encoding is used, sequences ought to be shuffled
             seq_len = len(geno_seq)
-            token_mask = self.rng.random(seq_len) < self.mask_prob_geno
             target_indices = np.array([-1]*seq_len)
-            if not token_mask.any():
-                idx = self.rng.integers(seq_len)
-                target_indices[idx] = self.vocab[geno_seq[idx]]
-                geno_seq[idx] = self.PAD            ## TODO: maybe change to an '[NA]' token 
-            else:
-                target_indices[token_mask] = self.vocab.lookup_indices([geno_seq[i] for i in token_mask.nonzero()[0]])
-                for idx in token_mask.nonzero()[0]:
-                    geno_seq[idx] = self.PAD
+            if not seq_len == 0:
+                token_mask = self.rng.random(seq_len) < self.mask_prob_geno
+                if not token_mask.any():
+                    idx = self.rng.integers(seq_len)
+                    target_indices[idx] = self.vocab[geno_seq[idx]]
+                    geno_seq[idx] = self.PAD            ## TODO: maybe change to an '[NA]' token 
+                else:
+                    target_indices[token_mask] = self.vocab.lookup_indices([geno_seq[i] for i in token_mask.nonzero()[0]])
+                    for idx in token_mask.nonzero()[0]:
+                        geno_seq[idx] = self.PAD
             masked_geno_sequences.append(geno_seq)
             geno_target_indices.append(target_indices.tolist())
         return masked_geno_sequences, geno_target_indices

@@ -44,7 +44,7 @@ fine_tuning:
   epochs: 100
   mask_prob_geno: 0.75
   masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
-  mask_prob_pheno: 0.9
+  mask_prob_pheno: 0.75
   num_known_ab: 
   lr: 0.00005
   weight_decay: 0.01
@@ -78,6 +78,7 @@ data:
     threshold_year: 1970
     include_phenotype: True
     exclude_genotypes:
+    filter_genes_containing: ['bla'] # applies to training set in fine-tuning only
     # exclude_assembly_variants: 
     exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
     exclusion_chars: 

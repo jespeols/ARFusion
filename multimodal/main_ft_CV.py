@@ -189,6 +189,7 @@ if __name__ == "__main__":
             max_seq_len=max_seq_len,
             masking_method=config_ft['masking_method'],
             mask_prob_geno=config_ft['mask_prob_geno'],
+            filter_genes_containing=data_dict['NCBI']['filter_genes_containing'],
             mask_prob_pheno=config_ft['mask_prob_pheno'],
             num_known_ab=config_ft['num_known_ab'],
             random_state=config_ft['random_state']
