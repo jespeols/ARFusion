@@ -88,6 +88,7 @@ if __name__ == "__main__":
     args = argparser.parse_args()
     config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
     config_ft['name'] = args.name if args.name else config_ft['name']
+    config_ft['exp_folder'] = args.exp_folder if args.exp_folder else config_ft['exp_folder']
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
     config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
     config_ft['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config_ft['use_weighted_loss']
@@ -113,18 +114,14 @@ if __name__ == "__main__":
     train_share = args.train_share if args.train_share else (1 - config_ft['val_share'])
         
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
+    if config_ft['exp_folder']:
+        p = Path(BASE_DIR / "results" / "MM" / config_ft['exp_folder'])
+    else:
+        p = Path(BASE_DIR / "results" / "MM")
     if config['name']:
-        if args.exp_folder:
-            p = Path(BASE_DIR / "results" / "MM" / args.exp_folder)
-        else:
-            p = Path(BASE_DIR / "results" / "MM")
         results_dir = Path(os.path.join(p, config_ft['name']))
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-        if args.exp_folder:
-            p = Path(BASE_DIR / "results" / "MM" / args.exp_folder)
-        else:
-            p = Path(BASE_DIR / "results" / "MM")
         results_dir = Path(os.path.join(p, "experiment_" + str(time_str)))
     print(f"Name of experiment: {config_ft['name']}")
     print(f"Results directory: {results_dir}")

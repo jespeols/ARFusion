@@ -30,6 +30,7 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
+    argparser.add_argument("--exp_folder", type=str, help="Folder to save experiment results in")
     argparser.add_argument("--mask_prob_geno", type=float)
     argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
@@ -65,6 +66,7 @@ if __name__ == "__main__":
     args = argparser.parse_args()
     config['wandb_mode'] = args.wandb_mode if args.wandb_mode else config['wandb_mode']
     config['name'] = args.name if args.name else config['name']
+    config['exp_folder'] = args.exp_folder if args.exp_folder else config['exp_folder']
     config['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config['mask_prob_geno']
     config['masking_method'] = args.masking_method if args.masking_method else config['masking_method']
     assert config['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
@@ -92,8 +94,12 @@ if __name__ == "__main__":
         config['do_eval'] = False
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
+    if config['exp_folder']:
+        p = Path(BASE_DIR / "results" / "MM" / config['exp_folder'])
+    else:
+        p = Path(BASE_DIR / "results" / "MM")
     if config['name']:
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config['name']))
+        results_dir = Path(os.path.join(p, config['name']))
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
         results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", "experiment_" + str(time_str)))

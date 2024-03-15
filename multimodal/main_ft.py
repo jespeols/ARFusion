@@ -84,11 +84,15 @@ if __name__ == "__main__":
     config_ft['val_share'] = args.val_share if args.val_share else config_ft['val_share']
         
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
-    if config['name']:
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config_ft['name']))
+    if config_ft['exp_folder']:
+        p = Path(BASE_DIR / "results" / "MM" / config_ft['exp_folder'])
+    else:
+        p = Path(BASE_DIR / "results" / "MM")
+    if config_ft['name']:
+        results_dir = Path(os.path.join(p, config_ft['name']))
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", "experiment_" + str(time_str)))
+        results_dir = Path(os.path.join(p, "experiment_" + str(time_str)))
     print(f"Name of experiment: {config_ft['name']}")
     print(f"Results directory: {results_dir}")
     
@@ -156,6 +160,7 @@ if __name__ == "__main__":
         mask_prob_geno=config_ft['mask_prob_geno'],
         mask_prob_pheno=config_ft['mask_prob_pheno'],
         num_known_ab=config_ft['num_known_ab'],
+        filter_genes_containing=data_dict['NCBI']['filter_genes_containing'],
         random_state=config_ft['random_state']
     )
     ds_ft_val = MMFinetuneDataset(

@@ -2,6 +2,7 @@
 wandb_mode: 'online' # 'online' for syncing, or 'disabled' for no tracking
 project_name: Multimodal-MLM
 name: baseline_pt
+exp_folder:
 emb_dim: 256
 ff_dim: 256
 hidden_dim: 256 # for classifier
@@ -78,6 +79,7 @@ data:
     threshold_year: 1970
     include_phenotype: True
     exclude_genotypes:
+    # filter_genes_containing:
     filter_genes_containing: ['bla'] # applies to training set in fine-tuning only
     # exclude_assembly_variants: 
     exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]

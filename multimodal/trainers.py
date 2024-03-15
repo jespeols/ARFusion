@@ -41,7 +41,8 @@ class MMBertPreTrainer(nn.Module):
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics)
-        if config['use_weighted_loss']:
+        self.use_weighted_loss = config['use_weighted_loss']
+        if self.use_weighted_loss:
             self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
             self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
             self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
@@ -66,7 +67,7 @@ class MMBertPreTrainer(nn.Module):
         self.mask_probs = {'geno': self.mask_prob_geno, 'pheno': self.mask_prob_pheno}
         self.num_known_ab = self.train_set.num_known_ab
         
-        if not config['use_weighted_loss']:
+        if not self.use_weighted_loss:
             self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
         else:
             self.ab_criterions = [nn.BCEWithLogitsLoss(
@@ -114,6 +115,8 @@ class MMBertPreTrainer(nn.Module):
         print(f"Number of batches: {self.num_batches:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
+        if self.use_weighted_loss:
+            print("Antibiotic weights:", self.ab_weights)
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
         print(f"Mask probability (genotypes): {self.mask_prob_geno:.0%}")
         print(f"Masking method: {self.train_set.masking_method}")
