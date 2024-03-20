@@ -870,7 +870,10 @@ class MMBertFineTuner():
             s += f" ({self.num_folds} folds)"
         print(s)
         print(f"Data split: {self.train_share:.0%} train | {self.val_share:.0%} val (size: {self.dataset_size:,})")
-        print(f"Mask probability for genotype: {self.train_set.mask_prob_geno:.0%}")
+        if not self.train_set.no_genotype_masking:
+            print(f"Mask probability for genotype: {self.train_set.mask_prob_geno:.0%}")
+        else:
+            print(f"No genotype masking")
         print(f"Masking method: {self.masking_method}")
         if self.mask_prob_pheno:
             print(f"Mask probability for prediction task (phenotype): {self.mask_prob_pheno:.0%}")
