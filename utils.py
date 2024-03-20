@@ -1,12 +1,16 @@
 import numpy as np
 import pandas as pd
 import pickle
+import yaml
 import torch
 import os
 import matplotlib.pyplot as plt
 
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
+
+with open(os.path.join(BASE_DIR, 'config_MM.yaml'), 'r') as f:
+    config = yaml.safe_load(f)
 
 
 def get_split_indices(size_to_split, val_share, random_state: int = 42):
@@ -271,6 +275,8 @@ def load_and_create_ab_df(
     df_CV_ab_tmp = df_CV_ab.drop(reduce_cols, axis=1)
     for i, col in enumerate(reduce_cols):
         df_CV_ab_tmp.insert(i, col, df_CV_ab[col].agg('mean', axis=1))
+    class_map = config['data']['antibiotics']['abbr_to_class']
+    df_CV_ab_tmp.insert(0, 'ab_class', df_CV_ab_tmp.index.map(class_map))
     return df_CV_ab_tmp
 
 

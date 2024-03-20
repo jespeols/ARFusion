@@ -288,7 +288,8 @@ class MMFinetuneDataset(Dataset):
         num_known_ab: int,
         filter_genes_containing: list = None,
         random_state: int = 42,
-        include_sequences: bool = False
+        include_sequences: bool = False,
+        no_geno_masking: bool = False
     ):
         self.random_state = random_state
         self.rng = np.random.default_rng(self.random_state) # creates a new generator 
@@ -318,6 +319,8 @@ class MMFinetuneDataset(Dataset):
         
         self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_geno = mask_prob_geno
+        self.mask_prob_pheno = mask_prob_pheno
+        self.no_genotype_masking = no_geno_masking
         self.mask_prob_pheno = mask_prob_pheno
         self.num_known_ab = num_known_ab
         if self.masking_method == 'random':
@@ -369,7 +372,11 @@ class MMFinetuneDataset(Dataset):
             masked_pheno_sequences, target_resistances, target_indices_pheno = self._mask_pheno_sequences(pheno_sequences)
             
         pheno_token_types = [[2]*len(seq) for seq in masked_pheno_sequences]
-        masked_geno_sequences, target_indices_geno = self._mask_geno_sequences(geno_sequences)
+        if not self.no_genotype_masking:
+            masked_geno_sequences, target_indices_geno = self._mask_geno_sequences(geno_sequences)
+        else:
+            masked_geno_sequences = geno_sequences
+            target_indices_geno = [[-1]*len(seq) for seq in masked_geno_sequences]
         geno_token_types = [[1]*len(seq) for seq in masked_geno_sequences]
         
         # combine sequences and pad
@@ -403,7 +410,7 @@ class MMFinetuneDataset(Dataset):
                 if not token_mask.any():
                     idx = self.rng.integers(seq_len)
                     target_indices[idx] = self.vocab[geno_seq[idx]]
-                    geno_seq[idx] = self.PAD            ## TODO: maybe change to an '[NA]' token 
+                    geno_seq[idx] = self.PAD 
                 else:
                     target_indices[token_mask] = self.vocab.lookup_indices([geno_seq[i] for i in token_mask.nonzero()[0]])
                     for idx in token_mask.nonzero()[0]:

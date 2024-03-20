@@ -34,6 +34,7 @@ if __name__ == "__main__":
     argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
     argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss function")
     argparser.add_argument("--mask_prob_geno", type=float)
+    argparser.add_argument("--no_geno_masking", action="store_true", help="Disable geno masking")
     argparser.add_argument("--masking_method", type=str, choices=['random', 'num_known', 'keep_one_class'], required=True)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
@@ -66,6 +67,7 @@ if __name__ == "__main__":
     config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
     config_ft['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config_ft['use_weighted_loss']
     config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
+    config_ft['no_geno_masking'] = args.no_geno_masking if args.no_geno_masking else config_ft['no_geno_masking']
     config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
     assert config_ft['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
     if config_ft['masking_method'] == 'random':
@@ -162,6 +164,7 @@ if __name__ == "__main__":
         num_known_ab=config_ft['num_known_ab'],
         filter_genes_containing=data_dict['NCBI']['filter_genes_containing'],
         random_state=config_ft['random_state']
+        no_geno_masking=config_ft['no_geno_masking']
     )
     ds_ft_val = MMFinetuneDataset(
         df_MM=ds_MM.iloc[val_indices],
@@ -173,7 +176,8 @@ if __name__ == "__main__":
         mask_prob_geno=config_ft['mask_prob_geno'],
         mask_prob_pheno=config_ft['mask_prob_pheno'],
         num_known_ab=config_ft['num_known_ab'],
-        random_state=config_ft['random_state']
+        random_state=config_ft['random_state'],
+        no_geno_masking=config_ft['no_geno_masking']
     )
     pad_idx = vocab[pad_token]
     bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)

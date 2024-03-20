@@ -44,6 +44,7 @@ fine_tuning:
   num_folds: 5
   epochs: 100
   mask_prob_geno: 0.75
+  no_geno_masking: False
   masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
   mask_prob_pheno: 0.75
   num_known_ab: 
