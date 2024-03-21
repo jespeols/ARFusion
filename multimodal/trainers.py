@@ -1220,7 +1220,7 @@ class MMBertFineTuner():
             
             data = {
                 'num_masked_genes': len(geno_indices), 'masked_genes': masked_genes, 
-                'masked_ab': pd.Series(masked_ab), 'correct_ab': correct_ab,
+                'masked_ab': pd.Series(masked_ab).tolist(), 'correct_ab': correct_ab,
                 'num_masked_ab': num_masked_ab, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
                 'num_correct': num_correct, 'correct_S': num_correct_S, 'correct_R': num_correct_R,
                 'all_correct': all_correct
