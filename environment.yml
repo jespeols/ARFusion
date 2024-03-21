@@ -17,3 +17,5 @@ dependencies:
   - conda-forge::wandb
   - plotly::plotly
   - seaborn
+  - pip:
+    - wandb
