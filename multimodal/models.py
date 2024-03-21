@@ -18,23 +18,24 @@ class JointEmbedding(nn.Module):
         
         self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim, padding_idx=self.pad_idx) 
         # self.position_emb = nn.Embedding(self.max_seq_len, self.emb_dim) 
-        self.token_type_emb = nn.Embedding(3, self.emb_dim) # 3 possible values for token type: 0, 1, 2
+        # self.token_type_emb = nn.Embedding(3, self.emb_dim) # 3 possible values for token type: 0, 1, 2
         
         self.dropout = nn.Dropout(self.dropout_prob)
         self.layer_norm = nn.LayerNorm(self.emb_dim)
         
-    def forward(self, input_tensor: torch.Tensor, token_type_tensor: torch.Tensor):
+    def forward(self, input_tensor: torch.Tensor):
         # input_tensor: (batch_size, seq_len)
         # token_type_ids: (batch_size, seq_len)
         # seq_len = input_tensor.size(-1)
         
         token_emb = self.token_emb(input_tensor) # (batch_size, seq_len, emb_dim)
-        token_type_emb = self.token_type_emb(token_type_tensor) # (batch_size, seq_len, emb_dim)
+        # token_type_emb = self.token_type_emb(token_type_tensor) # (batch_size, seq_len, emb_dim)
         # pos_tensor = torch.arange(seq_len, dtype=torch.long, device=device).expand_as(input_tensor) # (batch_size, seq_len)
         # position_emb = self.position_emb(pos_tensor) # (batch_size, seq_len, emb_dim)
         
         # emb = token_emb + token_type_emb + position_emb
-        emb = token_emb + token_type_emb
+        # emb = token_emb + token_type_emb
+        emb = token_emb
         emb = self.layer_norm(emb) 
         emb = self.dropout(emb)
         return emb
@@ -163,8 +164,8 @@ class BERT(nn.Module):
         self.hidden_dim = config['hidden_dim'] # for the classification layer
         self.classification_layer = [AbPredictor(self.emb_dim, self.hidden_dim).to(device) for _ in range(num_ab)] 
         
-    def forward(self, input_tensor: torch.Tensor, token_type_tensor: torch.Tensor, attn_mask:torch.Tensor): 
-        embedded = self.embedding(input_tensor, token_type_tensor)
+    def forward(self, input_tensor: torch.Tensor, attn_mask:torch.Tensor): 
+        embedded = self.embedding(input_tensor)
         for layer in self.encoder:
             embedded = layer(embedded, attn_mask)
         encoded = embedded # ouput of the BERT Encoder
@@ -211,7 +212,7 @@ class PhenoEmbedding(nn.Module):
         self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
         self.res_emb = nn.Embedding(2, self.emb_dim) # 2 possible values for resistance: 0 or 1
         # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
-        self.position_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
+        # self.position_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
         
         self.dropout = nn.Dropout(self.dropout_prob)
         self.layer_norm = nn.LayerNorm(self.emb_dim)

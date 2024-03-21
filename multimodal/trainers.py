@@ -265,8 +265,7 @@ class MMBertPreTrainer(nn.Module):
             self.optimizer.zero_grad() # zero out gradients
             
             input, target_indices, target_res, token_types, attn_mask = batch   
-            # input, target_indices, target_res, token_types, attn_mask, masked_sequences = batch   
-            pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
+            pred_logits, token_pred = self.model(input, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
             loss = 0
@@ -331,7 +330,7 @@ class MMBertPreTrainer(nn.Module):
             geno_batches, pheno_batches = 0, 0
             for batch in loader:
                 input, target_indices, target_res, token_types, attn_mask = batch   
-                pred_logits, token_pred = self.model(input, token_types, attn_mask)
+                pred_logits, token_pred = self.model(input, attn_mask)
                 
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
                 if ab_mask.any(): # if there are phenotypes in the batch
@@ -384,7 +383,7 @@ class MMBertPreTrainer(nn.Module):
                 input, target_indices, target_res, token_types, attn_mask = batch   
                 # input, target_indices, target_res, token_types, attn_mask, sequences, masked_sequences = batch  
                 
-                pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
+                pred_logits, token_pred = self.model(input, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
                 ###### Phenotype loss ######
@@ -997,7 +996,7 @@ class MMBertFineTuner():
             self.optimizer.zero_grad() # zero out gradients
             
             input, target_res, _, token_types, attn_mask = batch
-            pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
+            pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
             ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
@@ -1055,7 +1054,7 @@ class MMBertFineTuner():
             for i, batch in enumerate(loader):                  
                 input, target_res, target_indices, token_types, attn_mask = batch
                        
-                pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
+                pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
