@@ -163,8 +163,8 @@ if __name__ == "__main__":
         mask_prob_pheno=config_ft['mask_prob_pheno'],
         num_known_ab=config_ft['num_known_ab'],
         filter_genes_containing=data_dict['NCBI']['filter_genes_containing'],
-        random_state=config_ft['random_state']
-        no_geno_masking=config_ft['no_geno_masking']
+        random_state=config_ft['random_state'],
+        no_geno_masking=config_ft['no_geno_masking'],
     )
     ds_ft_val = MMFinetuneDataset(
         df_MM=ds_MM.iloc[val_indices],
