@@ -476,7 +476,7 @@ class MMFinetuneDataset(Dataset):
                         pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
-                target_indices.append(target_indices.tolist())  
+                pheno_target_indices.append(target_indices.tolist())  
         elif self.masking_method == "keep_one_class":
             for i, pheno_seq in enumerate(pheno_sequences):
                 # self.rng.shuffle(pheno_seq) # if positional encoding is used, sequences ought to be shuffled

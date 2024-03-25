@@ -80,8 +80,8 @@ data:
     threshold_year: 1970
     include_phenotype: True
     exclude_genotypes:
-    filter_genes_containing:
-    # filter_genes_containing: ['bla'] # applies to training set in fine-tuning only
+    # filter_genes_containing:
+    filter_genes_containing: ['bla'] # applies to training set in fine-tuning only
     # exclude_assembly_variants: 
     exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
     exclusion_chars: 
