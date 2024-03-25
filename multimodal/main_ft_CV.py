@@ -63,6 +63,9 @@ if __name__ == "__main__":
     argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
+    argparser.add_argument("--emb_dim", type=int)
+    argparser.add_argument("--hidden_dim", type=int)
+    argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
@@ -114,6 +117,15 @@ if __name__ == "__main__":
     config_ft['val_share'] = 1/config_ft['num_folds']
     # if we want to train on a smaller dataset, we can adjust the train_share as share of the TOTAL dataset, not the train set of the fold
     train_share = args.train_share if args.train_share else (1 - config_ft['val_share'])
+    
+    if args.emb_dim:
+        config['emb_dim'] = args.emb_dim
+        config['ff_dim'] = args.emb_dim
+    if args.hidden_dim:
+        config['hidden_dim'] = args.hidden_dim
+    else:
+        config['hidden_dim'] = config['emb_dim']
+    config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
         
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     if config_ft['exp_folder']:
