@@ -65,6 +65,7 @@ if __name__ == "__main__":
     argparser.add_argument("--no_geno_masking", action="store_true", help="Disable geno masking")
     argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
+    argparser.add_argument("--min_num_ab", type=int)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
@@ -125,6 +126,9 @@ if __name__ == "__main__":
     # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
+    if args.min_num_ab:
+        print(f"Filtering out isolates with less than {args.min_num_ab} antibiotics...")
+        ds_MM = ds_MM[ds_MM['num_ab'] >= args.min_num_ab].reset_index(drop=True)
    
     print("Loading vocabulary...")
     vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
