@@ -5,6 +5,7 @@ import yaml
 import torch
 import os
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
@@ -379,3 +380,57 @@ def plot_metric_vs_train_shares(
         print(f'Saving plot to {save_path}')
         plt.savefig(save_path, bbox_inches='tight', dpi=300, transparent=True)
     plt.show()
+    
+    
+def calculate_ab_level_differences(
+    df_ab_0, 
+    df_ab_1, 
+    metrics=['sensitivity', 'specificity', 'precision', 'F1'], 
+    num_folds = 5,
+):
+    df_diff = df_ab_1.copy()
+    for metric in metrics:
+        avg = metric+'_avg'
+        std = metric+'_std'
+        df_diff[avg] = df_ab_1[avg] - df_ab_0[avg]
+        df_diff[std] = np.sqrt((df_ab_0[std]**2 + df_ab_1[std]**2)/num_folds)
+    return df_diff  
+
+def plot_ab_level_differences(
+    df_diff_ab,
+    plot_metric,
+    figsize=(13, 6),
+    plot_title=None,
+    colors=['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
+    ab_classes=None,
+    savepath=None
+):
+    if ab_classes:
+        df_diff_plot = df_diff_ab[df_diff_ab['ab_class'].isin(ab_classes)]
+    else:
+        df_diff_plot = df_diff_ab
+    _, ax = plt.subplots(figsize=figsize)
+    df_diff_plot.plot(kind='bar', y=plot_metric+'_avg', yerr=plot_metric+'_std', ax=ax, rot=0, capsize=2, color=colors)
+    if ab_classes:
+        ax.set_xlabel('Antibiotics in classes: ' + ', '.join(ab_classes))
+    else:
+        ax.set_xlabel('Antibiotic')
+    if plot_title:
+        ax.set_title(plot_title)
+    else:
+        ax.set_title(f'Model-wise differences in {plot_metric}')
+    # ax.legend(fontsize=9, ncol=2)
+    easyPT = Rectangle((0,0),1,1,fc='forestgreen', edgecolor='k', linewidth=0.5)
+    mediumPT = Rectangle((0,0),1,1,fc='gold', edgecolor='k', linewidth=0.5)
+    hardPT = Rectangle((0,0),1,1,fc='red', edgecolor='k', linewidth=0.5)
+    rpt = Rectangle((0,0),1,1,fc='lightgrey', edgecolor='k', linewidth=0.5)
+    cpt = Rectangle((0,0),1,1,fc='grey', edgecolor='k', linewidth=0.5)
+    ax.legend(
+        handles=[easyPT, mediumPT, hardPT, rpt, cpt],
+        labels=['Easy', 'Medium', 'Hard', 'RPT', 'CPT'],
+        ncols=2,
+        framealpha=0,
+    )
+    if savepath:
+        plt.savefig(savepath, bbox_inches='tight', dpi=300)
+    plt.show()          
