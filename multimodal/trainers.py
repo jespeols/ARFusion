@@ -865,7 +865,7 @@ class MMBertFineTuner():
         print(f"Antibiotics: {self.antibiotics}")
         if self.use_weighted_loss:
             print("Antibiotic weights:", self.ab_weights)
-        s = f"CV mode: {'Yes' if self.CV_mode else 'No'}"
+        s = f"CV mode: {'On' if self.CV_mode else 'Off'}"
         if self.CV_mode:
             s += f" ({self.num_folds} folds)"
         print(s)

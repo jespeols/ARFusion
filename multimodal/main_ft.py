@@ -1,4 +1,3 @@
-# %%
 import torch
 import yaml
 import wandb
@@ -8,10 +7,10 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
+from sklearn.model_selection import KFold
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 os.chdir(BASE_DIR)
-
 
 # user-defined modules
 from multimodal.models import BERT
@@ -19,30 +18,63 @@ from multimodal.datasets import MMFinetuneDataset
 from multimodal.trainers import MMBertFineTuner
 
 # user-defined functions
-from utils import get_split_indices, export_results
-from construct_vocab import construct_MM_vocab
-from data_preprocessing import preprocess_TESSy
+from utils import get_split_indices, export_results, get_average_and_std_df
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def init_wandb(project_name: str, wandb_name: str, config: dict):
+    wandb_run = wandb.init(project=project_name, name=wandb_name, config=config)
+    wandb_run.define_metric("fold", hidden=True)
+    
+    wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="fold")
+    wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="fold")
+    wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="fold")
+    wandb_run.define_metric("Accuracies/val_iso_acc", summary="max", step_metric="fold")
+    wandb_run.define_metric("Class_metrics/val_sens", summary="max", step_metric="fold")
+    wandb_run.define_metric("Class_metrics/val_spec", summary="max", step_metric="fold")
+    wandb_run.define_metric("Class_metrics/val_F1", summary="max", step_metric="fold")
+    
+    wandb_run.define_metric("Losses/avg_val_loss")
+    wandb_run.define_metric("Accuracies/avg_val_acc")
+    wandb_run.define_metric("Accuracies/avg_val_iso_acc")
+    wandb_run.define_metric("Class_metrics/avg_val_sens")
+    wandb_run.define_metric("Class_metrics/avg_val_spec")
+    wandb_run.define_metric("Class_metrics/avg_val_F1")
+        
+    return wandb_run
+
+
+def list_of_floats(arg):
+    try:
+        return list(map(float, arg.split(',')))
+    except:
+        raise argparse.ArgumentTypeError("Argument must be a list of floats separated by commas")
 
 
 if __name__ == "__main__":    
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
+    argparser.add_argument("--exp_folder", type=str, help="Name of experiment folder")
     argparser.add_argument("--model_path", type=str)
-    argparser.add_argument("--naive_model", action="store_true", help="Enable naive model")
+    argparser.add_argument("--ds_path", type=str)
+    argparser.add_argument("--no_pt", action="store_true", help="Enable naive model")
     argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss function")
     argparser.add_argument("--mask_prob_geno", type=float)
     argparser.add_argument("--no_geno_masking", action="store_true", help="Disable geno masking")
-    argparser.add_argument("--masking_method", type=str, choices=['random', 'num_known', 'keep_one_class'], required=True)
+    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
+    argparser.add_argument("--min_num_ab", type=int)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
-    argparser.add_argument("--val_share", type=float)
+    argparser.add_argument("--train_shares", type=list_of_floats, help="List of shares for training sizes to indices_list over")
+    argparser.add_argument("--no_cv", action="store_true", help="Disable cross-validation")
+    argparser.add_argument("--val_share", type=float, help="Validation share when CV is disabled")
+    argparser.add_argument("--num_folds", type=int)
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -64,7 +96,10 @@ if __name__ == "__main__":
     config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
     config_ft['name'] = args.name if args.name else config_ft['name']
     config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
-    config_ft['naive_model'] = args.naive_model if args.naive_model else config_ft['naive_model']
+    config_ft['ds_path'] = args.ds_path if args.ds_path else config_ft['ds_path']
+    if args.no_pt:
+        config_ft['model_path'] = None
+        config_ft['no_pt'] = True
     config_ft['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config_ft['use_weighted_loss']
     config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
     config_ft['no_geno_masking'] = args.no_geno_masking if args.no_geno_masking else config_ft['no_geno_masking']
@@ -83,116 +118,213 @@ if __name__ == "__main__":
     config_ft['epochs'] = args.epochs if args.epochs else config_ft['epochs']
     config_ft['lr'] = args.lr if args.lr else config['lr']
     config_ft['random_state'] = args.random_state if args.random_state else config_ft['random_state']
-    config_ft['val_share'] = args.val_share if args.val_share else config_ft['val_share']
+    train_shares = args.train_shares if args.train_shares else [0.8]
+    if not args.no_cv:
+        config_ft['num_folds'] = args.num_folds if args.num_folds else config_ft['num_folds']
+        config_ft['val_share'] = 1/config_ft['num_folds']
+    else:
+        config_ft['num_folds'] = None
+        config_ft['val_share'] = args.val_share if args.val_share else config_ft['val_share']
         
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
-    if config_ft['exp_folder']:
-        p = Path(BASE_DIR / "results" / "MM" / config_ft['exp_folder'])
-    else:
-        p = Path(BASE_DIR / "results" / "MM")
-    if config_ft['name']:
-        results_dir = Path(os.path.join(p, config_ft['name']))
-    else:
-        time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-        results_dir = Path(os.path.join(p, "experiment_" + str(time_str)))
-    print(f"Name of experiment: {config_ft['name']}")
-    print(f"Results directory: {results_dir}")
     
-    print("\nLoading dataset...")
+    print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
     ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)
     # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
-    
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
-    # if config_ft['masking_method'] == 'keep_one_class':
-    #     ds_MM = ds_MM[ds_MM['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
-    #     print(f"Removed {ds_NCBI[ds_NCBI['num_ab'] > 0].shape[0] - ds_MM.shape[0]} samples with only one antibiotic class")
-    
+    if args.min_num_ab:
+        print(f"Filtering out isolates with less than {args.min_num_ab} antibiotics...")
+        ds_MM = ds_MM[ds_MM['num_ab'] >= args.min_num_ab].reset_index(drop=True)
+   
+    print("Loading vocabulary...")
+    vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
     specials = config['specials']
-    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
-    if not config_ft['construct_vocab']:
-        print("Loading vocabulary...")
-        vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
-    else:
-        print("Constructing vocabulary...")
-        if data_dict['TESSy']['prepare_data']:
-            ds_TESSy = preprocess_TESSy(
-                path=data_dict['TESSy']['raw_path'],
-                pathogens=data_dict['pathogens'],
-                save_path=data_dict['TESSy']['save_path'],
-                exclude_antibiotics=data_dict['exclude_antibiotics'],
-                impute_age=data_dict['TESSy']['impute_age'],
-                impute_gender=data_dict['TESSy']['impute_gender']
-            )
-        else:
-            ds_TESSy = pd.read_pickle(os.path.join(BASE_DIR, data_dict['TESSy']['load_path']))
-        ds_pheno = ds_TESSy.copy()
-        ds_pheno['country'] = ds_pheno['country'].map(config['data']['TESSy']['country_code_to_name'])
-        abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
-        ds_pheno['ab_classes'] = ds_pheno['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
-        vocab = construct_MM_vocab(
-            df_geno=ds_NCBI,
-            df_pheno=ds_pheno,
-            antibiotics=antibiotics,
-            specials=specials,
-            savepath_vocab=BASE_DIR / config['savepath_vocab']
-        )       
-    vocab_size = len(vocab)
     pad_token = specials['PAD']
     ds_MM.fillna(pad_token, inplace=True)
     
+    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+    if config_ft['no_pt']: ## REMOVE LATER 
+        for ab in antibiotics:
+            tokens = list(vocab.get_stoi().keys())
+            if not (ab+"_S") in tokens:
+                print(f"Adding antibiotic {ab} to vocabulary")
+                vocab.append_token(ab+"_S")
+                vocab.append_token(ab+"_R")
+    vocab_size = len(vocab)
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
         max_seq_len = config['max_seq_len']
+    
+    run_name = config_ft['name']
+    for i, train_share in enumerate(train_shares):
+        print(f"Train share {i+1} of {len(train_shares)}: {train_share:.0%}")
+        if not train_share == 0.8:
+            config_ft['name'] = f"{run_name}_train_share{train_share}"
+        else:
+            config_ft['name'] = run_name
+        if args.exp_folder:
+            config_ft['exp_folder'] = args.exp_folder
+            p = Path(BASE_DIR / "results" / "MM" / args.exp_folder)
+        else:
+            p = Path(BASE_DIR / "results" / "MM")
+        results_dir = Path(os.path.join(p, config_ft['name'])) 
+        
+        train_losses = []
+        losses = []
+        accs = []
+        iso_accs = []
+        sensitivities = []
+        specificities = []
+        F1_scores = []
+        iso_stats = []
+        ab_stats = []
+        
+        num_folds = config_ft['num_folds']
+        if num_folds:
+            print(f"Splitting dataset into {num_folds} folds...")
+            kf = KFold(n_splits=num_folds)
+            indices_list = kf.split(ds_MM.index)
+        else:
+            print("No cross-validation")
+            train_indices, val_indices = get_split_indices(
+                ds_MM.shape[0], 
+                val_share=config_ft['val_share'], 
+                random_state=config_ft['random_state']
+            )
+            indices_list = [(train_indices, val_indices)]
+        
+        for j, (train_indices, val_indices) in enumerate(indices_list):
+            print()
+            print("="*80)
+            print("="*80)
+            print(f"Training fold {j+1} of {num_folds}...")
+            print("="*80)
 
-    train_indices, val_indices = get_split_indices(
-        ds_MM.shape[0], 
-        val_share=config_ft['val_share'], 
-        random_state=config_ft['random_state']
-    )  
-    ds_ft_train = MMFinetuneDataset(
-        df_MM=ds_MM.iloc[train_indices],
-        vocab=vocab,
-        antibiotics=antibiotics,
-        specials=specials,
-        max_seq_len=max_seq_len,
-        masking_method=config_ft['masking_method'],
-        mask_prob_geno=config_ft['mask_prob_geno'],
-        mask_prob_pheno=config_ft['mask_prob_pheno'],
-        num_known_ab=config_ft['num_known_ab'],
-        filter_genes_containing=data_dict['NCBI']['filter_genes_containing'],
-        random_state=config_ft['random_state'],
-        no_geno_masking=config_ft['no_geno_masking'],
-    )
-    ds_ft_val = MMFinetuneDataset(
-        df_MM=ds_MM.iloc[val_indices],
-        vocab=vocab,
-        antibiotics=antibiotics,
-        specials=specials,
-        max_seq_len=max_seq_len,
-        masking_method=config_ft['masking_method'],
-        mask_prob_geno=config_ft['mask_prob_geno'],
-        mask_prob_pheno=config_ft['mask_prob_pheno'],
-        num_known_ab=config_ft['num_known_ab'],
-        random_state=config_ft['random_state'],
-        no_geno_masking=config_ft['no_geno_masking']
-    )
-    pad_idx = vocab[pad_token]
-    bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
-    tuner = MMBertFineTuner(
-        config=config,
-        model=bert,
-        antibiotics=antibiotics,
-        train_set=ds_ft_train,
-        val_set=ds_ft_val,
-        results_dir=results_dir,
-    )
-    if not config_ft['naive_model']:
-        tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
-        tuner.model.is_pretrained = True
-    tuner.print_model_summary()
-    tuner.print_trainer_summary()
-    ft_results = tuner()
-    export_results(ft_results, results_dir / 'results.pkl')
+            # adjust train size depending on train_share (intended as share of TOTAL dataset, not train set of fold)
+            if train_share < 0.8:
+                train_size = int(len(train_indices) * train_share/(1-config_ft['val_share']))
+                train_indices = train_indices[:train_size]
+            
+            ds_ft_train = MMFinetuneDataset(
+                df_MM=ds_MM.iloc[train_indices],
+                vocab=vocab,
+                antibiotics=antibiotics,
+                specials=specials,
+                max_seq_len=max_seq_len,
+                masking_method=config_ft['masking_method'],
+                mask_prob_geno=config_ft['mask_prob_geno'],
+                mask_prob_pheno=config_ft['mask_prob_pheno'],
+                num_known_ab=config_ft['num_known_ab'],
+                filter_genes_containing=data_dict['NCBI']['filter_genes_containing'],
+                random_state=config_ft['random_state'],
+                no_geno_masking=config_ft['no_geno_masking']
+            )
+            ds_ft_val = MMFinetuneDataset(
+                df_MM=ds_MM.iloc[val_indices],
+                vocab=vocab,
+                antibiotics=antibiotics,
+                specials=specials,
+                max_seq_len=max_seq_len,
+                masking_method=config_ft['masking_method'],
+                mask_prob_geno=config_ft['mask_prob_geno'],
+                mask_prob_pheno=config_ft['mask_prob_pheno'],
+                num_known_ab=config_ft['num_known_ab'],
+                random_state=config_ft['random_state'],
+                no_geno_masking=config_ft['no_geno_masking']
+            )
+            pad_idx = vocab[pad_token]
+            bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
+            tuner = MMBertFineTuner(
+                config=config,
+                model=bert,
+                antibiotics=antibiotics,
+                train_set=ds_ft_train,
+                val_set=ds_ft_val,
+                results_dir=results_dir,
+                CV_mode=True if num_folds else False,
+            )
+            if not config_ft['no_pt']:
+                tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
+                tuner.model.is_pretrained = True
+            if j == 0:
+                tuner.print_model_summary()
+                tuner.print_trainer_summary()
+                wandb_config = {
+                    "trainer_type": "fine-tuning",
+                    "exp_folder": config_ft['exp_folder'],
+                    "epochs": tuner.epochs,
+                    "batch_size": tuner.batch_size,
+                    "hidden_dim": tuner.model.hidden_dim,
+                    "num_layers": tuner.model.num_layers,
+                    "num_heads": tuner.model.num_heads,
+                    "emb_dim": tuner.model.emb_dim,
+                    'ff_dim': tuner.model.ff_dim,
+                    "lr": tuner.lr,
+                    "weight_decay": tuner.weight_decay,
+                    "masking_method": tuner.masking_method, 
+                    "mask_prob_geno": tuner.mask_prob_geno,
+                    "mask_prob_pheno": tuner.mask_prob_pheno,
+                    "num_known_ab": tuner.num_known_ab,
+                    "max_seq_len": tuner.model.max_seq_len,
+                    "vocab_size": len(vocab),
+                    "num_parameters": sum(p.numel() for p in tuner.model.parameters() if p.requires_grad),
+                    "num_antibiotics": tuner.num_ab,
+                    "antibiotics": tuner.antibiotics,
+                    "train_size": tuner.train_size,
+                    "CV_mode": tuner.CV_mode,
+                    'val_share': round(tuner.val_share, 2),
+                    "val_size": tuner.val_size,
+                    "is_pretrained": tuner.model.is_pretrained,
+                }
+                wandb_run = init_wandb(config_ft['project_name'], config_ft['name'], wandb_config)
+            ft_results = tuner()
+            log_dict = {
+                "fold": j+1,
+                "Losses/train_loss": ft_results['train_loss'],
+                "Losses/val_loss": ft_results['loss'],
+                "Accuracies/val_acc": ft_results['acc'],
+                "Accuracies/val_iso_acc": ft_results['iso_acc'],
+                "Class_metrics/val_sens": ft_results['sens'],
+                "Class_metrics/val_spec": ft_results['spec'],
+                "Class_metrics/val_F1": ft_results['F1']
+            }
+            wandb_run.log(log_dict)
+            
+            train_losses.append(ft_results['train_loss'])
+            losses.append(ft_results['loss'])
+            accs.append(ft_results['acc'])
+            iso_accs.append(ft_results['iso_acc'])
+            sensitivities.append(ft_results['sens'])
+            specificities.append(ft_results['spec'])
+            F1_scores.append(ft_results['F1'])
+            iso_stats.append(ft_results['iso_stats'])
+            ab_stats.append(ft_results['ab_stats'])
+        
+        print("All folds completed!")
+        CV_results = {
+            'train_losses': train_losses,
+            'losses': losses,
+            'accs': accs,
+            'iso_accs': iso_accs,
+            'sensitivities': sensitivities,
+            'specificities': specificities,
+            'F1_scores': F1_scores,
+            'iso_stats': iso_stats,
+            'ab_stats': ab_stats
+        }  
+        df_CV = get_average_and_std_df(CV_results, with_metric_as_index=True)
+        log_dict = {
+            "Losses/avg_val_loss": df_CV.loc['Loss', 'avg'],
+            "Accuracies/avg_val_acc": df_CV.loc['Accuracy', 'avg'],
+            "Accuracies/avg_val_iso_acc": df_CV.loc["Isolate accuracy", 'avg'],
+            "Class_metrics/avg_val_sens": df_CV.loc["Sensitivity", 'avg'],
+            "Class_metrics/avg_val_spec": df_CV.loc["Specificity", 'avg'],
+            "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg']
+        }
+        wandb_run.log(log_dict)
+        wandb_run.finish()
+        print("Exporting results...")    
+        export_results(CV_results, results_dir / 'CV_results.pkl')
