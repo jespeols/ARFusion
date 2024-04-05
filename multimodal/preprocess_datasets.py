@@ -59,7 +59,10 @@ if __name__ == "__main__":
     print("Preprocessing complete.")
     if args.construct_vocab:
         print("Constructing vocabulary...")
-        antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+        if data_dict['exclude_antibiotics']:
+            antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+        else:
+            antibiotics = sorted(list(data_dict['antibiotics']['abbr_to_names'].keys()))
         specials = config['specials']
         df_geno = pd.read_pickle(data_dict['NCBI']['save_path'])
         df_pheno = pd.read_pickle(data_dict['TESSy']['save_path'])

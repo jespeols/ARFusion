@@ -132,16 +132,17 @@ def preprocess_TESSy(path,
     
     print(f"Reading in TESSy data from '{path}'...")
     TESSy_data = pd.read_csv(path, low_memory=False)
-    print(f"Pathogens: {pathogens}")
-    TESSy_data = TESSy_data[TESSy_data['Pathogen'].isin(pathogens)]
+    if pathogens:
+        print(f"Pathogens: {pathogens}")
+        TESSy_data = TESSy_data[TESSy_data['Pathogen'].isin(pathogens)]
     print(f"Number of tests before parsing: {TESSy_data.shape[0]:,}")
     TESSy_data['year'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO']).dt.year
     TESSy_data['date'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO'], format='%Y-%m-%d')
     TESSy_data.drop(columns=['DateUsedForStatisticsISO'], inplace=True)
     TESSy_data = TESSy_data[TESSy_data['SIR'] != 'I']
-    if len(pathogens) > 1:
+    if (pathogens and len(pathogens) > 1) or not pathogens:
         cols = ['ReportingCountry', 'date', 'year', 'LaboratoryCode', 'PatientCounter',
-                'Gender', 'Age','IsolateId', 'Pathogen' 'Antibiotic', 'SIR']
+                'Gender', 'Age','IsolateId', 'Pathogen', 'Antibiotic', 'SIR']
         df = TESSy_data[cols]
         df = df.rename(columns={'ReportingCountry': 'country',
                 'Gender': 'gender',
@@ -200,7 +201,7 @@ def preprocess_TESSy(path,
     df = df_agg.merge(df_others, on='ID')
     
     cols_in_order = ['year', 'country', 'gender', 'age', 'phenotypes'] # can change to date or year-month here
-    if len(pathogens) > 1:
+    if (pathogens and len(pathogens) > 1) or not pathogens:
         df = df[['pathogen'] + cols_in_order]
     else:
         df = df[cols_in_order]
