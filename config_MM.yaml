@@ -77,11 +77,13 @@ data:
     raw_path: 'data/raw/NCBI.tsv'
     save_path: 'data/NCBI_15.pkl'
     load_path: 'data/NCBI_15.pkl'
+    refgenes_path: 'data/refgenes.tsv'
     threshold_year: 1970
     include_phenotype: True
     exclude_genotypes:
-    filter_genes_containing:
-    # filter_genes_containing: ['par', 'gyr'] # applies to training set in fine-tuning only
+    filter_genes_by_ab_class:   # e.g. BETA-LACTAM, AMINOGLYCOSIDE. Applies to training set in fine-tuning only
+    # filter_genes_by_ab_class: ['BETA-LACTAM'] 
+    # filter_genes_by_ab_class: ['FLUOROQUINOLONE', 'QUINOLONE'] 
     # exclude_assembly_variants: 
     exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
     exclusion_chars: 

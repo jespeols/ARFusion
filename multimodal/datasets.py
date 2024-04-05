@@ -9,6 +9,7 @@ import time
 
 from copy import deepcopy
 from torch.utils.data import Dataset
+from utils import get_genotype_to_ab_class
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -286,7 +287,7 @@ class MMFinetuneDataset(Dataset):
         mask_prob_geno: float,
         mask_prob_pheno: float,
         num_known_ab: int,
-        filter_genes_containing: list = None,
+        filter_genes_by_ab_class: list = None,
         random_state: int = 42,
         include_sequences: bool = False,
         no_geno_masking: bool = False
@@ -297,16 +298,6 @@ class MMFinetuneDataset(Dataset):
         self.ds_MM = df_MM.reset_index(drop=True)
         assert all(self.ds_MM['num_ab'] > 0), "Dataset contains isolates without phenotypes"
         
-        self.filter_genes_containing = filter_genes_containing
-        if self.filter_genes_containing:
-            print("Filtering out genes containing:", self.filter_genes_containing)
-            self.ds_MM['genotypes_filtered'] = self.ds_MM['genotypes'].apply(
-                lambda x: [gene for gene in x if not any(f in gene for f in self.filter_genes_containing)]
-            )
-            self.ds_MM['num_genotypes_filtered'] = self.ds_MM['genotypes_filtered'].apply(len)
-            self.genotype_col = 'genotypes_filtered'
-        else:
-            self.genotype_col = 'genotypes'
         
         self.vocab = vocab
         self.vocab_size = len(self.vocab)
@@ -316,6 +307,24 @@ class MMFinetuneDataset(Dataset):
         self.enc_res = {'S': 0, 'R': 1}
         self.max_seq_len = max_seq_len
         self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
+        
+        self.filter_genes_by_ab_class = filter_genes_by_ab_class
+        if self.filter_genes_by_ab_class:
+            unique_genotypes = self.ds_MM['genotypes'].explode().unique().tolist()
+            genotype_to_ab_class = get_genotype_to_ab_class(unique_genotypes)
+            print(f"Filtering genes by antibiotic classes: {self.filter_genes_by_ab_class}")
+            ## Feature: remove filtered genes from the genotypes ##
+            self.ds_MM['genotypes_filtered'] = self.ds_MM['genotypes'].apply(
+                lambda x: [gene for gene in x if not any(f in genotype_to_ab_class(gene) for f in self.filter_genes_by_ab_class)]
+            )
+            ## Alternative feature: change the tokens of filtered genes to [MASK] ##
+            # self.ds_MM['genotypes_filtered'] = self.ds_MM['genotypes'].apply(
+            #     lambda x: [gene if not any(f in genotype_to_ab_class(gene) for f in self.filter_genes_by_ab_class) else self.MASK for gene in x]
+            # )   
+            self.ds_MM['num_genotypes_filtered'] = self.ds_MM['genotypes_filtered'].apply(len)
+            self.genotype_col = 'genotypes_filtered'
+        else:
+            self.genotype_col = 'genotypes'
         
         self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_geno = mask_prob_geno

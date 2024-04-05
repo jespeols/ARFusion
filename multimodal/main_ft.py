@@ -51,6 +51,12 @@ def list_of_floats(arg):
     except:
         raise argparse.ArgumentTypeError("Argument must be a list of floats separated by commas")
 
+def list_of_strings(arg):
+    try:
+        return list(map(str, arg.split(',')))
+    except:
+        raise argparse.ArgumentTypeError("Argument must be a list of strings separated by commas")
+
 
 if __name__ == "__main__":    
     argparser = argparse.ArgumentParser()
@@ -65,6 +71,7 @@ if __name__ == "__main__":
     argparser.add_argument("--no_geno_masking", action="store_true", help="Disable geno masking")
     argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
+    argparser.add_argument("--filter_genes_by_ab_class", type=list_of_strings, help="Filter genes by antibiotic classes provided in list")
     argparser.add_argument("--min_num_ab", type=int)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
@@ -125,7 +132,7 @@ if __name__ == "__main__":
     else:
         config_ft['num_folds'] = None
         config_ft['val_share'] = args.val_share if args.val_share else config_ft['val_share']
-        
+    
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     
     print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
@@ -144,6 +151,9 @@ if __name__ == "__main__":
     pad_token = specials['PAD']
     ds_MM.fillna(pad_token, inplace=True)
     
+    if args.filter_genes_by_ab_class:
+        data_dict['NCBI']['filter_genes_by_ab_class'] = args.filter_genes_by_ab_class
+
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
     if config_ft['no_pt']: ## REMOVE LATER 
         for ab in antibiotics:
@@ -218,7 +228,7 @@ if __name__ == "__main__":
                 mask_prob_geno=config_ft['mask_prob_geno'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
-                filter_genes_containing=data_dict['NCBI']['filter_genes_containing'],
+                filter_genes_by_ab_class=data_dict['NCBI']['filter_genes_by_ab_class'],
                 random_state=config_ft['random_state'],
                 no_geno_masking=config_ft['no_geno_masking']
             )

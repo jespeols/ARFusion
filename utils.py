@@ -43,7 +43,7 @@ def get_multimodal_split_indices(sizes: list[int], val_share, random_state:int=4
     
     return train_indices, val_indices
     
-
+############################# Data processing #############################
 
 def filter_gene_counts(df, threshold_num):
     # get indices of samples with more than threshold_num genotypes
@@ -65,12 +65,37 @@ def impute_col(df, col, random_state=42):
     return df
 
 
+def get_genotype_to_ab_class(unique_genotypes):
+    genotype_ref = pd.read_csv(os.path.join(BASE_DIR, config['data']['NCBI']['refgenes_path']), sep='\t')
+    genotype_ref = genotype_ref[(genotype_ref['Scope'] == 'core') & (genotype_ref['Type'] == 'AMR')].reset_index(drop=True)
+    pm_ref = genotype_ref[genotype_ref['Subtype'] == 'POINT']
+    gene_ref = genotype_ref[genotype_ref['Subtype'] != 'POINT']
+    pm_to_ab_class = pm_ref.set_index('#Allele')['Class'].to_dict()
+    gene_to_ab_class = gene_ref.set_index('Gene family')['Class'].to_dict()
+    gene_allele_to_ab_class = gene_ref[gene_ref['#Allele'].notna()].set_index('#Allele')['Class'].to_dict()
+    
+    genotype_to_ab_class = {}
+    for g in unique_genotypes:
+        if "aac(3)-II" in g: # aac(3)-II does not appear exactly in either the Allele or Gene family columns
+                    genotype_to_ab_class[g] = 'AMINOGLYCOSIDE'
+        else:   
+            if g.endswith('=POINT'):
+                genotype_to_ab_class[g] = pm_to_ab_class[g.split('=')[0]]
+            elif ('=PARTIAL' in g) or ('=HMM' in g) or ('=MISTRANSLATION' in g):
+                genotype_to_ab_class[g] = gene_to_ab_class[g.split('=')[0]]
+            else:
+                try:
+                    genotype_to_ab_class[g] = gene_to_ab_class[g]
+                except:
+                    genotype_to_ab_class[g] = gene_allele_to_ab_class[g]
+    return genotype_to_ab_class
+
+############################# Results analysis #############################
+
 def export_results(results, savepath):
     with open(savepath, 'wb') as f:
         pickle.dump(results, f)
     print(f"Results saved to {savepath}")
-
-############################# Results analysis #############################
 
 def get_average_and_std_df(results_dict, with_metric_as_index=False):
     losses = results_dict['losses']
