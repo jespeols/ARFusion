@@ -314,13 +314,13 @@ class MMFinetuneDataset(Dataset):
             genotype_to_ab_class = get_genotype_to_ab_class(unique_genotypes)
             print(f"Filtering genes by antibiotic classes: {self.filter_genes_by_ab_class}")
             ## Feature: remove filtered genes from the genotypes ##
-            self.ds_MM['genotypes_filtered'] = self.ds_MM['genotypes'].apply(
-                lambda x: [gene for gene in x if not any(f in genotype_to_ab_class(gene) for f in self.filter_genes_by_ab_class)]
-            )
-            ## Alternative feature: change the tokens of filtered genes to [MASK] ##
             # self.ds_MM['genotypes_filtered'] = self.ds_MM['genotypes'].apply(
-            #     lambda x: [gene if not any(f in genotype_to_ab_class(gene) for f in self.filter_genes_by_ab_class) else self.MASK for gene in x]
-            # )   
+            #     lambda x: [gene for gene in x if not any(f in genotype_to_ab_class(gene) for f in self.filter_genes_by_ab_class)]
+            # )
+            ## Alternative feature: change the tokens of filtered genes to special token ##
+            self.ds_MM['genotypes_filtered'] = self.ds_MM['genotypes'].apply(
+                lambda x: [gene if not any(f in genotype_to_ab_class[gene] for f in self.filter_genes_by_ab_class) else self.MASK for gene in x]
+            )   
             self.ds_MM['num_genotypes_filtered'] = self.ds_MM['genotypes_filtered'].apply(len)
             self.genotype_col = 'genotypes_filtered'
         else:
@@ -381,11 +381,11 @@ class MMFinetuneDataset(Dataset):
             masked_pheno_sequences, target_resistances, target_indices_pheno = self._mask_pheno_sequences(pheno_sequences)
             
         pheno_token_types = [[2]*len(seq) for seq in masked_pheno_sequences]
-        if not self.no_genotype_masking:
-            masked_geno_sequences, target_indices_geno = self._mask_geno_sequences(geno_sequences)
-        else:
+        if self.no_genotype_masking:
             masked_geno_sequences = geno_sequences
             target_indices_geno = [[-1]*len(seq) for seq in masked_geno_sequences]
+        else:
+            masked_geno_sequences, target_indices_geno = self._mask_geno_sequences(geno_sequences)
         geno_token_types = [[1]*len(seq) for seq in masked_geno_sequences]
         
         # combine sequences and pad

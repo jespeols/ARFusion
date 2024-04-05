@@ -82,6 +82,7 @@ if __name__ == "__main__":
     argparser.add_argument("--no_cv", action="store_true", help="Disable cross-validation")
     argparser.add_argument("--val_share", type=float, help="Validation share when CV is disabled")
     argparser.add_argument("--num_folds", type=int)
+    argparser.add_argument("--save_best_model", action="store_true", help="Save model from best-performing fold")
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -205,7 +206,8 @@ if __name__ == "__main__":
                 random_state=config_ft['random_state']
             )
             indices_list = [(train_indices, val_indices)]
-        
+            
+        best_fold, best_val_loss = 0, float('inf')
         for j, (train_indices, val_indices) in enumerate(indices_list):
             print()
             print("="*80)
@@ -290,6 +292,7 @@ if __name__ == "__main__":
                     "is_pretrained": tuner.model.is_pretrained,
                 }
                 wandb_run = init_wandb(config_ft['project_name'], config_ft['name'], wandb_config)
+                
             ft_results = tuner()
             log_dict = {
                 "fold": j+1,
@@ -312,8 +315,20 @@ if __name__ == "__main__":
             F1_scores.append(ft_results['F1'])
             iso_stats.append(ft_results['iso_stats'])
             ab_stats.append(ft_results['ab_stats'])
+            
+            if num_folds:
+                if ft_results['loss'] < best_val_loss:
+                    best_val_loss = ft_results['loss']
+                    best_fold = j
+                    if args.save_best_model:
+                        best_model_state = tuner.model.state_dict()
         
         print("All folds completed!")
+        if args.save_best_model:
+            print(f"Saving model from best-performing fold ({best_fold+1})...")
+            torch.save(best_model_state, results_dir / 'best_model_state.pt')
+            print(f"Model saved to {results_dir / 'best_model_state.pt'}")
+            
         CV_results = {
             'train_losses': train_losses,
             'losses': losses,
