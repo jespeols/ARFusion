@@ -176,6 +176,18 @@ class BERT(nn.Module):
             return resistance_predictions, token_predictions
         else:
             return resistance_predictions
+        
+    def get_state_dict(self):
+        return {
+            'model': self.state_dict(),
+            'ab_predictors': [net.state_dict() for net in self.classification_layer]
+        }
+    
+    def set_state_dict(self, state_dict):
+        self.load_state_dict(state_dict['model'])
+        for i, net in enumerate(self.classification_layer):
+            net.load_state_dict(state_dict['ab_predictors'][i])
+        self.is_pretrained = True
 
 
 class AbPredictor(nn.Module): # predicts resistance or susceptibility for an antibiotic

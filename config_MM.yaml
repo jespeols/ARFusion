@@ -38,7 +38,7 @@ fine_tuning:
   loadpath_vocab: 'MM_vocab_15.pt'
   construct_vocab: False
   no_pt: False
-  model_path: 'baseline_pt/model_state.pt'
+  model_path: 
   batch_size: 32
   val_share: 0.2
   num_folds: 5

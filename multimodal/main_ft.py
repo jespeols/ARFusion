@@ -103,7 +103,10 @@ if __name__ == "__main__":
     args = argparser.parse_args()
     config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
     config_ft['name'] = args.name if args.name else config_ft['name']
-    config_ft['model_path'] = args.model_path if args.model_path else config_ft['model_path']
+    if args.model_path:
+        config_ft['model_path'] = args.model_path
+    elif not config_ft['model_path']:
+        args.no_pt = True
     config_ft['ds_path'] = args.ds_path if args.ds_path else config_ft['ds_path']
     if args.no_pt:
         config_ft['model_path'] = None
@@ -260,7 +263,6 @@ if __name__ == "__main__":
             )
             if not config_ft['no_pt']:
                 tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
-                tuner.model.is_pretrained = True
             if j == 0:
                 tuner.print_model_summary()
                 tuner.print_trainer_summary()
@@ -321,7 +323,7 @@ if __name__ == "__main__":
                     best_val_loss = ft_results['loss']
                     best_fold = j
                     if args.save_best_model:
-                        best_model_state = tuner.model.state_dict()
+                        best_model_state = tuner.model.get_state_dict()
         
         print("All folds completed!")
         if args.save_best_model:

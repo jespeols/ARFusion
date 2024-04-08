@@ -184,7 +184,7 @@ class MMBertPreTrainer(nn.Module):
                     }
                     self.wandb_run.log(wandb_dict)
                 print("="*self._splitter_size)
-                self.model.load_state_dict(self.best_model_state) 
+                self.model.set_state_dict(self.best_model_state)
                 self.current_epoch = self.best_epoch
                 break
             if self.scheduler:
@@ -316,7 +316,7 @@ class MMBertPreTrainer(nn.Module):
         if self.val_losses[-1] < self.best_val_loss:
             self.best_val_loss = self.val_losses[-1]
             self.best_epoch = self.current_epoch
-            self.best_model_state = self.model.state_dict()
+            self.best_model_state = self.model.get_state_dict()
             self.early_stopping_counter = 0
             return False
         else:
@@ -751,7 +751,7 @@ class MMBertPreTrainer(nn.Module):
     def load_model(self, savepath: Path):
         print("="*self._splitter_size)
         print(f"Loading model from {savepath}")
-        self.model.load_state_dict(torch.load(savepath))
+        self.model.set_state_dict(torch.load(savepath))
         print("Model loaded")
         print("="*self._splitter_size)
         
@@ -1033,7 +1033,7 @@ class MMBertFineTuner():
         if self.val_losses[-1] < self.best_val_loss:
             self.best_val_loss = self.val_losses[-1]
             self.best_epoch = self.current_epoch
-            self.best_model_state = self.model.state_dict()
+            self.best_model_state = self.model.get_state_dict()
             self.early_stopping_counter = 0
             return False
         else:
@@ -1344,6 +1344,5 @@ class MMBertFineTuner():
     def load_model(self, savepath: Path):
         print("="*self._splitter_size)
         print(f"Loading model from {savepath}")
-        self.model.load_state_dict(torch.load(savepath))
-        self.model.to(device)
+        self.model.set_state_dict(torch.load(savepath)).to(device)
         print("Model loaded")
