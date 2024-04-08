@@ -319,7 +319,7 @@ class MMFinetuneDataset(Dataset):
             # )
             ## Alternative feature: change the tokens of filtered genes to special token ##
             self.ds_MM['genotypes_filtered'] = self.ds_MM['genotypes'].apply(
-                lambda x: [gene if not any(f in genotype_to_ab_class[gene] for f in self.filter_genes_by_ab_class) else self.MASK for gene in x]
+                lambda x: [gene if not any(f in genotype_to_ab_class[gene] for f in self.filter_genes_by_ab_class) else self.PAD for gene in x]
             )   
             self.ds_MM['num_genotypes_filtered'] = self.ds_MM['genotypes_filtered'].apply(len)
             self.genotype_col = 'genotypes_filtered'
