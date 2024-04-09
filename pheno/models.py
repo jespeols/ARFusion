@@ -152,6 +152,28 @@ class BERT(nn.Module):
         cls_token = encoded[:, 0, :] # (batch_size, emb_dim)
         predictions = torch.cat([net(cls_token) for net in self.classification_layer], dim=1) # (batch_size, num_ab)
         return predictions
+    
+    def get_state_dict(self):
+        return {
+            'model': self.state_dict(),
+            'ab_predictors': [net.state_dict() for net in self.classification_layer]
+        }
+    
+    def set_state_dict(self, state_dict):
+        self.load_state_dict(state_dict['model'])
+        for i, net in enumerate(self.classification_layer):
+            net.load_state_dict(state_dict['ab_predictors'][i])
+        self.is_pretrained = True
+    
+    def train_mode(self):
+        self.train()
+        for net in self.classification_layer:
+            net.train()
+    
+    def eval_mode(self):
+        self.eval()
+        for net in self.classification_layer:
+            net.eval()
 
 
 class AbPredictor(nn.Module): # predicts resistance or susceptibility for an antibiotic
@@ -167,6 +189,11 @@ class AbPredictor(nn.Module): # predicts resistance or susceptibility for an ant
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1), # binary classification (S:0 | R:1)
         )
+        
+        for layer in self.classifier:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_normal_(layer.weight)
+                nn.init.zeros_(layer.bias)
     
     def forward(self, X):
         # X is the CLS token of the BERT model

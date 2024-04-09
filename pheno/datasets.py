@@ -36,7 +36,7 @@ class PhenotypeDataset(Dataset):
                  ):
         
         self.random_state = random_state
-        np.random.seed(self.random_state)
+        self.rng = np.random.default_rng(self.random_state) # creates a new generator
         
         self.ds = ds.reset_index(drop=True)
         assert num_known_ab or mask_prob, "Either num_known_ab or mask_prob must be specified"
@@ -67,11 +67,7 @@ class PhenotypeDataset(Dataset):
         self.ab_to_idx = {ab: i for i, ab in enumerate(self.antibiotics)}
         self.enc_res = {'S': 0, 'R': 1}
         self.vocab_size = len(self.vocab)
-        self.CLS = specials['CLS']
-        self.PAD = specials['PAD']
-        self.MASK = specials['MASK']
-        self.UNK = specials['UNK']
-        self.special_tokens = specials.values()
+        self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
         self.max_seq_len = max_seq_len
            
         self.include_sequences = include_sequences
@@ -109,14 +105,6 @@ class PhenotypeDataset(Dataset):
         else:
             rows = zip(indices_masked, target_res)
         self.df = pd.DataFrame(rows, columns=self.columns)
-
-    
-    def _encode_sequence(self, seq: list):
-        dict = {ab: res for ab, res in [token.split('_') for token in seq]}
-        indices = [self.ab_to_idx[ab] for ab in dict.keys()]
-        resistances = [self.enc_res[res] for res in dict.values()]
-        
-        return indices, resistances
     
     
     def _construct_masked_sequences(self):  
@@ -125,7 +113,7 @@ class PhenotypeDataset(Dataset):
         masked_sequences = list()
         target_resistances = list()
         
-        years = self.ds['year'].astype('Int16').astype(str).tolist()
+        years = self.ds['year'].astype(int).astype(str).tolist()
         countries = self.ds['country'].tolist()
         genders = self.ds['gender'].tolist()
         ages = self.ds['age'].astype(int).astype(str).tolist()
