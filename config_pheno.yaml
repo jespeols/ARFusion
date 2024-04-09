@@ -22,7 +22,7 @@ use_weighted_loss: False
 print_progress_every: 3000
 report_every: 1500
 save_vocab: True    
-save_model: False   
+save_model: True   
 random_state: 42
 specials:   
   CLS: '[CLS]'
