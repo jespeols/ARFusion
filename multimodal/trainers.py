@@ -1358,5 +1358,6 @@ class MMBertFineTuner():
     def load_model(self, savepath: Path):
         print("="*self._splitter_size)
         print(f"Loading model from {savepath}")
-        self.model.set_state_dict(torch.load(savepath)).to(device)
+        self.model.set_state_dict(torch.load(savepath))
+        self.model.to(device)
         print("Model loaded")
