@@ -9,7 +9,7 @@ import wandb
 
 from torch.utils.data import DataLoader
 from pathlib import Path
-
+from itertools import chain
 from datetime import datetime
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -74,7 +74,14 @@ class MMBertPreTrainer(nn.Module):
                 pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
             ]
         self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_indices == -1
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        # self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.AdamW(
+            [
+                {'params': self.model.parameters()},
+                {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
+            ],
+            lr=self.lr, weight_decay=self.weight_decay
+        )
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
@@ -818,7 +825,14 @@ class MMBertFineTuner():
             ]
         else:
             self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        # self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.AdamW(
+            [
+                {'params': self.model.parameters()},
+                {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
+            ],
+            lr=self.lr, weight_decay=self.weight_decay
+        )
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)

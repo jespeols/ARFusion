@@ -357,10 +357,7 @@ class MMFinetuneDataset(Dataset):
         input = torch.tensor(item[self.INDICES_MASKED], dtype=torch.long, device=device)
         target_res = torch.tensor(item[self.TARGET_RESISTANCES], dtype=torch.float32, device=device)
         token_types = torch.tensor(item[self.TOKEN_TYPES], dtype=torch.long, device=device)
-        print(input.shape)
         attn_mask = (input != self.vocab[self.PAD]).unsqueeze(0).unsqueeze(1) # one dim for batch, one for heads
-        print(attn_mask.shape)
-        print()
         target_indices = torch.tensor(item[self.TARGET_INDICES], dtype=torch.long, device=device)
         
         if self.include_sequences:
