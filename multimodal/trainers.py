@@ -956,7 +956,7 @@ class MMBertFineTuner():
                         "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
                         "best_epoch": self.best_epoch+1
                     })
-                self.model.load_state_dict(self.best_model_state) 
+                self.model.set_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
             if self.scheduler:
