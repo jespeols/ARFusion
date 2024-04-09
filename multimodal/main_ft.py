@@ -252,6 +252,8 @@ if __name__ == "__main__":
             )
             pad_idx = vocab[pad_token]
             bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
+            # print(f"Randomly intitialized model:")
+            # print(bert.classification_layer[2].state_dict())
             tuner = MMBertFineTuner(
                 config=config,
                 model=bert,
@@ -296,6 +298,8 @@ if __name__ == "__main__":
                 wandb_run = init_wandb(config_ft['project_name'], config_ft['name'], wandb_config)
                 
             ft_results = tuner()
+            # print("Trained model:")
+            # print(bert.classification_layer[2].state_dict())
             log_dict = {
                 "fold": j+1,
                 "Losses/train_loss": ft_results['train_loss'],
