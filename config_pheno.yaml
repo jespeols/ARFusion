@@ -12,7 +12,7 @@ mask_prob: 0.25
 # num_known_ab: 4
 num_known_ab: 
 batch_size: 64
-val_share: 0.15 # CV split
+val_share: 0.1 # CV split
 max_seq_len: 'auto'
 epochs: 30
 early_stopping_patience: 3
@@ -35,7 +35,8 @@ data:
   save_path: 'data/TESSy.pkl'
   load_path: 'data/TESSy_15.pkl'
   # exclude_antibiotics: 
-  exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 15 AB
+  # exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 15 AB
+  exclude_antibiotics: ['AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 16 AB
   pathogens: ['ESCCOL']
   impute_age: False
   impute_gender: False

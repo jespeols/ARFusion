@@ -41,7 +41,7 @@ class BertCLSTrainer(nn.Module):
         self.num_ab = len(self.antibiotics) 
         self.use_weighted_loss = config['use_weighted_loss']
         if self.use_weighted_loss:
-            self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
+            self.ab_weights = config['data']['antibiotics']['ab_weights_strong']
             self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
             self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
@@ -211,7 +211,7 @@ class BertCLSTrainer(nn.Module):
             pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
             
             ab_mask = target_res != -1 # (batch_size, num_ab), indicates which antibiotics are present in the batch
-            ab_indices = ab_mask.any(dim=0).nonzero().squeeze().tolist() # list of indices of antibiotics present in the batch
+            ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
             losses = list()
             for j in ab_indices: 
                 mask = ab_mask[:, j] # (batch_size,), indicates which samples contain the antibiotic masked

@@ -82,6 +82,7 @@ if __name__ == "__main__":
     argparser.add_argument("--no_cv", action="store_true", help="Disable cross-validation")
     argparser.add_argument("--val_share", type=float, help="Validation share when CV is disabled")
     argparser.add_argument("--num_folds", type=int)
+    argparser.add_argument("--save_model", action="store_true", help="Save model (from last fold if CV is enabled)")
     argparser.add_argument("--save_best_model", action="store_true", help="Save model from best-performing fold")
         
     if device.type == "cuda":
@@ -103,6 +104,8 @@ if __name__ == "__main__":
     args = argparser.parse_args()
     config_ft['wandb_mode'] = args.wandb_mode if args.wandb_mode else config_ft['wandb_mode']
     config_ft['name'] = args.name if args.name else config_ft['name']
+    if args.save_model:
+        config_ft['save_model'] = True
     if args.model_path:
         config_ft['model_path'] = args.model_path
     elif not config_ft['model_path']:
@@ -215,8 +218,9 @@ if __name__ == "__main__":
             print()
             print("="*80)
             print("="*80)
-            print(f"Training fold {j+1} of {num_folds}...")
-            print("="*80)
+            if num_folds:
+                print(f"Training fold {j+1} of {num_folds}...")
+                print("="*80)
 
             # adjust train size depending on train_share (intended as share of TOTAL dataset, not train set of fold)
             if train_share < 0.8:
@@ -328,8 +332,8 @@ if __name__ == "__main__":
                     best_fold = j
                     if args.save_best_model:
                         best_model_state = tuner.model.get_state_dict()
-        
-        print("All folds completed!")
+        if num_folds:
+            print("All folds completed!")
         if args.save_best_model:
             print(f"Saving model from best-performing fold ({best_fold+1})...")
             torch.save(best_model_state, results_dir / 'best_model_state.pt')

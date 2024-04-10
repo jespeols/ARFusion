@@ -151,7 +151,7 @@ class MMBertPreTrainer(nn.Module):
         self.best_val_loss = float('inf') 
         self._init_result_lists()
         for self.current_epoch in range(self.current_epoch, self.epochs):
-            self.model.train()
+            self.model.train_mode()
             # Dynamic masking: New mask for training set each epoch
             self.train_set.prepare_dataset()
             self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
@@ -332,7 +332,7 @@ class MMBertPreTrainer(nn.Module):
         
     
     def get_val_loss(self, loader: DataLoader):
-        self.model.eval()
+        self.model.eval_mode()
         with torch.no_grad():
             tot_geno_loss, tot_pheno_loss = 0, 0
             geno_batches, pheno_batches = 0, 0
@@ -376,7 +376,7 @@ class MMBertPreTrainer(nn.Module):
     
             
     def evaluate(self, loader: DataLoader, ds_obj):
-        self.model.eval()
+        self.model.eval_mode()
         # prepare evaluation statistics dataframes
         ab_stats, iso_stats_pheno, iso_stats_geno = self._init_eval_stats(ds_obj)
         with torch.no_grad(): 

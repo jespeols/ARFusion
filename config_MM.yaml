@@ -71,7 +71,9 @@ data:
   ## MFX: Reasonable imbalance, but few samples
   # exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'NOR', 'POL', 'DOR', 'TGC', 'MEM', 'ETP', 'COL', 'AMX', 'AMK', 'NET', 'PIP'] # 12 AB
   exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 15 AB
+  # exclude_antibiotics: ['AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 16 AB
   pathogens: ['ESCCOL']
+  # pathogens: 
   NCBI:
     prepare_data: False
     raw_path: 'data/raw/NCBI.tsv'
