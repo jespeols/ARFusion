@@ -53,8 +53,8 @@ fine_tuning:
   weight_decay: 0.01
   use_weighted_loss: False
   early_stopping_patience: 10
-  print_progress_every: 50
-  report_every: 10
+  print_progress_every: 500
+  report_every: 1500
   save_model: False
   random_state: 42
 
