@@ -34,8 +34,8 @@ fine_tuning:
   project_name: Multimodal-MLM
   name: baseline_ft
   exp_folder:
-  ds_path: 'data/TESSy_15.pkl'
-  # ds_path: 'data/NCBI_15.pkl'
+  # ds_path: 'data/TESSy_15.pkl'
+  ds_path: 'data/NCBI_15.pkl'
   loadpath_vocab: 'MM_vocab_15.pt'
   construct_vocab: False
   no_pt: False
@@ -62,9 +62,9 @@ fine_tuning:
 specials:   
   CLS: '[CLS]'
   PAD: '[PAD]'
-  # MASK: '[MASK]'
-  AB_MASK: '[AB_MASK]'
-  GENE_MASK: '[GENE_MASK]'
+  MASK: '[MASK]'
+  # AB_MASK: '[AB_MASK]'
+  # GENE_MASK: '[GENE_MASK]'
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
