@@ -125,6 +125,7 @@ class MMBertPreTrainer(nn.Module):
         if self.use_weighted_loss:
             print("Antibiotic weights:", self.ab_weights)
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
+        print(f"Eval mode: {'on' if self.do_eval else 'off'}")
         print(f"Mask probability (genotypes): {self.mask_prob_geno:.0%}")
         print(f"Masking method: {self.train_set.masking_method}")
         if self.mask_prob_pheno:
@@ -569,7 +570,7 @@ class MMBertPreTrainer(nn.Module):
             all_correct = eq.all().item()
             
             data = {
-                'num_masked_ab': num_masked_tot, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
+                'num_masked': num_masked_tot, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
                 'num_correct': num_correct, 'correct_S': num_correct_S, 'correct_R': num_correct_R,
                 'all_correct': all_correct
             }
