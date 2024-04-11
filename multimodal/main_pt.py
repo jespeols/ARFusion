@@ -121,8 +121,8 @@ if __name__ == "__main__":
         ds_TESSy = pd.read_pickle(os.path.join(BASE_DIR, data_dict['TESSy']['load_path']))
     ds_pheno = ds_TESSy.copy()
     
-    ds_pheno = ds_pheno.sample(frac=1, random_state=config['random_state']).reset_index(drop=True)
-    ds_pheno = ds_pheno.iloc[:int(0.5*len(ds_pheno))].reset_index(drop=True)
+    # ds_pheno = ds_pheno.sample(frac=1, random_state=config['random_state']).reset_index(drop=True)
+    # ds_pheno = ds_pheno.iloc[:int(0.5*len(ds_pheno))].reset_index(drop=True)
     
     ds_pheno['country'] = ds_pheno['country'].map(config['data']['TESSy']['country_code_to_name'])
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
