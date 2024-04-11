@@ -41,7 +41,7 @@ class BertCLSTrainer(nn.Module):
         self.num_ab = len(self.antibiotics) 
         self.use_weighted_loss = config['use_weighted_loss']
         if self.use_weighted_loss:
-            self.ab_weights = config['data']['antibiotics']['ab_weights_strong']
+            self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
             self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
             self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         

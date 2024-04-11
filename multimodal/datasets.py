@@ -56,7 +56,8 @@ class MMPretrainDataset(Dataset):
         self.ab_to_idx = {ab: idx for idx, ab in enumerate(antibiotics)}
         self.enc_res = {'S': 0, 'R': 1}
         self.max_seq_len = max_seq_len
-        self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
+        # self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
+        self.CLS, self.PAD, self.AB_MASK, self.GENE_MASK = specials['CLS'], specials['PAD'], specials['AB_MASK'], specials['GENE_MASK']
         
         self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_geno = mask_prob_geno
@@ -152,18 +153,20 @@ class MMPretrainDataset(Dataset):
                 target_indices[idx] = self.vocab[geno_seq[idx]]
                 r = self.rng.random()
                 if r < 0.8:
-                    geno_seq[idx] = self.MASK
+                    # geno_seq[idx] = self.MASK
+                    geno_seq[idx] = self.GENE_MASK
                 elif r < 0.9:
                     geno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
             else:
                 indices = token_mask.nonzero()[0]
                 target_indices[indices] = self.vocab.lookup_indices([geno_seq[i] for i in indices])
-                for i in indices:
+                for idx in indices:
                     r = self.rng.random()
                     if r < 0.8:
-                        geno_seq[i] = self.MASK
+                        # geno_seq[idx] = self.MASK
+                        geno_seq[idx] = self.GENE_MASK
                     elif r < 0.9:
-                        geno_seq[i] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
+                        geno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
             geno_seq = seq_starts[i] + geno_seq
             target_indices = [-1]*3 + target_indices.tolist() 
             masked_geno_sequences.append(geno_seq)
@@ -195,7 +198,8 @@ class MMPretrainDataset(Dataset):
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]  
                     r = self.rng.random()
                     if r < 0.8:
-                        pheno_seq[idx] = self.MASK
+                        # pheno_seq[idx] = self.MASK
+                        pheno_seq[idx] = self.AB_MASK
                     elif r < 0.9:
                         pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size)) 
                 else:
@@ -204,7 +208,8 @@ class MMPretrainDataset(Dataset):
                         target_res[self.ab_to_idx[ab]] = self.enc_res[res]
                         r = self.rng.random()
                         if r < 0.8:
-                            pheno_seq[idx] = self.MASK
+                            # pheno_seq[idx] = self.MASK
+                            pheno_seq[idx] = self.AB_MASK
                         elif r < 0.9:
                             pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 pheno_seq = seq_starts[i] + pheno_seq
@@ -220,7 +225,8 @@ class MMPretrainDataset(Dataset):
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
                     r = self.rng.random()
                     if r < 0.8:
-                        pheno_seq[idx] = self.MASK
+                        # pheno_seq[idx] = self.MASK
+                        pheno_seq[idx] = self.AB_MASK
                     elif r < 0.9:
                         pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 pheno_seq = seq_starts[i] + pheno_seq
@@ -244,7 +250,8 @@ class MMPretrainDataset(Dataset):
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
                     r = self.rng.random()
                     if r < 0.8:
-                        pheno_seq[idx] = self.MASK
+                        # pheno_seq[idx] = self.MASK
+                        pheno_seq[idx] = self.AB_MASK
                     elif r < 0.9:
                         pheno_seq[idx] = self.vocab.lookup_token(self.rng.integers(self.vocab_size))
                 masked_pheno_sequences.append(pheno_seq)

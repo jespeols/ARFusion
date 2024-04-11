@@ -63,8 +63,8 @@ specials:
   CLS: '[CLS]'
   PAD: '[PAD]'
   MASK: '[MASK]'
-  # AB_MASK: '[AB_MASK]'
-  # GENE_MASK: '[GENE_MASK]'
+  AB_MASK: '[AB_MASK]'
+  GENE_MASK: '[GENE_MASK]'
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
