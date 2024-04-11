@@ -104,7 +104,7 @@ if __name__ == "__main__":
     else:
         print("\nLoading dataset...")
         ds = pd.read_pickle(config['data']['load_path'])
-    ds = ds.iloc[:int(0.5*len(ds))].reset_index(drop=True)
+    # ds = ds.iloc[:int(0.5*len(ds))].reset_index(drop=True)
     num_samples = ds.shape[0]
     
     print("Constructing vocabulary...")
