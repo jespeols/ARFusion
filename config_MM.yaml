@@ -24,7 +24,7 @@ weight_decay: 0.01
 use_weighted_loss: False
 print_progress_every: 1500
 report_every: 1000
-savepath_vocab: 'MM_vocab_15.pt'
+savepath_vocab: 'MM_vocab_15_2mask.pt'
 save_model: True
 random_state: 42
 
@@ -61,7 +61,9 @@ fine_tuning:
 specials:   
   CLS: '[CLS]'
   PAD: '[PAD]'
-  MASK: '[MASK]'
+  # MASK: '[MASK]'
+  AB_MASK: '[AB_MASK]'
+  GENE_MASK: '[GENE_MASK]'
   UNK: '[UNK]'
 data:
   # exclude_antibiotics: 
