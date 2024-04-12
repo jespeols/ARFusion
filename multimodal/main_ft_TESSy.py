@@ -14,7 +14,7 @@ os.chdir(BASE_DIR)
 
 # user-defined modules
 from multimodal.models import BERT
-from multimodal.datasets import MMFinetuneDataset
+from multimodal.datasets import PhenoFinetuneDataset
 from multimodal.trainers import MMBertFineTuner
 
 # user-defined functions
@@ -67,11 +67,8 @@ if __name__ == "__main__":
     argparser.add_argument("--ds_path", type=str)
     argparser.add_argument("--no_pt", action="store_true", help="Enable naive model")
     argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss function")
-    argparser.add_argument("--mask_prob_geno", type=float)
-    argparser.add_argument("--no_geno_masking", action="store_true", help="Disable geno masking")
     argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
-    argparser.add_argument("--filter_genes_by_ab_class", type=list_of_strings, help="Filter genes by antibiotic classes provided in list")
     argparser.add_argument("--min_num_ab", type=int)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
@@ -115,8 +112,6 @@ if __name__ == "__main__":
         config_ft['model_path'] = None
         config_ft['no_pt'] = True
     config_ft['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config_ft['use_weighted_loss']
-    config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
-    config_ft['no_geno_masking'] = args.no_geno_masking if args.no_geno_masking else config_ft['no_geno_masking']
     config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
     assert config_ft['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
     if config_ft['masking_method'] == 'random':
@@ -143,23 +138,24 @@ if __name__ == "__main__":
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     
     print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
-    ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
-    ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)
-    # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
+    ds_TESSy = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
+    ds_TESSy = ds_TESSy.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)
+    
+    ds_TESSy = ds_TESSy.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)
+    ds_TESSy = ds_TESSy.iloc[:int(0.5*len(ds_TESSy))].reset_index(drop=True)
+    
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
-    ds_MM['ab_classes'] = ds_MM['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
+    ds_TESSy['ab_classes'] = ds_TESSy['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
+    ds_TESSy['country'] = ds_TESSy['country'].map(data_dict['TESSy']['country_code_to_name'])
     if args.min_num_ab:
         print(f"Filtering out isolates with less than {args.min_num_ab} antibiotics...")
-        ds_MM = ds_MM[ds_MM['num_ab'] >= args.min_num_ab].reset_index(drop=True)
+        ds_TESSy = ds_TESSy[ds_TESSy['num_ab'] >= args.min_num_ab].reset_index(drop=True)
    
     print("Loading vocabulary...")
     vocab = torch.load(BASE_DIR / config_ft['loadpath_vocab'])
     specials = config['specials']
     pad_token = specials['PAD']
-    ds_MM.fillna(pad_token, inplace=True)
-    
-    if args.filter_genes_by_ab_class:
-        data_dict['NCBI']['filter_genes_by_ab_class'] = args.filter_genes_by_ab_class
+    ds_TESSy.fillna(pad_token, inplace=True)
 
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
     if config_ft['no_pt']: ## REMOVE LATER 
@@ -170,13 +166,13 @@ if __name__ == "__main__":
                 vocab.append_token(ab+"_S")
                 vocab.append_token(ab+"_R")
     vocab_size = len(vocab)
+    ds_NCBI = pd.read_pickle(BASE_DIR / data_dict['NCBI']['load_path'])
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
         max_seq_len = config['max_seq_len']
     
     run_name = config_ft['name']
-    print(f"Name of run: {run_name}")
     for i, train_share in enumerate(train_shares):
         print(f"Train share {i+1} of {len(train_shares)}: {train_share:.0%}")
         if not train_share == 0.8:
@@ -204,11 +200,11 @@ if __name__ == "__main__":
         if num_folds:
             print(f"Splitting dataset into {num_folds} folds...")
             kf = KFold(n_splits=num_folds)
-            indices_list = kf.split(ds_MM.index)
+            indices_list = kf.split(ds_TESSy.index)
         else:
             print("No cross-validation")
             train_indices, val_indices = get_split_indices(
-                ds_MM.shape[0], 
+                ds_TESSy.shape[0], 
                 val_share=config_ft['val_share'], 
                 random_state=config_ft['random_state']
             )
@@ -228,37 +224,30 @@ if __name__ == "__main__":
                 train_size = int(len(train_indices) * train_share/(1-config_ft['val_share']))
                 train_indices = train_indices[:train_size]
             
-            ds_ft_train = MMFinetuneDataset(
-                df_MM=ds_MM.iloc[train_indices],
+            ds_ft_train = PhenoFinetuneDataset(
+                df_pheno=ds_TESSy.iloc[train_indices],
                 vocab=vocab,
                 antibiotics=antibiotics,
                 specials=specials,
                 max_seq_len=max_seq_len,
                 masking_method=config_ft['masking_method'],
-                mask_prob_geno=config_ft['mask_prob_geno'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
-                filter_genes_by_ab_class=data_dict['NCBI']['filter_genes_by_ab_class'],
                 random_state=config_ft['random_state'],
-                no_geno_masking=config_ft['no_geno_masking']
             )
-            ds_ft_val = MMFinetuneDataset(
-                df_MM=ds_MM.iloc[val_indices],
+            ds_ft_val = PhenoFinetuneDataset(
+                df_pheno=ds_TESSy.iloc[val_indices],
                 vocab=vocab,
                 antibiotics=antibiotics,
                 specials=specials,
                 max_seq_len=max_seq_len,
                 masking_method=config_ft['masking_method'],
-                mask_prob_geno=config_ft['mask_prob_geno'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
                 random_state=config_ft['random_state'],
-                no_geno_masking=config_ft['no_geno_masking']
             )
             pad_idx = vocab[pad_token]
             bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
-            # print(f"Randomly intitialized model:")
-            # print(bert.classification_layer[2].state_dict())
             tuner = MMBertFineTuner(
                 config=config,
                 model=bert,
@@ -303,8 +292,6 @@ if __name__ == "__main__":
                 wandb_run = init_wandb(config_ft['project_name'], config_ft['name'], wandb_config)
                 
             ft_results = tuner()
-            # print("Trained model:")
-            # print(bert.classification_layer[2].state_dict())
             log_dict = {
                 "fold": j+1,
                 "Losses/train_loss": ft_results['train_loss'],

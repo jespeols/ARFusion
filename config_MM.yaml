@@ -36,7 +36,7 @@ fine_tuning:
   exp_folder:
   # ds_path: 'data/TESSy_15.pkl'
   ds_path: 'data/NCBI_15.pkl'
-  loadpath_vocab: 'MM_vocab_15.pt'
+  loadpath_vocab: 'MM_vocab_15_2mask.pt'
   construct_vocab: False
   no_pt: False
   model_path: 
@@ -49,7 +49,7 @@ fine_tuning:
   masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
   mask_prob_pheno: 0.75
   num_known_ab: 
-  lr: 0.00005
+  lr: 1e-5
   weight_decay: 0.01
   use_weighted_loss: False
   early_stopping_patience: 10

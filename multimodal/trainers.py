@@ -73,7 +73,7 @@ class MMBertPreTrainer(nn.Module):
             self.ab_criterions = [nn.BCEWithLogitsLoss(
                 pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
             ]
-        self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_indices == -1
+        self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_ids == -1
         # self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.optimizer = torch.optim.AdamW(
             [
@@ -278,8 +278,8 @@ class MMBertPreTrainer(nn.Module):
             batch_index = i + 1
             self.optimizer.zero_grad() # zero out gradients
             
-            input, target_indices, target_res, token_types, attn_mask = batch   
-            # input, target_indices, target_res, token_types, attn_mask, masked_sequences = batch   
+            input, target_ids, target_res, token_types, attn_mask = batch   
+            # input, target_ids, target_res, token_types, attn_mask, masked_sequences = batch   
             pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
@@ -300,9 +300,9 @@ class MMBertPreTrainer(nn.Module):
                 pheno_batches += 1
                 loss += pheno_loss
                 
-            if (target_indices != -1).any(): # if there are genotypes in the batch
+            if (target_ids != -1).any(): # if there are genotypes in the batch
                 ## Genotype loss ##
-                geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_indices) # DOUBLE-CHECK DIMENSIONS
+                geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_ids) # DOUBLE-CHECK DIMENSIONS
                 epoch_geno_loss += geno_loss.item()
                 geno_batches += 1
                 loss += geno_loss
@@ -344,7 +344,7 @@ class MMBertPreTrainer(nn.Module):
             tot_geno_loss, tot_pheno_loss = 0, 0
             geno_batches, pheno_batches = 0, 0
             for batch in loader:
-                input, target_indices, target_res, token_types, attn_mask = batch   
+                input, target_ids, target_res, token_types, attn_mask = batch   
                 pred_logits, token_pred = self.model(input, token_types, attn_mask)
                 
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
@@ -367,10 +367,10 @@ class MMBertPreTrainer(nn.Module):
                     pheno_batches += 1
                     
                 ###### Genotype loss ######
-                token_mask = target_indices != -1 # (batch_size, max_seq_len), True if token is masked, False otherwise
+                token_mask = target_ids != -1 # (batch_size, max_seq_len), True if token is masked, False otherwise
                 if token_mask.any(): # if there are genotypes in the batch
                     
-                    geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_indices) 
+                    geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_ids) 
                     tot_geno_loss += geno_loss.item()
                     geno_batches += 1
                     
@@ -395,8 +395,8 @@ class MMBertPreTrainer(nn.Module):
             tot_pheno_loss, tot_geno_loss = 0, 0
             geno_batches, pheno_batches = 0, 0
             for i, batch in enumerate(loader):                
-                input, target_indices, target_res, token_types, attn_mask = batch   
-                # input, target_indices, target_res, token_types, attn_mask, sequences, masked_sequences = batch  
+                input, target_ids, target_res, token_types, attn_mask = batch   
+                # input, target_ids, target_res, token_types, attn_mask, sequences, masked_sequences = batch  
                 
                 pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
@@ -429,11 +429,11 @@ class MMBertPreTrainer(nn.Module):
                     pheno_batches += 1
                     
                 ###### Genotype loss ######
-                token_mask = target_indices != -1 # (batch_size, max_seq_len), True if token is masked, False otherwise
+                token_mask = target_ids != -1 # (batch_size, max_seq_len), True if token is masked, False otherwise
                 if token_mask.any(): # if there are genotypes in the batch
-                    iso_stats_geno = self._update_geno_stats(i, token_pred, target_indices, token_mask, iso_stats_geno)
+                    iso_stats_geno = self._update_geno_stats(i, token_pred, target_ids, token_mask, iso_stats_geno)
                     
-                    geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_indices) 
+                    geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_ids) 
                     tot_geno_loss += geno_loss.item()
                     geno_batches += 1
                     
@@ -585,7 +585,7 @@ class MMBertPreTrainer(nn.Module):
         return iso_stats_pheno
     
     
-    def _update_geno_stats(self, batch_idx, token_pred: torch.Tensor, target_indices: torch.Tensor, 
+    def _update_geno_stats(self, batch_idx, token_pred: torch.Tensor, target_ids: torch.Tensor, 
                            token_mask: torch.Tensor, iso_stats_geno: pd.DataFrame):
         indices = token_mask.any(dim=1).nonzero().squeeze(-1).tolist() # list of isolates where genotypes are present
         for idx in indices:
@@ -594,7 +594,7 @@ class MMBertPreTrainer(nn.Module):
             
             num_masked = iso_token_mask.sum().item()
             pred_tokens = token_pred[idx, iso_token_mask].argmax(dim=-1)
-            targets = target_indices[idx, iso_token_mask]
+            targets = target_ids[idx, iso_token_mask]
 
             eq = torch.eq(pred_tokens, targets)
             data = {
@@ -1074,13 +1074,13 @@ class MMBertFineTuner():
             ## General tracking ##
             loss = 0
             for i, batch in enumerate(loader):                  
-                input, target_res, target_indices, token_types, attn_mask = batch
+                input, target_res, target_ids, token_types, attn_mask = batch
                        
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
-                iso_stats = self._update_iso_stats(i, pred_res, target_res, target_indices, ab_mask, token_types, iso_stats) 
+                iso_stats = self._update_iso_stats(i, pred_res, target_res, target_ids, ab_mask, token_types, iso_stats) 
                 
                 ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
                 losses = list()
@@ -1164,7 +1164,7 @@ class MMBertFineTuner():
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
         
-        iso_stats = ds_obj.ds_MM.copy()
+        iso_stats = ds_obj.ds.copy()
         iso_stats['num_masked_ab'], iso_stats['num_masked_genes'] = 0, 0 
         iso_stats['num_masked_S'], iso_stats['num_masked_R'] = 0, 0
         iso_stats['num_correct'], iso_stats['correct_S'], iso_stats['correct_R'] = 0, 0, 0
@@ -1208,12 +1208,12 @@ class MMBertFineTuner():
         return [num_pred_S, num_pred_R]
     
     
-    def _update_iso_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, target_indices: torch.Tensor,
+    def _update_iso_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, target_ids: torch.Tensor,
                           ab_mask: torch.Tensor, token_types:torch.tensor, iso_stats: pd.DataFrame):
         for i in range(pred_res.shape[0]): 
             iso_ab_mask = ab_mask[i]
-            iso_token_types = token_types[i][target_indices[i] != -1] # token types masked tokens
-            iso_target_indices = target_indices[i][target_indices[i] != -1] # token ids of the antibiotics and genes that are masked
+            iso_token_types = token_types[i][target_ids[i] != -1] # token types masked tokens
+            iso_target_ids = target_ids[i][target_ids[i] != -1] # token ids of the antibiotics and genes that are masked
             df_idx = batch_idx * self.batch_size + i # index of the isolate in the combined dataset
             
             # counts
@@ -1231,12 +1231,12 @@ class MMBertFineTuner():
             all_correct = eq.all().item()
             
             # add masked genes and antibiotics
-            ab_indices = iso_target_indices[iso_token_types == 2].tolist() # token ids of the masked antibiotics, sequence order
+            ab_indices = iso_target_ids[iso_token_types == 2].tolist() # token ids of the masked antibiotics, sequence order
             masked_ab = [self.vocab.lookup_token(idx) for idx in ab_indices] # token, sequence order
             masked_ab_indices_seq = [self.ab_to_idx[token.split('_')[0]] for token in masked_ab] # index in the ab-indexing, sequence order
             correct_ab = [eq[masked_ab_indices.index(idx)].item() for idx in masked_ab_indices_seq]
             
-            geno_indices = iso_target_indices[iso_token_types == 1].tolist()
+            geno_indices = iso_target_ids[iso_token_types == 1].tolist()
             masked_genes = [self.vocab.lookup_token(idx) for idx in geno_indices]
             
             data = {
