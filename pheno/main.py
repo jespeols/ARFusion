@@ -123,10 +123,25 @@ if __name__ == "__main__":
         max_seq_len = config['max_seq_len']
     
     train_indices, val_indices = get_split_indices(num_samples, config['val_share'], random_state=config['random_state'])
-    train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, antibiotics, specials, max_seq_len,
-                                    num_known_ab=config['num_known_ab'], mask_prob=config['mask_prob'])
-    val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, antibiotics, specials, max_seq_len,
-                                num_known_ab=config['num_known_ab'], mask_prob=config['mask_prob'])
+    train_set = PhenotypeDataset(
+        ds.iloc[train_indices], 
+        vocab,
+        antibiotics,
+        specials,
+        max_seq_len,
+        num_known_ab=config['num_known_ab'],
+        mask_prob=config['mask_prob'],
+        always_mask_replace=False
+    )
+    val_set = PhenotypeDataset(
+        ds.iloc[val_indices],
+        vocab, antibiotics,
+        specials, 
+        max_seq_len,
+        num_known_ab=config['num_known_ab'],
+        mask_prob=config['mask_prob'],
+        always_mask_replace=True
+    )
     print("Loading model...")
     bert = BERT(config, vocab_size, max_seq_len, num_ab=len(antibiotics), pad_idx=pad_idx).to(device)
     trainer = BertCLSTrainer(

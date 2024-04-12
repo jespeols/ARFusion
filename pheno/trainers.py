@@ -192,6 +192,8 @@ class BertCLSTrainer(nn.Module):
             "val_losses": self.val_losses,
             "val_accs": self.val_accs,
             "val_iso_accs": self.val_iso_accs,
+            "ab_stats": self.val_ab_stats[self.best_epoch],
+            "iso_stats": self.val_iso_stats[self.best_epoch]
         }
         return results
     

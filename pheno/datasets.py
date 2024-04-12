@@ -32,6 +32,7 @@ class PhenotypeDataset(Dataset):
                  num_known_ab: int = None,
                  mask_prob: float = None,
                  include_sequences: bool = False,
+                 always_mask_replace: bool = False,
                  random_state: int = 42,
                  ):
         
@@ -43,6 +44,7 @@ class PhenotypeDataset(Dataset):
         assert not (num_known_ab and mask_prob), "Only one of num_known_ab or mask_prob can be specified"
         self.num_known_ab = num_known_ab
         self.mask_prob = mask_prob
+        self.always_mask_replace = always_mask_replace
         if self.num_known_ab:
             original_num_samples = self.ds.shape[0] 
             print(f"Preparing dataset for masking with {num_known_ab} known antibiotics")
@@ -107,8 +109,24 @@ class PhenotypeDataset(Dataset):
         self.df = pd.DataFrame(rows, columns=self.columns)
     
     
+    def _get_replace_token(self, token, mask_token):
+        # BERT: 80% -> [MASK], 10% -> original token, 10% -> random token   
+        if self.always_mask_replace:
+            return mask_token
+        else:
+            r = np.random.rand()
+            # if r < 0.8:
+            #     return mask_token
+            # elif r < 0.9:
+            #     return self.vocab.lookup_token(np.random.randint(self.vocab_size))
+            # else:
+            #     return token
+            if r < 0.95: # include 5% chance of replacing with original token
+                return mask_token
+            else:
+                return token
+    
     def _construct_masked_sequences(self):  
-        # RoBERTa: 80% -> [MASK], 10% -> original token, 10% -> random token   
         sequences = deepcopy(self.ds['phenotypes'].tolist())
         masked_sequences = list()
         target_resistances = list()
@@ -121,7 +139,6 @@ class PhenotypeDataset(Dataset):
         
         if self.mask_prob:
             for i, seq in enumerate(sequences):
-                # np.random.shuffle(seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(seq)
             
                 target_res = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
@@ -130,26 +147,17 @@ class PhenotypeDataset(Dataset):
                     idx = np.random.randint(seq_len)
                     ab, res = seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    r = np.random.rand()
-                    if r < 0.8:
-                        seq[idx] = self.MASK
-                    elif r < 0.9:
-                        seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                    seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
                 else:
                     for idx in token_mask.nonzero()[0]:
                         ab, res = seq[idx].split('_')
                         target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        r = np.random.rand()
-                        if r < 0.8:
-                            seq[idx] = self.MASK
-                        elif r < 0.9:
-                            seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                        seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
                 seq = seq_starts[i] + seq
                 masked_sequences.append(seq)
                 target_resistances.append(target_res) 
         else:
             for i, seq in enumerate(sequences):
-                # np.random.shuffle(seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(seq) 
                 target_res = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
 
@@ -158,11 +166,7 @@ class PhenotypeDataset(Dataset):
                 for idx in mask_indices: 
                     ab, res = seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    r = np.random.rand()
-                    if r < 0.8:
-                        seq[idx] = self.MASK                
-                    elif r < 0.9:
-                        seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                    seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
                 seq = seq_starts[i] + seq
                 masked_sequences.append(seq)
                 target_resistances.append(target_res)
