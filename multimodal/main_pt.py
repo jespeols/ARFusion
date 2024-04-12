@@ -152,6 +152,7 @@ if __name__ == "__main__":
     ds_geno.fillna(pad_token, inplace=True)
         
     ## construct vocabulary
+    print("Constructing vocabulary...")
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
     vocab = construct_MM_vocab(
         df_geno=ds_NCBI,

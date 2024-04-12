@@ -100,6 +100,7 @@ def construct_MM_vocab(
     vocab = Vocab(token_counter, specials=special_tokens)
     vocab.set_default_index(vocab[UNK])
     if savepath_vocab:
+        print(f"Saving vocabulary to {savepath_vocab}")
         torch.save(vocab, savepath_vocab)
     
     return vocab
