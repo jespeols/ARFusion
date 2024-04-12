@@ -25,7 +25,7 @@ weight_decay: 0.01
 wl_strength:      # 'mild' or 'strong' (or None for no weighting)
 print_progress_every: 1500
 report_every: 1000
-savepath_vocab: 'MM_vocab_15_2mask.pt'
+savepath_vocab: 'MM_vocab_15.pt'
 save_model: True
 random_state: 42
 
@@ -76,7 +76,6 @@ data:
   ## MFX: Reasonable imbalance, but few samples
   # exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'NOR', 'POL', 'DOR', 'TGC', 'MEM', 'ETP', 'COL', 'AMX', 'AMK', 'NET', 'PIP'] # 12 AB
   exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 15 AB
-  # exclude_antibiotics: ['AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 16 AB
   pathogens: ['ESCCOL']
   # pathogens: 
   NCBI:
