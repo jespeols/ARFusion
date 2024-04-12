@@ -132,6 +132,8 @@ def preprocess_TESSy(path,
     if pathogens:
         print(f"Pathogens: {pathogens}")
         TESSy_data = TESSy_data[TESSy_data['Pathogen'].isin(pathogens)]
+    else:
+        print("No pathogens specified. Using all pathogens")
     print(f"Number of tests before parsing: {TESSy_data.shape[0]:,}")
     TESSy_data['year'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO']).dt.year
     TESSy_data['date'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO'], format='%Y-%m-%d')
