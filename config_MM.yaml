@@ -53,8 +53,8 @@ fine_tuning:
   weight_decay: 0.01
   use_weighted_loss: False
   early_stopping_patience: 10
-  print_progress_every: 500
-  report_every: 1500
+  print_progress_every: 1000
+  report_every: 500
   save_model: False
   random_state: 42
 
@@ -62,7 +62,7 @@ fine_tuning:
 specials:   
   CLS: '[CLS]'
   PAD: '[PAD]'
-  MASK: '[MASK]'
+  # MASK: '[MASK]'
   AB_MASK: '[AB_MASK]'
   GENE_MASK: '[GENE_MASK]'
   UNK: '[UNK]'
