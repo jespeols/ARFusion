@@ -40,6 +40,7 @@ class MMPretrainDataset(Dataset):
         masking_method: str,
         mask_prob_pheno: float = None,
         num_known_ab: int = None,
+        always_mask_replace: bool = False,
         include_sequences: bool = False,
         random_state: int = 42
     ):
@@ -56,8 +57,9 @@ class MMPretrainDataset(Dataset):
         self.ab_to_idx = {ab: idx for idx, ab in enumerate(antibiotics)}
         self.enc_res = {'S': 0, 'R': 1}
         self.max_seq_len = max_seq_len
-        # self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
-        self.CLS, self.PAD, self.AB_MASK, self.GENE_MASK = specials['CLS'], specials['PAD'], specials['AB_MASK'], specials['GENE_MASK']
+        self.CLS, self.PAD = specials['CLS'], specials['PAD']
+        self.AB_MASK, self.GENE_MASK = specials['AB_MASK'], specials['GENE_MASK']        
+        self.always_mask_replace = always_mask_replace
         
         self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_geno = mask_prob_geno
@@ -137,13 +139,16 @@ class MMPretrainDataset(Dataset):
         
 
     def _get_replace_token(self, mask_token, original_token): ## BERT masking
-        r = self.rng.random()
-        if r < 0.8:
+        if self.always_mask_replace:
             return mask_token
-        elif r < 0.9:
-            return self.vocab.lookup_token(self.rng.integers(self.vocab_size))
-        else:
-            return original_token
+        else:                           ## BERT masking
+            r = self.rng.random()
+            if r < 0.8:
+                return mask_token
+            elif r < 0.9:
+                return self.vocab.lookup_token(self.rng.integers(self.vocab_size))
+            else:
+                return original_token
 
         
     def _mask_geno_sequences(self, geno_sequences):
@@ -273,10 +278,11 @@ class MMFinetuneDataset(Dataset):
         mask_prob_geno: float,
         mask_prob_pheno: float,
         num_known_ab: int,
+        no_geno_masking: bool = False,
+        always_mask_replace: bool = True,
         filter_genes_by_ab_class: list = None,
         random_state: int = 42,
         include_sequences: bool = False,
-        no_geno_masking: bool = False
     ):
         self.random_state = random_state
         self.rng = np.random.default_rng(self.random_state) # creates a new generator 
@@ -292,8 +298,9 @@ class MMFinetuneDataset(Dataset):
         self.ab_to_idx = {ab: idx for idx, ab in enumerate(self.antibiotics)}
         self.enc_res = {'S': 0, 'R': 1}
         self.max_seq_len = max_seq_len
-        # self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
-        self.CLS, self.PAD, self.AB_MASK, self.GENE_MASK = specials['CLS'], specials['PAD'], specials['AB_MASK'], specials['GENE_MASK']
+        self.CLS, self.PAD = specials['CLS'], specials['PAD']
+        self.AB_MASK, self.GENE_MASK = specials['AB_MASK'], specials['GENE_MASK']
+        self.always_mask_replace = always_mask_replace
         
         self.filter_genes_by_ab_class = filter_genes_by_ab_class
         if self.filter_genes_by_ab_class:
@@ -406,28 +413,29 @@ class MMFinetuneDataset(Dataset):
                     idx = self.rng.integers(seq_len)
                     target_ids[idx] = self.vocab[geno_seq[idx]]
                     # geno_seq[idx] = self.PAD 
-                    # geno_seq[idx] = self.MASK
                     geno_seq[idx] = self.GENE_MASK
                 else:
                     masking_indices = token_mask.nonzero()[0]
                     target_ids[token_mask] = self.vocab.lookup_indices([geno_seq[i] for i in masking_indices])
                     for idx in masking_indices:
                         # geno_seq[idx] = self.PAD 
-                        # geno_seq[idx] = self.MASK
                         geno_seq[idx] = self.GENE_MASK
             masked_geno_sequences.append(geno_seq)
             geno_target_ids.append(target_ids.tolist())
         return masked_geno_sequences, geno_target_ids
     
     
-    def _get_replace_token(self, mask_token, original_token): ## BERT masking
-        r = self.rng.random()
-        if r < 0.8:
+    def _get_replace_token(self, mask_token, original_token): 
+        if self.always_mask_replace:
             return mask_token
-        elif r < 0.9:
-            return self.vocab.lookup_token(self.rng.integers(self.vocab_size))
-        else:
-            return original_token
+        else:                       ## BERT masking
+            r = self.rng.random()
+            if r < 0.8:
+                return mask_token
+            elif r < 0.9:
+                return self.vocab.lookup_token(self.rng.integers(self.vocab_size))
+            else:
+                return original_token
     
     
     def _mask_pheno_sequences(self, pheno_sequences, ab_classes=None):
@@ -524,6 +532,7 @@ class PhenoFinetuneDataset(Dataset):
         masking_method: str,
         mask_prob_pheno: float,
         num_known_ab: int,
+        always_mask_replace: bool = False,
         random_state: int = 42,
         include_sequences: bool = False,
     ):
@@ -540,7 +549,8 @@ class PhenoFinetuneDataset(Dataset):
         self.ab_to_idx = {ab: idx for idx, ab in enumerate(self.antibiotics)}
         self.enc_res = {'S': 0, 'R': 1}
         self.max_seq_len = max_seq_len
-        self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
+        self.CLS, self.PAD, self.AB_MASK = specials['CLS'], specials['PAD'], specials['AB_MASK']
+        self.always_mask_replace = always_mask_replace
         
         self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_pheno = mask_prob_pheno
@@ -619,14 +629,17 @@ class PhenoFinetuneDataset(Dataset):
         self.df = pd.DataFrame(rows, columns=self.columns)
     
     
-    def _get_replace_token(self, mask_token, original_token): ## BERT masking
-        r = self.rng.random()
-        if r < 0.8:
+    def _get_replace_token(self, mask_token, original_token): 
+        if self.always_mask_replace:
             return mask_token
-        elif r < 0.9:
-            return self.vocab.lookup_token(self.rng.integers(self.vocab_size))
-        else:
-            return original_token
+        else:                           ## BERT masking
+            r = self.rng.random()
+            if r < 0.8:
+                return mask_token
+            elif r < 0.9:
+                return self.vocab.lookup_token(self.rng.integers(self.vocab_size))
+            else:
+                return original_token
     
     
     def _mask_pheno_sequences(self, pheno_sequences, ab_classes=None):
@@ -645,13 +658,13 @@ class PhenoFinetuneDataset(Dataset):
                     target_ids[idx] = self.vocab[pheno_seq[idx]]
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]  
-                    pheno_seq[idx] = self._get_replace_token(self.MASK, pheno_seq[idx]) 
+                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx]) 
                 else:
                     target_ids[token_mask] = self.vocab.lookup_indices([pheno_seq[i] for i in token_mask.nonzero()[0]])
                     for idx in token_mask.nonzero()[0]:
                         ab, res = pheno_seq[idx].split('_')
                         target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        pheno_seq[idx] = self._get_replace_token(self.MASK, pheno_seq[idx])
+                        pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())
@@ -668,7 +681,7 @@ class PhenoFinetuneDataset(Dataset):
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    pheno_seq[idx] = self._get_replace_token(self.MASK, pheno_seq[idx])
+                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())  
@@ -690,7 +703,7 @@ class PhenoFinetuneDataset(Dataset):
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    pheno_seq[idx] = self._get_replace_token(self.MASK, pheno_seq[idx])
+                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())

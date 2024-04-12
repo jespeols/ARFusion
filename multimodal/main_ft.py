@@ -66,7 +66,7 @@ if __name__ == "__main__":
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--ds_path", type=str)
     argparser.add_argument("--no_pt", action="store_true", help="Enable naive model")
-    argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss function")
+    argparser.add_argument("--wl_strength", type='string', options=['mild', 'strong'], help="Strength of weighted loss functions")
     argparser.add_argument("--mask_prob_geno", type=float)
     argparser.add_argument("--no_geno_masking", action="store_true", help="Disable geno masking")
     argparser.add_argument("--masking_method", type=str)
@@ -114,7 +114,6 @@ if __name__ == "__main__":
     if args.no_pt:
         config_ft['model_path'] = None
         config_ft['no_pt'] = True
-    config_ft['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config_ft['use_weighted_loss']
     config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
     config_ft['no_geno_masking'] = args.no_geno_masking if args.no_geno_masking else config_ft['no_geno_masking']
     config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
@@ -132,6 +131,9 @@ if __name__ == "__main__":
     config_ft['epochs'] = args.epochs if args.epochs else config_ft['epochs']
     config_ft['lr'] = args.lr if args.lr else config['lr']
     config_ft['random_state'] = args.random_state if args.random_state else config_ft['random_state']
+    if args.wl_strength:
+        assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
+        config['wl_strength'] = args.wl_strength    
     train_shares = args.train_shares if args.train_shares else [0.8]
     if not args.no_cv:
         config_ft['num_folds'] = args.num_folds if args.num_folds else config_ft['num_folds']
@@ -238,6 +240,7 @@ if __name__ == "__main__":
                 mask_prob_geno=config_ft['mask_prob_geno'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
+                always_mask_replace=config_ft['always_mask_replace'],
                 filter_genes_by_ab_class=data_dict['NCBI']['filter_genes_by_ab_class'],
                 random_state=config_ft['random_state'],
                 no_geno_masking=config_ft['no_geno_masking']
@@ -252,6 +255,7 @@ if __name__ == "__main__":
                 mask_prob_geno=config_ft['mask_prob_geno'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
+                always_mask_replace=config_ft['always_mask_replace'],
                 random_state=config_ft['random_state'],
                 no_geno_masking=config_ft['no_geno_masking']
             )

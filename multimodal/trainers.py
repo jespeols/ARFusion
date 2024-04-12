@@ -41,9 +41,9 @@ class MMBertPreTrainer(nn.Module):
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics)
-        self.use_weighted_loss = config['use_weighted_loss']
-        if self.use_weighted_loss:
-            self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
+        self.wl_strength = config['wl_strength']
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
             self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
             self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
@@ -67,12 +67,12 @@ class MMBertPreTrainer(nn.Module):
         self.mask_probs = {'geno': self.mask_prob_geno, 'pheno': self.mask_prob_pheno}
         self.num_known_ab = self.train_set.num_known_ab
         
-        if not self.use_weighted_loss:
-            self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
-        else:
+        if self.wl_strength:
             self.ab_criterions = [nn.BCEWithLogitsLoss(
                 pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
             ]
+        else:
+            self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
         self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_ids == -1
         # self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.optimizer = torch.optim.AdamW(
@@ -122,7 +122,7 @@ class MMBertPreTrainer(nn.Module):
         print(f"Number of batches: {self.num_batches:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
-        if self.use_weighted_loss:
+        if self.wl_strength:
             print("Antibiotic weights:", self.ab_weights)
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
         print(f"Eval mode: {'on' if self.do_eval else 'off'}")
@@ -803,9 +803,9 @@ class MMBertFineTuner():
         self.wandb_name = config_ft["name"] if config_ft["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics)
-        self.use_weighted_loss = config_ft["use_weighted_loss"] 
-        if self.use_weighted_loss:
-            self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
+        self.wl_strength = config_ft["wl_strength"] 
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
             self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
             self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
@@ -829,7 +829,7 @@ class MMBertFineTuner():
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
         
-        if self.use_weighted_loss:
+        if self.wl_strength:
             self.ab_criterions = [nn.BCEWithLogitsLoss(
                 pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
             ]
@@ -887,7 +887,7 @@ class MMBertFineTuner():
         print(f"Number of batches: {self.num_batches:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
-        if self.use_weighted_loss:
+        if self.wl_strength:
             print("Antibiotic weights:", self.ab_weights)
         s = f"CV mode: {'On' if self.CV_mode else 'Off'}"
         if self.CV_mode:
@@ -1328,15 +1328,12 @@ class MMBertFineTuner():
             "epoch": self.current_epoch+1,
             "Losses/train_loss": self.losses[-1],
             "Losses/val_loss": self.val_losses[-1],
-            # "Losses/val_geno_loss": self.val_geno_losses[-1],
             "Losses/val_loss": self.val_losses[-1],
             "Class_metrics/val_sens": self.val_sensitivities[-1],
             "Class_metrics/val_spec": self.val_specificities[-1],
             "Class_metrics/val_F1": self.val_F1_scores[-1],
             "Accuracies/val_acc": self.val_accs[-1],
             "Accuracies/val_iso_acc": self.val_iso_accs[-1],
-            # "Accuracies/val_geno_acc": self.val_geno_accs[-1],
-            # "Accuracies/val_geno_iso_acc": self.val_geno_iso_accs[-1],
         }
         self.wandb_run.log(wandb_dict)
     

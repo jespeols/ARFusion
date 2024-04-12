@@ -43,7 +43,8 @@ if __name__ == "__main__":
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
-    argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss functions")
+    argparser.add_argument("--always_mask_replace", action="store_true", help="Always replace masked tokens with mask token")
+    argparser.add_argument("--wl_strength", type='string', options=['mild', 'strong'], help="Strength of weighted loss functions")
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--prepare_TESSy", action="store_true", help="Prepare TESSy data")
     argparser.add_argument("--prepare_NCBI", action="store_true", help="Prepare NCBI data")
@@ -79,6 +80,7 @@ if __name__ == "__main__":
     elif config['masking_method'] == 'keep_one_class':
         config['num_known_ab'] = None
         config['mask_prob_pheno'] = None
+    config['always_mask_replace'] = args.always_mask_replace if args.always_mask_replace else config['always_mask_replace']
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
@@ -86,7 +88,9 @@ if __name__ == "__main__":
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
-    config['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config['use_weighted_loss']
+    if args.wl_strength:
+        assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
+        config['wl_strength'] = args.wl_strength
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['data']['TESSy']['prepare_data'] = args.prepare_TESSy if args.prepare_TESSy else config['data']['TESSy']['prepare_data']
     config['data']['NCBI']['prepare_data'] = args.prepare_NCBI if args.prepare_NCBI else config['data']['NCBI']['prepare_data']
@@ -181,6 +185,7 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         specials=specials,
         max_seq_len=max_seq_len,
+        always_mask_replace=config['always_mask_replace'],
         mask_prob_geno=config['mask_prob_geno'],
         masking_method=config['masking_method'],
         mask_prob_pheno=config['mask_prob_pheno'],
@@ -194,6 +199,7 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         specials=specials,
         max_seq_len=max_seq_len,
+        always_mask_replace=config['always_mask_replace'],
         mask_prob_geno=config['mask_prob_geno'],
         masking_method=config['masking_method'],
         mask_prob_pheno=config['mask_prob_pheno'],
