@@ -6,7 +6,7 @@ import pandas as pd
 from pathlib import Path
 
 # user-defined functions
-from utils import filter_gene_counts
+from utils import filter_gene_counts, impute_col, country_code_to_name
 
 BASE_DIR = Path(__file__).resolve().parent
 os.chdir(BASE_DIR)
@@ -61,7 +61,7 @@ def preprocess_NCBI(path,
     df.loc[:,'country'] = df['country'].replace(
         {'United Kingdom': 'UK', 'United Arab Emirates': 'UAE', 'Democratic Republic of the Congo': 'DRC',
          'Republic of the Congo': 'DRC', 'Czechia': 'Czech Republic', 'France and Algeria': 'France'})
-        
+    
     ##### collection_date -> year
     alternative_nan = ['missing']
     df.loc[:,'collection_date'] = df['collection_date'].replace(alternative_nan, np.nan)
@@ -118,9 +118,6 @@ def preprocess_NCBI(path,
     return df
 
 ##################################################################################################################################
-
-from utils import impute_col
-
 
 def preprocess_TESSy(path,
                      pathogens: list,
@@ -206,6 +203,7 @@ def preprocess_TESSy(path,
     else:
         df = df[cols_in_order]
     df['country'] = df['country'].replace('United Kingdom', 'UK')
+    df['country'] = df['country'].map(country_code_to_name)
     df['num_ab'] = df['phenotypes'].apply(lambda x: len(x))
     df['num_R'] = df['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('R')]))
     df['num_S'] = df['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('S')]))

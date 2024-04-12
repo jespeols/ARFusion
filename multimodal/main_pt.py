@@ -118,13 +118,13 @@ if __name__ == "__main__":
             impute_gender=data_dict['TESSy']['impute_gender']
         )
     else:
+        print(f"Loading preprocessed TESSy data from {data_dict['TESSy']['load_path']}...")
         ds_TESSy = pd.read_pickle(os.path.join(BASE_DIR, data_dict['TESSy']['load_path']))
     ds_pheno = ds_TESSy.copy()
     
     # ds_pheno = ds_pheno.sample(frac=1, random_state=config['random_state']).reset_index(drop=True)
     # ds_pheno = ds_pheno.iloc[:int(0.5*len(ds_pheno))].reset_index(drop=True)
     
-    ds_pheno['country'] = ds_pheno['country'].map(config['data']['TESSy']['country_code_to_name'])
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_pheno['ab_classes'] = ds_pheno['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
     
@@ -142,6 +142,7 @@ if __name__ == "__main__":
             gene_count_threshold=data_dict['NCBI']['gene_count_threshold']
         )
     else:
+        print(f"Loading preprocessed NCBI data from {data_dict['NCBI']['load_path']}...")
         ds_NCBI = pd.read_pickle(os.path.join(BASE_DIR, data_dict['NCBI']['load_path']))
     
         

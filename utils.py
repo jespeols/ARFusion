@@ -90,6 +90,19 @@ def get_genotype_to_ab_class(unique_genotypes):
                     genotype_to_ab_class[g] = gene_allele_to_ab_class[g]
     return genotype_to_ab_class
 
+
+country_code_to_name = {
+    'AD': 'Andorra', 'AL': 'Albania', 'AM': 'Armenia', 'AT': 'Austria', 'AZ': 'Azerbaijan', 'BA': 'Bosnia and Herzegovina',
+    'BE': 'Belgium', 'BG': 'Bulgaria', 'BY': 'Belarus', 'CH': 'Switzerland', 'CY': 'Cyprus', 'CZ': 'Czechia', 'DE': 'Germany',
+    'DK': 'Denmark', 'EE': 'Estonia', 'EL': 'Greece', 'ES': 'Spain', 'FI': 'Finland', 'FR': 'France', 'GE': 'Georgia',
+    'HR': 'Croatia', 'HU': 'Hungary', 'IE': 'Ireland', 'IL': 'Israel', 'IS': 'Iceland', 'IT': 'Italy', 'KG': 'Kyrgyzstan',
+    'KZ': 'Kazakhstan', 'LI': 'Liechtenstein', 'LT': 'Lithuania', 'LU': 'Luxembourg', 'LV': 'Latvia', 'MC': 'Monaco',
+    'MD': 'Moldova', 'ME': 'Montenegro', 'MK': 'Republic of North Macedonia', 'MT': 'Malta', 'NL': 'Netherlands',
+    'NO': 'Norway', 'PL': 'Poland', 'PT': 'Portugal', 'RO': 'Romania', 'RS': 'Serbia', 'RU': 'Russia', 'SE': 'Sweden',
+    'SI': 'Slovenia', 'SK': 'Slovakia', 'SM': 'San Marino', 'TJ': 'Tajikistan', 'TM': 'Turkmenistan', 'TR': 'Türkiye',
+    'UA': 'Ukraine', 'UK': 'UK', 'UZ': 'Uzbekistan', 'XK': 'Kosovo'
+}
+
 ############################# Results analysis #############################
 
 def export_results(results, savepath):
