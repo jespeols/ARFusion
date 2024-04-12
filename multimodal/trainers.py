@@ -166,7 +166,13 @@ class MMBertPreTrainer(nn.Module):
                 train_losses['loss'], train_losses['geno_loss'], train_losses['pheno_loss']))
             if self.do_eval:
                 print("Evaluating on validation set...")
+                val_start = time.time()
                 val_results = self.evaluate(self.val_loader, self.val_set)
+                if time.time() - val_start > 60:
+                    disp_time = f"{(time.time() - val_start)/60:.1f} min"
+                else:
+                    disp_time = f"{time.time() - val_start:.0f} sec"
+                print(f"Validation completed in " + disp_time)
                 self.print_val_results(val_results)
                 self._update_val_lists(val_results)
             else:
