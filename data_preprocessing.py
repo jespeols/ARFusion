@@ -6,7 +6,7 @@ import pandas as pd
 from pathlib import Path
 
 # user-defined functions
-from utils import filter_gene_counts
+from utils import filter_gene_counts, impute_col, country_code_to_name
 
 BASE_DIR = Path(__file__).resolve().parent
 os.chdir(BASE_DIR)
@@ -41,6 +41,7 @@ def preprocess_NCBI(path,
                        p.split("=")[0].casefold() in name_to_abbr_lower.keys() and p.split("=")[1] in ['R', 'S']]
         )
         if exclude_antibiotics:
+            print(f"Filtering out antibiotics: {exclude_antibiotics}")
             df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].apply(
                 lambda x: [p for p in x if p.split("_")[0] not in exclude_antibiotics]
             )
@@ -60,7 +61,7 @@ def preprocess_NCBI(path,
     df.loc[:,'country'] = df['country'].replace(
         {'United Kingdom': 'UK', 'United Arab Emirates': 'UAE', 'Democratic Republic of the Congo': 'DRC',
          'Republic of the Congo': 'DRC', 'Czechia': 'Czech Republic', 'France and Algeria': 'France'})
-        
+    
     ##### collection_date -> year
     alternative_nan = ['missing']
     df.loc[:,'collection_date'] = df['collection_date'].replace(alternative_nan, np.nan)
@@ -110,15 +111,13 @@ def preprocess_NCBI(path,
     print(f"Number of isolates after parsing: {df.shape[0]:,}")
     if include_phenotype:
         print(f"Number of isolates with phenotype info after parsing: {df[df['num_ab'] > 0].shape[0]:,}")
-    
-    df.to_pickle(save_path) if save_path else None
+    if save_path:
+        print(f"Saving to {save_path}")
+        df.to_pickle(save_path)
     
     return df
 
 ##################################################################################################################################
-
-from utils import impute_col
-
 
 def preprocess_TESSy(path,
                      pathogens: list,
@@ -130,16 +129,19 @@ def preprocess_TESSy(path,
     
     print(f"Reading in TESSy data from '{path}'...")
     TESSy_data = pd.read_csv(path, low_memory=False)
-    print(f"Pathogens: {pathogens}")
-    TESSy_data = TESSy_data[TESSy_data['Pathogen'].isin(pathogens)]
+    if pathogens:
+        print(f"Pathogens: {pathogens}")
+        TESSy_data = TESSy_data[TESSy_data['Pathogen'].isin(pathogens)]
+    else:
+        print("No pathogens specified. Using all pathogens")
     print(f"Number of tests before parsing: {TESSy_data.shape[0]:,}")
     TESSy_data['year'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO']).dt.year
     TESSy_data['date'] = pd.to_datetime(TESSy_data['DateUsedForStatisticsISO'], format='%Y-%m-%d')
     TESSy_data.drop(columns=['DateUsedForStatisticsISO'], inplace=True)
     TESSy_data = TESSy_data[TESSy_data['SIR'] != 'I']
-    if len(pathogens) > 1:
+    if (pathogens and len(pathogens) > 1) or not pathogens:
         cols = ['ReportingCountry', 'date', 'year', 'LaboratoryCode', 'PatientCounter',
-                'Gender', 'Age','IsolateId', 'Pathogen' 'Antibiotic', 'SIR']
+                'Gender', 'Age','IsolateId', 'Pathogen', 'Antibiotic', 'SIR']
         df = TESSy_data[cols]
         df = df.rename(columns={'ReportingCountry': 'country',
                 'Gender': 'gender',
@@ -198,11 +200,12 @@ def preprocess_TESSy(path,
     df = df_agg.merge(df_others, on='ID')
     
     cols_in_order = ['year', 'country', 'gender', 'age', 'phenotypes'] # can change to date or year-month here
-    if len(pathogens) > 1:
+    if (pathogens and len(pathogens) > 1) or not pathogens:
         df = df[['pathogen'] + cols_in_order]
     else:
         df = df[cols_in_order]
     df['country'] = df['country'].replace('United Kingdom', 'UK')
+    df['country'] = df['country'].map(country_code_to_name)
     df['num_ab'] = df['phenotypes'].apply(lambda x: len(x))
     df['num_R'] = df['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('R')]))
     df['num_S'] = df['phenotypes'].apply(lambda x: len([p for p in x if p.endswith('S')]))

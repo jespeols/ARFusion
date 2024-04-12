@@ -39,6 +39,8 @@ if __name__ == "__main__":
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
+    argparser.add_argument("--val_share", type=float)
+    argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss functions")
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--prepare_data", type=bool)
         
@@ -60,9 +62,13 @@ if __name__ == "__main__":
     args = argparser.parse_args()
     config['wandb_mode'] = args.wandb_mode if args.wandb_mode else config['wandb_mode']
     config['name'] = args.name if args.name else config['name']
+    if args.num_known_ab:
+        config['num_known_ab'] = args.num_known_ab
+        config['mask_prob'] = None
+    if args.mask_prob:
+        config['mask_prob'] = args.mask_prob
+        config['num_known_ab'] = None
     config['mask_prob'] = args.mask_prob if args.mask_prob else config['mask_prob']
-    config['num_known_ab'] = args.num_known_ab if args.num_known_ab else config['num_known_ab']
-    config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
     config['ff_dim'] = args.ff_dim if args.ff_dim else config['ff_dim']
@@ -70,6 +76,8 @@ if __name__ == "__main__":
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
+    if args.use_weighted_loss:
+        config['use_weighted_loss'] = args.use_weighted_loss
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['data']['prepare_data'] = args.prepare_data if args.prepare_data else config['data']['prepare_data']
         
@@ -79,6 +87,7 @@ if __name__ == "__main__":
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
         results_dir = Path(os.path.join(BASE_DIR / "results" / "pheno", "experiment_" + str(time_str)))
+    results_dir.mkdir(parents=True, exist_ok=True)
     print(f"Name of experiment: {config['name']}")
     print(f"Results directory: {results_dir}")
     
@@ -95,14 +104,15 @@ if __name__ == "__main__":
     else:
         print("\nLoading dataset...")
         ds = pd.read_pickle(config['data']['load_path'])
+    # ds = ds.iloc[:int(0.5*len(ds))].reset_index(drop=True)
     num_samples = ds.shape[0]
     
     print("Constructing vocabulary...")
     specials = config['specials']
     pad_token = specials['PAD']
     pad_idx = list(specials.values()).index(pad_token)
-    antibiotics = sorted(list(set(config['antibiotics']['abbr_to_names'].keys()) - set(config['data']['exclude_antibiotics'])))
-    savepath_vocab = os.path.join(results_dir, "vocab.pt") if config['save_vocab'] else None
+    antibiotics = sorted(list(set(config['data']['antibiotics']['abbr_to_names'].keys()) - set(config['data']['exclude_antibiotics'])))
+    savepath_vocab = os.path.join(results_dir, "pheno_vocab.pt") if config['save_vocab'] else None
     vocab = construct_pheno_vocab(ds, specials, antibiotics, savepath_vocab=savepath_vocab)
     vocab_size = len(vocab)
     
@@ -113,12 +123,26 @@ if __name__ == "__main__":
         max_seq_len = config['max_seq_len']
     
     train_indices, val_indices = get_split_indices(num_samples, config['val_share'], random_state=config['random_state'])
+    train_set = PhenotypeDataset(
+        ds.iloc[train_indices], 
+        vocab,
+        antibiotics,
+        specials,
+        max_seq_len,
+        num_known_ab=config['num_known_ab'],
+        mask_prob=config['mask_prob'],
+        always_mask_replace=False
+    )
+    val_set = PhenotypeDataset(
+        ds.iloc[val_indices],
+        vocab, antibiotics,
+        specials, 
+        max_seq_len,
+        num_known_ab=config['num_known_ab'],
+        mask_prob=config['mask_prob'],
+        always_mask_replace=True
+    )
     print("Loading model...")
-        
-    train_set = PhenotypeDataset(ds.iloc[train_indices], vocab, antibiotics, specials, max_seq_len,
-                                    num_known_ab=config['num_known_ab'], mask_prob=config['mask_prob'])
-    val_set = PhenotypeDataset(ds.iloc[val_indices], vocab, antibiotics, specials, max_seq_len,
-                                num_known_ab=config['num_known_ab'], mask_prob=config['mask_prob'])
     bert = BERT(config, vocab_size, max_seq_len, num_ab=len(antibiotics), pad_idx=pad_idx).to(device)
     trainer = BertCLSTrainer(
         config=config,

@@ -16,4 +16,6 @@ dependencies:
   - scikit-learn
   - conda-forge::wandb
   - plotly::plotly
-  # - seaborn
+  - seaborn
+  - pip:
+    - wandb

@@ -7,12 +7,11 @@ import pandas as pd
 import os
 import sys
 from pathlib import Path
+from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 os.chdir(BASE_DIR)
 
-from datetime import datetime
-from pathlib import Path
 
 # user-defined modules
 from multimodal.models import BERT
@@ -31,7 +30,9 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--wandb_mode", type=str)
     argparser.add_argument("--name", type=str)
+    argparser.add_argument("--exp_folder", type=str, help="Folder to save experiment results in")
     argparser.add_argument("--mask_prob_geno", type=float)
+    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--num_layers", type=int)
@@ -42,9 +43,12 @@ if __name__ == "__main__":
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
+    argparser.add_argument("--always_mask_replace", action="store_true", help="Always replace masked tokens with mask token")
+    argparser.add_argument("--wl_strength", type='string', options=['mild', 'strong'], help="Strength of weighted loss functions")
     argparser.add_argument("--random_state", type=int)
-    argparser.add_argument("--prepare_TESSy", type=bool)
-    argparser.add_argument("--prepare_NCBI", type=bool)
+    argparser.add_argument("--prepare_TESSy", action="store_true", help="Prepare TESSy data")
+    argparser.add_argument("--prepare_NCBI", action="store_true", help="Prepare NCBI data")
+    argparser.add_argument("--no_eval", action="store_true", help="Disable evaluation")
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -63,15 +67,20 @@ if __name__ == "__main__":
     args = argparser.parse_args()
     config['wandb_mode'] = args.wandb_mode if args.wandb_mode else config['wandb_mode']
     config['name'] = args.name if args.name else config['name']
+    config['exp_folder'] = args.exp_folder if args.exp_folder else config['exp_folder']
     config['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config['mask_prob_geno']
-    assert not (args.mask_prob_pheno and args.num_known_ab), "'mask_prob_pheno' and 'num_known_ab' cannot be set at the same time"
-    if args.mask_prob_pheno:
-        config['mask_prob_pheno'] = args.mask_prob_pheno
+    config['masking_method'] = args.masking_method if args.masking_method else config['masking_method']
+    assert config['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
+    if config['masking_method'] == 'random':
+        config['mask_prob_pheno'] = args.mask_prob_pheno if args.mask_prob_pheno else config['mask_prob_pheno']
         config['num_known_ab'] = None
-    elif args.num_known_ab:
-        config['num_known_ab'] = args.num_known_ab
+    elif config['masking_method'] == 'num_known':
+        config['num_known_ab'] = args.num_known_ab if args.num_known_ab else config['num_known_ab']
         config['mask_prob_pheno'] = None
-    assert not (config['mask_prob_pheno'] and config['num_known_ab']), "'mask_prob_pheno' and 'num_known_ab' cannot be set at the same time"
+    elif config['masking_method'] == 'keep_one_class':
+        config['num_known_ab'] = None
+        config['mask_prob_pheno'] = None
+    config['always_mask_replace'] = args.always_mask_replace if args.always_mask_replace else config['always_mask_replace']
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
     config['emb_dim'] = args.emb_dim if args.emb_dim else config['emb_dim']
@@ -79,13 +88,22 @@ if __name__ == "__main__":
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
+    if args.wl_strength:
+        assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
+        config['wl_strength'] = args.wl_strength
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['data']['TESSy']['prepare_data'] = args.prepare_TESSy if args.prepare_TESSy else config['data']['TESSy']['prepare_data']
     config['data']['NCBI']['prepare_data'] = args.prepare_NCBI if args.prepare_NCBI else config['data']['NCBI']['prepare_data']
+    if args.no_eval:
+        config['do_eval'] = False
         
     os.environ['WANDB_MODE'] = config['wandb_mode']
+    if config['exp_folder']:
+        p = Path(BASE_DIR / "results" / "MM" / config['exp_folder'])
+    else:
+        p = Path(BASE_DIR / "results" / "MM")
     if config['name']:
-        results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", config['name']))
+        results_dir = Path(os.path.join(p, config['name']))
     else:
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
         results_dir = Path(os.path.join(BASE_DIR / "results" / "MM", "experiment_" + str(time_str)))
@@ -104,9 +122,15 @@ if __name__ == "__main__":
             impute_gender=data_dict['TESSy']['impute_gender']
         )
     else:
+        print(f"Loading preprocessed TESSy data from {data_dict['TESSy']['load_path']}...")
         ds_TESSy = pd.read_pickle(os.path.join(BASE_DIR, data_dict['TESSy']['load_path']))
     ds_pheno = ds_TESSy.copy()
-    ds_pheno['country'] = ds_pheno['country'].map(config['data']['TESSy']['country_code_to_name'])
+    
+    # ds_pheno = ds_pheno.sample(frac=1, random_state=config['random_state']).reset_index(drop=True)
+    # ds_pheno = ds_pheno.iloc[:int(0.5*len(ds_pheno))].reset_index(drop=True)
+    
+    abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
+    ds_pheno['ab_classes'] = ds_pheno['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
     
     if data_dict['NCBI']['prepare_data']:
         ds_NCBI = preprocess_NCBI(
@@ -122,6 +146,7 @@ if __name__ == "__main__":
             gene_count_threshold=data_dict['NCBI']['gene_count_threshold']
         )
     else:
+        print(f"Loading preprocessed NCBI data from {data_dict['NCBI']['load_path']}...")
         ds_NCBI = pd.read_pickle(os.path.join(BASE_DIR, data_dict['NCBI']['load_path']))
     
         
@@ -132,6 +157,7 @@ if __name__ == "__main__":
     ds_geno.fillna(pad_token, inplace=True)
         
     ## construct vocabulary
+    print("Constructing vocabulary...")
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
     vocab = construct_MM_vocab(
         df_geno=ds_NCBI,
@@ -141,10 +167,7 @@ if __name__ == "__main__":
         savepath_vocab=BASE_DIR / config['savepath_vocab']
     )
     vocab_size = len(vocab)
-    
-    # ds_geno = ds_geno.iloc[:5000]
-    # ds_pheno = ds_pheno.iloc[:15000]
-    
+        
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)
     else:
@@ -162,8 +185,11 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         specials=specials,
         max_seq_len=max_seq_len,
+        always_mask_replace=config['always_mask_replace'],
         mask_prob_geno=config['mask_prob_geno'],
+        masking_method=config['masking_method'],
         mask_prob_pheno=config['mask_prob_pheno'],
+        num_known_ab=config['num_known_ab'],
         random_state=config['random_state']
     )
     ds_pt_val = MMPretrainDataset(
@@ -173,8 +199,11 @@ if __name__ == "__main__":
         antibiotics=antibiotics,
         specials=specials,
         max_seq_len=max_seq_len,
+        always_mask_replace=config['always_mask_replace'],
         mask_prob_geno=config['mask_prob_geno'],
+        masking_method=config['masking_method'],
         mask_prob_pheno=config['mask_prob_pheno'],
+        num_known_ab=config['num_known_ab'],
         random_state=config['random_state']
     )
     bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx=pad_idx).to(device)

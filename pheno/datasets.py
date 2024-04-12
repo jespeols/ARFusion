@@ -32,17 +32,19 @@ class PhenotypeDataset(Dataset):
                  num_known_ab: int = None,
                  mask_prob: float = None,
                  include_sequences: bool = False,
+                 always_mask_replace: bool = False,
                  random_state: int = 42,
                  ):
         
         self.random_state = random_state
-        np.random.seed(self.random_state)
+        self.rng = np.random.default_rng(self.random_state) # creates a new generator
         
         self.ds = ds.reset_index(drop=True)
         assert num_known_ab or mask_prob, "Either num_known_ab or mask_prob must be specified"
         assert not (num_known_ab and mask_prob), "Only one of num_known_ab or mask_prob can be specified"
         self.num_known_ab = num_known_ab
         self.mask_prob = mask_prob
+        self.always_mask_replace = always_mask_replace
         if self.num_known_ab:
             original_num_samples = self.ds.shape[0] 
             print(f"Preparing dataset for masking with {num_known_ab} known antibiotics")
@@ -67,11 +69,7 @@ class PhenotypeDataset(Dataset):
         self.ab_to_idx = {ab: i for i, ab in enumerate(self.antibiotics)}
         self.enc_res = {'S': 0, 'R': 1}
         self.vocab_size = len(self.vocab)
-        self.CLS = specials['CLS']
-        self.PAD = specials['PAD']
-        self.MASK = specials['MASK']
-        self.UNK = specials['UNK']
-        self.special_tokens = specials.values()
+        self.CLS, self.PAD, self.MASK = specials['CLS'], specials['PAD'], specials['MASK']
         self.max_seq_len = max_seq_len
            
         self.include_sequences = include_sequences
@@ -109,23 +107,31 @@ class PhenotypeDataset(Dataset):
         else:
             rows = zip(indices_masked, target_res)
         self.df = pd.DataFrame(rows, columns=self.columns)
-
     
-    def _encode_sequence(self, seq: list):
-        dict = {ab: res for ab, res in [token.split('_') for token in seq]}
-        indices = [self.ab_to_idx[ab] for ab in dict.keys()]
-        resistances = [self.enc_res[res] for res in dict.values()]
-        
-        return indices, resistances
     
+    def _get_replace_token(self, token, mask_token):
+        # BERT: 80% -> [MASK], 10% -> original token, 10% -> random token   
+        if self.always_mask_replace:
+            return mask_token
+        else:
+            r = np.random.rand()
+            # if r < 0.8:
+            #     return mask_token
+            # elif r < 0.9:
+            #     return self.vocab.lookup_token(np.random.randint(self.vocab_size))
+            # else:
+            #     return token
+            if r < 0.95: # include 5% chance of replacing with original token
+                return mask_token
+            else:
+                return token
     
     def _construct_masked_sequences(self):  
-        # RoBERTa: 80% -> [MASK], 10% -> original token, 10% -> random token   
         sequences = deepcopy(self.ds['phenotypes'].tolist())
         masked_sequences = list()
         target_resistances = list()
         
-        years = self.ds['year'].astype('Int16').astype(str).tolist()
+        years = self.ds['year'].astype(int).astype(str).tolist()
         countries = self.ds['country'].tolist()
         genders = self.ds['gender'].tolist()
         ages = self.ds['age'].astype(int).astype(str).tolist()
@@ -133,7 +139,6 @@ class PhenotypeDataset(Dataset):
         
         if self.mask_prob:
             for i, seq in enumerate(sequences):
-                # np.random.shuffle(seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(seq)
             
                 target_res = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
@@ -142,26 +147,17 @@ class PhenotypeDataset(Dataset):
                     idx = np.random.randint(seq_len)
                     ab, res = seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    r = np.random.rand()
-                    if r < 0.8:
-                        seq[idx] = self.MASK
-                    elif r < 0.9:
-                        seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                    seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
                 else:
                     for idx in token_mask.nonzero()[0]:
                         ab, res = seq[idx].split('_')
                         target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        r = np.random.rand()
-                        if r < 0.8:
-                            seq[idx] = self.MASK
-                        elif r < 0.9:
-                            seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                        seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
                 seq = seq_starts[i] + seq
                 masked_sequences.append(seq)
                 target_resistances.append(target_res) 
         else:
             for i, seq in enumerate(sequences):
-                # np.random.shuffle(seq) # if positional encoding is used, sequences ought to be shuffled
                 seq_len = len(seq) 
                 target_res = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
 
@@ -170,11 +166,7 @@ class PhenotypeDataset(Dataset):
                 for idx in mask_indices: 
                     ab, res = seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    r = np.random.rand()
-                    if r < 0.8:
-                        seq[idx] = self.MASK                
-                    elif r < 0.9:
-                        seq[idx] = self.vocab.lookup_token(np.random.randint(self.vocab_size))
+                    seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
                 seq = seq_starts[i] + seq
                 masked_sequences.append(seq)
                 target_resistances.append(target_res)

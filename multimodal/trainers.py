@@ -9,7 +9,7 @@ import wandb
 
 from torch.utils.data import DataLoader
 from pathlib import Path
-
+from itertools import chain
 from datetime import datetime
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -40,30 +40,48 @@ class MMBertPreTrainer(nn.Module):
         self.project_name = config["project_name"]
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
-        self.num_ab = len(self.antibiotics) 
+        self.num_ab = len(self.antibiotics)
+        self.wl_strength = config['wl_strength']
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
         assert round(self.val_size / (self.train_size + self.val_size), 2) == config["val_share"], "Validation set size does not match intended val_share"
         self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
-        self.num_batches = round(self.train_size / self.batch_size)
+        self.num_batches = np.ceil(self.train_size / self.batch_size).astype(int)
         self.vocab = self.train_set.vocab
          
         self.lr = config["lr"]
         self.weight_decay = config["weight_decay"]
         self.epochs = config["epochs"]
         self.patience = config["early_stopping_patience"]
-        self.save_model_ = config["save_model"] if config["save_model"] else False
+        self.save_model_ = config["save_model"]
+        self.do_eval = config["do_eval"] 
         
         self.mask_prob_geno = self.train_set.mask_prob_geno
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.mask_probs = {'geno': self.mask_prob_geno, 'pheno': self.mask_prob_pheno}
         self.num_known_ab = self.train_set.num_known_ab
         
-        self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
-        self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_indices == -1
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        if self.wl_strength:
+            self.ab_criterions = [nn.BCEWithLogitsLoss(
+                pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
+            ]
+        else:
+            self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
+        self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_ids == -1
+        # self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.AdamW(
+            [
+                {'params': self.model.parameters()},
+                {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
+            ],
+            lr=self.lr, weight_decay=self.weight_decay
+        )
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
@@ -71,7 +89,7 @@ class MMBertPreTrainer(nn.Module):
         self.current_epoch = 0
         self.report_every = config["report_every"] if config["report_every"] else 1000
         self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
-        self._splitter_size = 70
+        self._splitter_size = 80
         self.results_dir = results_dir
         if self.results_dir:
             self.results_dir.mkdir(parents=True, exist_ok=True) 
@@ -104,8 +122,12 @@ class MMBertPreTrainer(nn.Module):
         print(f"Number of batches: {self.num_batches:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
+        if self.wl_strength:
+            print("Antibiotic weights:", self.ab_weights)
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
+        print(f"Eval mode: {'on' if self.do_eval else 'off'}")
         print(f"Mask probability (genotypes): {self.mask_prob_geno:.0%}")
+        print(f"Masking method: {self.train_set.masking_method}")
         if self.mask_prob_pheno:
             print(f"Mask probability (phenotypes): {self.mask_prob_pheno:.0%}")
         if self.num_known_ab:
@@ -120,78 +142,90 @@ class MMBertPreTrainer(nn.Module):
     def __call__(self):      
         self._init_wandb()
         print("="*self._splitter_size)
-        print("Initializing training...")
+        print("Preparing validation set...")
         self.val_set.prepare_dataset()
         self.val_set.shuffle() # to avoid batches of only genotypes or only phenotypes
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        print("Initializing training...")
         
         start_time = time.time()
         self.best_val_loss = float('inf') 
         self._init_result_lists()
         for self.current_epoch in range(self.current_epoch, self.epochs):
-            self.model.train()
+            self.model.train_mode()
             # Dynamic masking: New mask for training set each epoch
             self.train_set.prepare_dataset()
             self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
             epoch_start_time = time.time()
             train_losses = self.train(self.current_epoch) # returns loss, averaged over batches
-            self.losses.append(train_losses['loss']) 
+            self.losses.append(train_losses['loss'])
+            self.pheno_losses.append(train_losses['pheno_loss'])
+            self.geno_losses.append(train_losses['geno_loss']) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min")
             print("Loss: {:.4f} | Genotype loss: {:.4f} | Phenotype loss: {:.4f}".format(
                 train_losses['loss'], train_losses['geno_loss'], train_losses['pheno_loss']))
-            print("Evaluating on validation set...")
-            val_results = self.evaluate(self.val_loader, self.val_set)
-            print("Val loss: {:.4f} | Genotype loss: {:.4f} | Phenotype loss: {:.4f}".format(
-                val_results['loss'], val_results['geno_loss'], val_results['pheno_loss']))
-            print("Phenotype accuracy: {:.2%} | Phenotype isolate accuracy: {:.2%}".format(
-                val_results['pheno_acc'], val_results['pheno_iso_acc']))
-            print("Genotype accuracy: {:.2%} | Genotype isolate accuracy: {:.2%}".format(
-                val_results['geno_acc'], val_results['geno_iso_acc']))
-            print("="*self._splitter_size)
-            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
-            self._update_val_lists(val_results)
+            if self.do_eval:
+                print("Evaluating on validation set...")
+                val_start = time.time()
+                val_results = self.evaluate(self.val_loader, self.val_set)
+                if time.time() - val_start > 60:
+                    disp_time = f"{(time.time() - val_start)/60:.1f} min"
+                else:
+                    disp_time = f"{time.time() - val_start:.0f} sec"
+                print(f"Validation completed in " + disp_time)
+                self.print_val_results(val_results)
+                self._update_val_lists(val_results)
+            else:
+                val_losses = self.get_val_loss(self.val_loader)
+                self.val_losses.append(val_losses['loss'])
+                self.val_geno_losses.append(val_losses['geno_loss'])
+                self.val_pheno_losses.append(val_losses['pheno_loss'])
+                print(f"Validation loss: {val_losses['loss']:.4f}")
+                print(f"Genotype loss: {val_losses['geno_loss']:.4f} | Phenotype loss: {val_losses['pheno_loss']:.4f}")
             self._report_epoch_results()
             early_stop = self.early_stopping()
+            print(f"Early stopping counter: {self.early_stopping_counter}/{self.patience}")
+            print("="*self._splitter_size)
+            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
-                print(f"Validation stats at best epoch ({self.best_epoch+1}):")
-                s1 = f"Loss: {self.val_losses[self.best_epoch]:.4f}" 
-                s1 += f"| Phenotype Loss: {self.val_pheno_losses[self.best_epoch]:.4f}"
-                s1 += f" | Genotype Loss: {self.val_geno_losses[self.best_epoch]:.4f}"
-                print(s1)
-                s2 = f" | Phenotype accuracy: {self.val_pheno_accs[self.best_epoch]:.2%}"
-                s2 += f" | Phenotype isolate accuracy: {self.val_pheno_iso_accs[self.best_epoch]:.2%}"
-                print(s2)
-                s3 = f" | Genotype accuracy: {self.val_geno_accs[self.best_epoch]:.2%}"
-                s3 += f" | Genotype isolate accuracy: {self.val_geno_iso_accs[self.best_epoch]:.2%}"
-                print(s3)
-                self.wandb_run.log({
-                    "Losses/final_val_loss": self.best_val_loss, 
-                    "Losses/final_val_geno_loss": self.val_geno_losses[self.best_epoch],
-                    "Losses/final_val_pheno_loss": self.val_pheno_losses[self.best_epoch],
-                    "Accuracies/final_val_pheno_acc": self.val_pheno_accs[self.best_epoch],
-                    "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[self.best_epoch],
-                    "Accuracies/final_val_geno_acc": self.val_geno_accs[self.best_epoch],
-                    "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[self.best_epoch],
-                    "best_epoch": self.best_epoch+1
-                })
+                if self.do_eval:
+                    self.print_early_stop_results()
+                    self.report_early_stop_results()
+                else:
+                    wandb_dict = {
+                        "Losses/final_val_loss": self.val_losses[self.best_epoch],
+                        "Losses/final_val_geno_loss": self.val_geno_losses[self.best_epoch],
+                        "Losses/final_val_pheno_loss": self.val_pheno_losses[self.best_epoch],
+                        "best_epoch": self.best_epoch+1
+                    }
+                    self.wandb_run.log(wandb_dict)
                 print("="*self._splitter_size)
-                self.model.load_state_dict(self.best_model_state) 
+                self.model.set_state_dict(self.best_model_state)
                 self.current_epoch = self.best_epoch
                 break
             if self.scheduler:
                 self.scheduler.step()
-        if not early_stop:    
-            self.wandb_run.log({
-                    "Losses/final_val_loss": self.best_val_loss, 
+        if not early_stop:
+            if self.do_eval:    
+                self.wandb_run.log({
+                        "Losses/final_val_loss": self.best_val_loss, 
+                        "Losses/final_val_geno_loss": self.val_geno_losses[-1],
+                        "Losses/final_val_pheno_loss": self.val_pheno_losses[-1],
+                        "Accuracies/final_val_pheno_acc": self.val_pheno_accs[-1],
+                        "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
+                        "Accuracies/final_val_geno_acc": self.val_geno_accs[-1],
+                        "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[-1],
+                        "best_epoch": self.current_epoch+1
+                    })
+            else:
+                wandb_dict = {
+                    "Losses/final_val_loss": self.val_losses[-1],
                     "Losses/final_val_geno_loss": self.val_geno_losses[-1],
                     "Losses/final_val_pheno_loss": self.val_pheno_losses[-1],
-                    "Accuracies/final_val_pheno_acc": self.val_pheno_accs[-1],
-                    "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
-                    "Accuracies/final_val_geno_acc": self.val_geno_accs[-1],
-                    "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[-1],
                     "best_epoch": self.current_epoch+1
-                })
+                }
+                self.wandb_run.log(wandb_dict)
         if self.save_model_:
             self.save_model() 
         train_time = (time.time() - start_time)/60
@@ -199,7 +233,7 @@ class MMBertPreTrainer(nn.Module):
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
         print("="*self._splitter_size)
-        if not early_stop:
+        if not early_stop and self.do_eval:
             print("Final validation stats:")
             s1 = f"Loss: {self.val_losses[-1]:.4f} | Phenotype Loss: {self.val_pheno_losses[-1]:.4f}"
             s1 += f" | Genotype Loss: {self.val_geno_losses[-1]:.4f}"
@@ -210,22 +244,29 @@ class MMBertPreTrainer(nn.Module):
             s3 = f" Genotype accuracy: {self.val_geno_accs[-1]:.2%}"
             s3 += f" | Genotype isolate accuracy: {self.val_geno_iso_accs[-1]:.2%}"
             print(s3)
-        
-        results = {
-            "best_epoch": self.current_epoch,
-            "train_losses": self.losses,
-            "val_losses": self.val_losses,
-            "val_pheno_losses": self.val_pheno_losses,
-            "val_geno_losses": self.val_geno_losses,
-            "val_pheno_accs": self.val_pheno_accs,
-            "val_geno_accs": self.val_geno_accs,
-            "val_pheno_iso_accs": self.val_pheno_iso_accs,
-            "val_geno_iso_accs": self.val_geno_iso_accs,
-            "train_time": train_time,
-            "val_iso_stats_geno": self.val_iso_stats_geno[self.best_epoch],
-            "val_iso_stats_pheno": self.val_iso_stats_pheno[self.best_epoch],
-            "val_ab_stats": self.val_ab_stats[self.best_epoch]
-        }
+        if self.do_eval:
+            results = {
+                "best_epoch": self.current_epoch,
+                "train_losses": self.losses,
+                "val_losses": self.val_losses,
+                "val_pheno_losses": self.val_pheno_losses,
+                "val_geno_losses": self.val_geno_losses,
+                "val_pheno_accs": self.val_pheno_accs,
+                "val_geno_accs": self.val_geno_accs,
+                "val_pheno_iso_accs": self.val_pheno_iso_accs,
+                "val_geno_iso_accs": self.val_geno_iso_accs,
+                "train_time": train_time,
+                "val_iso_stats_geno": self.val_iso_stats_geno[self.best_epoch],
+                "val_iso_stats_pheno": self.val_iso_stats_pheno[self.best_epoch],
+                "val_ab_stats": self.val_ab_stats[self.best_epoch]
+            }
+        else:
+            results = {
+                "best_epoch": self.current_epoch,
+                "train_losses": self.losses,
+                "train_time": train_time,
+                "val_losses": self.val_losses
+            }
         return results
     
     
@@ -240,8 +281,8 @@ class MMBertPreTrainer(nn.Module):
             batch_index = i + 1
             self.optimizer.zero_grad() # zero out gradients
             
-            input, target_indices, target_res, token_types, attn_mask = batch   
-            # input, target_indices, target_res, token_types, attn_mask, masked_sequences = batch   
+            input, target_ids, target_res, token_types, attn_mask = batch   
+            # input, target_ids, target_res, token_types, attn_mask, masked_sequences = batch   
             pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
@@ -262,9 +303,9 @@ class MMBertPreTrainer(nn.Module):
                 pheno_batches += 1
                 loss += pheno_loss
                 
-            if (target_indices != -1).any(): # if there are genotypes in the batch
+            if (target_ids != -1).any(): # if there are genotypes in the batch
                 ## Genotype loss ##
-                geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_indices) # DOUBLE-CHECK DIMENSIONS
+                geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_ids) # DOUBLE-CHECK DIMENSIONS
                 epoch_geno_loss += geno_loss.item()
                 geno_batches += 1
                 loss += geno_loss
@@ -292,16 +333,60 @@ class MMBertPreTrainer(nn.Module):
         if self.val_losses[-1] < self.best_val_loss:
             self.best_val_loss = self.val_losses[-1]
             self.best_epoch = self.current_epoch
-            self.best_model_state = self.model.state_dict()
+            self.best_model_state = self.model.get_state_dict()
             self.early_stopping_counter = 0
             return False
         else:
             self.early_stopping_counter += 1
             return True if self.early_stopping_counter >= self.patience else False
         
+    
+    def get_val_loss(self, loader: DataLoader):
+        self.model.eval_mode()
+        with torch.no_grad():
+            tot_geno_loss, tot_pheno_loss = 0, 0
+            geno_batches, pheno_batches = 0, 0
+            for batch in loader:
+                input, target_ids, target_res, token_types, attn_mask = batch   
+                pred_logits, token_pred = self.model(input, token_types, attn_mask)
+                
+                ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
+                if ab_mask.any(): # if there are phenotypes in the batch
+                    
+                    ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
+                    losses = list()
+                    for j in ab_indices: 
+                        mask = ab_mask[:, j] # (batch_size,)
+                        
+                        # isolate the predictions and targets for the antibiotic
+                        ab_pred_logits = pred_logits[mask, j] # (num_masked_samples,)
+                        ab_targets = target_res[mask, j] # (num_masked_samples,)
+                        
+                        ab_loss = self.ab_criterions[j](ab_pred_logits, ab_targets)
+                        losses.append(ab_loss)
+                        
+                    pheno_loss = sum(losses) / len(losses) # average loss over antibiotics
+                    tot_pheno_loss += pheno_loss.item()
+                    pheno_batches += 1
+                    
+                ###### Genotype loss ######
+                token_mask = target_ids != -1 # (batch_size, max_seq_len), True if token is masked, False otherwise
+                if token_mask.any(): # if there are genotypes in the batch
+                    
+                    geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_ids) 
+                    tot_geno_loss += geno_loss.item()
+                    geno_batches += 1
+                    
+        avg_geno_loss = tot_geno_loss / geno_batches
+        avg_pheno_loss = tot_pheno_loss / pheno_batches
+        avg_loss = avg_geno_loss + avg_pheno_loss
+        val_losses = {"loss": avg_loss, "geno_loss": avg_geno_loss, "pheno_loss": avg_pheno_loss}
+        
+        return val_losses
+    
             
     def evaluate(self, loader: DataLoader, ds_obj):
-        self.model.eval()
+        self.model.eval_mode()
         # prepare evaluation statistics dataframes
         ab_stats, iso_stats_pheno, iso_stats_geno = self._init_eval_stats(ds_obj)
         with torch.no_grad(): 
@@ -313,8 +398,8 @@ class MMBertPreTrainer(nn.Module):
             tot_pheno_loss, tot_geno_loss = 0, 0
             geno_batches, pheno_batches = 0, 0
             for i, batch in enumerate(loader):                
-                input, target_indices, target_res, token_types, attn_mask = batch   
-                # input, target_indices, target_res, token_types, attn_mask, sequences, masked_sequences = batch  
+                input, target_ids, target_res, token_types, attn_mask = batch   
+                # input, target_ids, target_res, token_types, attn_mask, sequences, masked_sequences = batch  
                 
                 pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
@@ -347,11 +432,11 @@ class MMBertPreTrainer(nn.Module):
                     pheno_batches += 1
                     
                 ###### Genotype loss ######
-                token_mask = target_indices != -1 # (batch_size, max_seq_len), True if token is masked, False otherwise
+                token_mask = target_ids != -1 # (batch_size, max_seq_len), True if token is masked, False otherwise
                 if token_mask.any(): # if there are genotypes in the batch
-                    iso_stats_geno = self._update_geno_stats(i, token_pred, target_indices, token_mask, iso_stats_geno)
+                    iso_stats_geno = self._update_geno_stats(i, token_pred, target_ids, token_mask, iso_stats_geno)
                     
-                    geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_indices) 
+                    geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_ids) 
                     tot_geno_loss += geno_loss.item()
                     geno_batches += 1
                     
@@ -384,6 +469,8 @@ class MMBertPreTrainer(nn.Module):
     
     def _init_result_lists(self):
         self.losses = []
+        self.pheno_losses = []
+        self.geno_losses = []
         self.val_losses = []
         self.val_geno_losses = []
         self.val_pheno_losses = []
@@ -501,7 +588,7 @@ class MMBertPreTrainer(nn.Module):
         return iso_stats_pheno
     
     
-    def _update_geno_stats(self, batch_idx, token_pred: torch.Tensor, target_indices: torch.Tensor, 
+    def _update_geno_stats(self, batch_idx, token_pred: torch.Tensor, target_ids: torch.Tensor, 
                            token_mask: torch.Tensor, iso_stats_geno: pd.DataFrame):
         indices = token_mask.any(dim=1).nonzero().squeeze(-1).tolist() # list of isolates where genotypes are present
         for idx in indices:
@@ -510,7 +597,7 @@ class MMBertPreTrainer(nn.Module):
             
             num_masked = iso_token_mask.sum().item()
             pred_tokens = token_pred[idx, iso_token_mask].argmax(dim=-1)
-            targets = target_indices[idx, iso_token_mask]
+            targets = target_ids[idx, iso_token_mask]
 
             eq = torch.eq(pred_tokens, targets)
             data = {
@@ -570,6 +657,8 @@ class MMBertPreTrainer(nn.Module):
         
         self.wandb_run.define_metric("Losses/live_loss", step_metric="batch")
         self.wandb_run.define_metric("Losses/train_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Losses/geno_train_loss", summary="min", step_metric="epoch")
+        self.wandb_run.define_metric("Losses/pheno_train_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_geno_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Losses/val_pheno_loss", summary="min", step_metric="epoch")
@@ -588,19 +677,39 @@ class MMBertPreTrainer(nn.Module):
         
         self.wandb_run.define_metric("best_epoch", hidden=True)
     
+    
+    def print_val_results(self, val_results: dict):
+        print("Val loss: {:.4f} | Genotype loss: {:.4f} | Phenotype loss: {:.4f}".format(
+            val_results['loss'], val_results['geno_loss'], val_results['pheno_loss']))
+        print("Phenotype accuracy: {:.2%} | Phenotype isolate accuracy: {:.2%}".format(
+            val_results['pheno_acc'], val_results['pheno_iso_acc']))
+        print("Genotype accuracy: {:.2%} | Genotype isolate accuracy: {:.2%}".format(
+            val_results['geno_acc'], val_results['geno_iso_acc']))
+    
      
     def _report_epoch_results(self):
-        wandb_dict = {
-            "epoch": self.current_epoch+1,
-            "Losses/train_loss": self.losses[-1],
-            "Losses/val_loss": self.val_losses[-1],
-            "Losses/val_geno_loss": self.val_geno_losses[-1],
-            "Losses/val_pheno_loss": self.val_pheno_losses[-1],
-            "Accuracies/val_pheno_acc": self.val_pheno_accs[-1],
-            "Accuracies/val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
-            "Accuracies/val_geno_acc": self.val_geno_accs[-1],
-            "Accuracies/val_geno_iso_acc": self.val_geno_iso_accs[-1],
-        }
+        if self.do_eval:
+            wandb_dict = {
+                "epoch": self.current_epoch+1,
+                "Losses/train_loss": self.losses[-1],
+                "Losses/val_loss": self.val_losses[-1],
+                "Losses/val_geno_loss": self.val_geno_losses[-1],
+                "Losses/val_pheno_loss": self.val_pheno_losses[-1],
+                "Accuracies/val_pheno_acc": self.val_pheno_accs[-1],
+                "Accuracies/val_pheno_iso_acc": self.val_pheno_iso_accs[-1],
+                "Accuracies/val_geno_acc": self.val_geno_accs[-1],
+                "Accuracies/val_geno_iso_acc": self.val_geno_iso_accs[-1],
+            }
+        else:
+            wandb_dict = {
+                "epoch": self.current_epoch+1,
+                "Losses/train_loss": self.losses[-1],
+                "Losses/geno_train_loss": self.geno_losses[-1],
+                "Losses/pheno_train_loss": self.pheno_losses[-1],
+                "Losses/val_loss": self.val_losses[-1],
+                "Losses/val_geno_loss": self.val_geno_losses[-1],
+                "Losses/val_pheno_loss": self.val_pheno_losses[-1]
+            }
         self.wandb_run.log(wandb_dict)
     
         
@@ -621,6 +730,33 @@ class MMBertPreTrainer(nn.Module):
         print(s)
     
     
+    def print_early_stop_results(self):
+        print(f"Validation stats at best epoch ({self.best_epoch+1}):")
+        s1 = f"Loss: {self.val_losses[self.best_epoch]:.4f}" 
+        s1 += f"| Phenotype Loss: {self.val_pheno_losses[self.best_epoch]:.4f}"
+        s1 += f" | Genotype Loss: {self.val_geno_losses[self.best_epoch]:.4f}"
+        print(s1)
+        s2 = f" | Phenotype accuracy: {self.val_pheno_accs[self.best_epoch]:.2%}"
+        s2 += f" | Phenotype isolate accuracy: {self.val_pheno_iso_accs[self.best_epoch]:.2%}"
+        print(s2)
+        s3 = f" | Genotype accuracy: {self.val_geno_accs[self.best_epoch]:.2%}"
+        s3 += f" | Genotype isolate accuracy: {self.val_geno_iso_accs[self.best_epoch]:.2%}"
+        print(s3)
+    
+    
+    def report_early_stop_results(self):
+        self.wandb_run.log({
+            "Losses/final_val_loss": self.best_val_loss, 
+            "Losses/final_val_geno_loss": self.val_geno_losses[self.best_epoch],
+            "Losses/final_val_pheno_loss": self.val_pheno_losses[self.best_epoch],
+            "Accuracies/final_val_pheno_acc": self.val_pheno_accs[self.best_epoch],
+            "Accuracies/final_val_pheno_iso_acc": self.val_pheno_iso_accs[self.best_epoch],
+            "Accuracies/final_val_geno_acc": self.val_geno_accs[self.best_epoch],
+            "Accuracies/final_val_geno_iso_acc": self.val_geno_iso_accs[self.best_epoch],
+            "best_epoch": self.best_epoch+1
+        })
+    
+    
     def save_model(self, savepath: Path = None):
         if not savepath:
             savepath = self.results_dir / "model_state.pt"
@@ -632,7 +768,7 @@ class MMBertPreTrainer(nn.Module):
     def load_model(self, savepath: Path):
         print("="*self._splitter_size)
         print(f"Loading model from {savepath}")
-        self.model.load_state_dict(torch.load(savepath))
+        self.model.set_state_dict(torch.load(savepath))
         print("Model loaded")
         print("="*self._splitter_size)
         
@@ -650,7 +786,8 @@ class MMBertFineTuner():
         antibiotics: list,
         train_set,
         val_set,
-        results_dir: Path
+        results_dir: Path,
+        CV_mode: bool = False
     ):
         super(MMBertFineTuner, self).__init__()
         
@@ -665,15 +802,21 @@ class MMBertFineTuner():
         self.project_name = config_ft["project_name"]
         self.wandb_name = config_ft["name"] if config_ft["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
-        self.num_ab = len(self.antibiotics) 
+        self.num_ab = len(self.antibiotics)
+        self.wl_strength = config_ft["wl_strength"] 
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
-        assert round(self.val_size / (self.train_size + self.val_size), 2) == config_ft["val_share"], "Validation set size does not match intended val_share"
-        self.val_share, self.train_share = config_ft["val_share"], 1 - config_ft["val_share"]
+        self.dataset_size = self.train_size + self.val_size
+        self.val_share, self.train_share = self.val_size / self.dataset_size, self.train_size / self.dataset_size
         self.batch_size = config_ft["batch_size"]
         self.num_batches = round(self.train_size / self.batch_size)
         self.vocab = self.train_set.vocab
+        self.ab_to_idx = self.train_set.ab_to_idx
          
         self.lr = config_ft["lr"]
         self.weight_decay = config_ft["weight_decay"]
@@ -686,16 +829,32 @@ class MMBertFineTuner():
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
         
-        self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        if self.wl_strength:
+            self.ab_criterions = [nn.BCEWithLogitsLoss(
+                pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
+            ]
+        else:
+            self.ab_criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
+        # self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.AdamW(
+            [
+                {'params': self.model.parameters()},
+                {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
+            ],
+            lr=self.lr, weight_decay=self.weight_decay
+        )
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
         self.current_epoch = 0
+        self.CV_mode = CV_mode
+        if self.CV_mode:
+            self.num_folds = config_ft["num_folds"]
         self.report_every = config_ft["report_every"] 
         self.print_progress_every = config_ft["print_progress_every"]
-        self._splitter_size = 70
+        self._splitter_size = 80
+        self.exp_folder = config_ft["exp_folder"]
         self.results_dir = results_dir
         if self.results_dir:
             self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -728,8 +887,17 @@ class MMBertFineTuner():
         print(f"Number of batches: {self.num_batches:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
-        print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
-        print(f"Mask probability for genotype: {self.train_set.mask_prob_geno:.0%}")
+        if self.wl_strength:
+            print("Antibiotic weights:", self.ab_weights)
+        s = f"CV mode: {'On' if self.CV_mode else 'Off'}"
+        if self.CV_mode:
+            s += f" ({self.num_folds} folds)"
+        print(s)
+        print(f"Data split: {self.train_share:.0%} train | {self.val_share:.0%} val (size: {self.dataset_size:,})")
+        if not self.train_set.no_genotype_masking:
+            print(f"Mask probability for genotype: {self.train_set.mask_prob_geno:.0%}")
+        else:
+            print(f"No genotype masking")
         print(f"Masking method: {self.masking_method}")
         if self.mask_prob_pheno:
             print(f"Mask probability for prediction task (phenotype): {self.mask_prob_pheno:.0%}")
@@ -743,7 +911,8 @@ class MMBertFineTuner():
     
     def __call__(self):      
         assert self.model.pheno_only == True, "Model must be in pheno_only mode"
-        self.wandb_run = self._init_wandb()
+        if not self.CV_mode:
+            self.wandb_run = self._init_wandb()
         print("Initializing training...")
         self.val_set.prepare_dataset()
         self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
@@ -758,17 +927,29 @@ class MMBertFineTuner():
             epoch_start_time = time.time()
             train_loss = self.train(self.current_epoch) # returns loss, averaged over batches
             self.losses.append(train_loss)
-            print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min | Loss: {train_loss:.4f}")
+            if time.time() - epoch_start_time > 60:
+                disp_time = f"{(time.time() - epoch_start_time)/60:.1f} min"
+            else:
+                disp_time = f"{time.time() - epoch_start_time:.0f} sec"
+            print(f"Epoch completed in " + disp_time + f" | Loss: {train_loss:.4f}")
+            val_start = time.time()
             print("Evaluating on validation set...")
             val_results = self.evaluate(self.val_loader, self.val_set)
+            if time.time() - val_start > 60:
+                disp_time = f"{(time.time() - val_start)/60:.1f} min"
+            else:
+                disp_time = f"{time.time() - val_start:.0f} sec"
+            print(f"Validation completed in " + disp_time)
             s = f"Val loss: {val_results['loss']:.4f}"
             s += f" | Accuracy {val_results['acc']:.2%} | Isolate accuracy {val_results['iso_acc']:.2%}"
             print(s)
-            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
-            print("="*self._splitter_size)
             self._update_val_lists(val_results)
-            self._report_epoch_results()
+            if not self.CV_mode:
+                self._report_epoch_results()
             early_stop = self.early_stopping()
+            print(f"Early stopping counter: {self.early_stop_counter}/{self.patience}")
+            print("="*self._splitter_size)
+            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
                 print(f"Validation stats at best epoch ({self.best_epoch+1}):")
@@ -776,48 +957,57 @@ class MMBertFineTuner():
                 s += f" | Accuracy: {self.val_accs[self.best_epoch]:.2%}"
                 s += f" | Isolate accuracy: {self.val_iso_accs[self.best_epoch]:.2%}"
                 print(s)
-                self.wandb_run.log({
-                    "Losses/final_val_loss": self.best_val_loss, 
-                    "Accuracies/final_val_acc": self.val_accs[self.best_epoch],
-                    "Accuracies/final_val_iso_acc": self.val_iso_accs[self.best_epoch],
-                    "best_epoch": self.best_epoch+1
-                })
-                self.model.load_state_dict(self.best_model_state) 
+                if not self.CV_mode:
+                    self.wandb_run.log({
+                        "Losses/final_val_loss": self.best_val_loss, 
+                        "Accuracies/final_val_acc": self.val_accs[self.best_epoch],
+                        "Accuracies/final_val_iso_acc": self.val_iso_accs[self.best_epoch],
+                        "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
+                        "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
+                        "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
+                        "best_epoch": self.best_epoch+1
+                    })
+                self.model.set_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
             if self.scheduler:
                 self.scheduler.step()
-        if not early_stop:    
+        if not early_stop and not self.CV_mode: 
             self.wandb_run.log({
                     "Losses/final_val_loss": self.best_val_loss, 
                     "Accuracies/final_val_acc": self.val_accs[-1],
                     "Accuracies/final_val_iso_acc": self.val_iso_accs[-1],
+                    "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
+                    "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
+                    "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
                     "best_epoch": self.current_epoch+1
                 })
-        self.model.is_pretrained = True
         if self.save_model_:
             self.save_model(self.results_dir / "model_state.pt") 
         train_time = (time.time() - start_time)/60
-        self.wandb_run.log({"Training time (min)": train_time})
+        if not self.CV_mode:
+            self.wandb_run.log({"Training time (min)": train_time})
         disp_time = f"{train_time//60:.0f}h {train_time % 60:.1f} min" if train_time > 60 else f"{train_time:.1f} min"
         print(f"Training completed in {disp_time}")
         print("="*self._splitter_size)
         if not early_stop:
             print("Final validation stats:")
             s = f"Loss: {self.val_losses[-1]:.4f}"
-            s = f" | Accuracy: {self.val_accs[-1]:.2%}"
+            s += f" | Accuracy: {self.val_accs[-1]:.2%}"
             s += f" | Isolate accuracy: {self.val_iso_accs[-1]:.2%}"
             print(s)
         
         results = {
-            "train_time": train_time,
-            "best_epoch": self.current_epoch,
-            "train_losses": self.losses,
-            "val_losses": self.val_losses,
-            "val_accs": self.val_accs,
-            "val_iso_accs": self.val_iso_accs,
-            "val_iso_stats": self.val_iso_stats[self.best_epoch],
-            "val_ab_stats": self.val_ab_stats[self.best_epoch]
+            "train_loss": self.losses[self.best_epoch],
+            "loss": self.val_losses[self.best_epoch],
+            "acc": self.val_accs[self.best_epoch],
+            "iso_acc": self.val_iso_accs[self.best_epoch],
+            "sens": self.val_sensitivities[self.best_epoch],
+            "spec": self.val_specificities[self.best_epoch],
+            "prec": self.val_precisions[self.best_epoch],
+            "F1": self.val_F1_scores[self.best_epoch],
+            "iso_stats": self.val_iso_stats[self.best_epoch],
+            "ab_stats": self.val_ab_stats[self.best_epoch]
         }
         return results
     
@@ -831,10 +1021,7 @@ class MMBertFineTuner():
             batch_index = i + 1
             self.optimizer.zero_grad() # zero out gradients
             
-            if self.masking_method == "keep_one_class":
-                input, target_res, token_types, attn_mask, kept_classes  = batch
-            else: 
-                input, target_res, token_types, attn_mask = batch 
+            input, target_res, _, token_types, attn_mask = batch
             pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
             ab_mask = target_res != -1 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
             
@@ -848,14 +1035,15 @@ class MMBertFineTuner():
                 ab_loss = self.ab_criterions[j](ab_pred_logits, ab_targets)
                 losses.append(ab_loss)
             loss = sum(losses) / len(losses) # average loss over antibiotics
-            epoch_loss += loss
-            reporting_loss += loss
-            printing_loss += loss
+            epoch_loss += loss.item()
+            reporting_loss += loss.item()
+            printing_loss += loss.item()
             
             loss.backward() 
             self.optimizer.step() 
             if batch_index % self.report_every == 0:
-                self._report_loss_results(batch_index, reporting_loss)
+                if not self.CV_mode:
+                    self._report_loss_results(batch_index, reporting_loss)
                 reporting_loss = 0 
                 
             if batch_index % self.print_progress_every == 0:
@@ -870,7 +1058,7 @@ class MMBertFineTuner():
         if self.val_losses[-1] < self.best_val_loss:
             self.best_val_loss = self.val_losses[-1]
             self.best_epoch = self.current_epoch
-            self.best_model_state = self.model.state_dict()
+            self.best_model_state = self.model.get_state_dict()
             self.early_stopping_counter = 0
             return False
         else:
@@ -889,17 +1077,14 @@ class MMBertFineTuner():
             ab_num_correct = np.zeros_like(ab_num) # tracks the number of correct predictions for each antibiotic & resistance
             ## General tracking ##
             loss = 0
-            for i, batch in enumerate(loader):                
-                if self.masking_method == "keep_one_class":
-                    input, target_res, token_types, attn_mask, kept_classes  = batch
-                else: 
-                    input, target_res, token_types, attn_mask = batch
+            for i, batch in enumerate(loader):                  
+                input, target_res, target_ids, token_types, attn_mask = batch
                        
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
                         
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
-                iso_stats = self._update_pheno_stats(i, pred_res, target_res, ab_mask, iso_stats)
+                iso_stats = self._update_iso_stats(i, pred_res, target_res, target_ids, ab_mask, token_types, iso_stats) 
                 
                 ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
                 losses = list()
@@ -926,13 +1111,21 @@ class MMBertFineTuner():
             ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
             iso_stats = self._calculate_iso_stats(iso_stats)
         
-            acc = iso_stats['num_correct'].sum() / iso_stats['num_masked'].sum()
+            acc = ab_stats['num_correct'].sum() / ab_stats['num_masked_tot'].sum()
             iso_acc = iso_stats['all_correct'].sum() / iso_stats.shape[0]
+            sens = ab_stats['num_correct_R'].sum() / ab_stats['num_masked_R'].sum() 
+            spec = ab_stats['num_correct_S'].sum() / ab_stats['num_masked_S'].sum()
+            prec = ab_stats['num_correct_R'].sum() / ab_stats['num_pred_R'].sum()
+            F1_score = 2 * sens * prec / (sens + prec)
 
             results = {
                 "loss": avg_loss, 
                 "acc": acc,
                 "iso_acc": iso_acc,
+                "sensitivity": sens,
+                "specificity": spec,
+                "precision": prec,
+                "F1": F1_score,
                 "ab_stats": ab_stats,
                 "iso_stats": iso_stats,
             }
@@ -944,6 +1137,10 @@ class MMBertFineTuner():
         self.val_losses = []
         self.val_accs = []
         self.val_iso_accs = []
+        self.val_sensitivities = []
+        self.val_specificities = []
+        self.val_precisions = []
+        self.val_F1_scores = []
         self.val_ab_stats = []
         self.val_iso_stats = []
         
@@ -952,42 +1149,48 @@ class MMBertFineTuner():
         self.val_losses.append(results["loss"])
         self.val_accs.append(results["acc"])
         self.val_iso_accs.append(results["iso_acc"])
+        self.val_sensitivities.append(results["sensitivity"])
+        self.val_specificities.append(results["specificity"])
+        self.val_precisions.append(results["precision"])
+        self.val_F1_scores.append(results["F1"])
         self.val_ab_stats.append(results["ab_stats"])
         self.val_iso_stats.append(results["iso_stats"])
     
     
     def _init_eval_stats(self, ds_obj):
         ab_stats = pd.DataFrame(columns=[
-            'antibiotic', 'num_tot', 'num_S', 'num_R', 'num_pred_S', 'num_pred_R', 
+            'antibiotic', 'num_masked_tot', 'num_masked_S', 'num_masked_R', 'num_pred_S', 'num_pred_R', 
             'num_correct', 'num_correct_S', 'num_correct_R',
             'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
         ])
-        ab_stats['antibiotic'] = self.antibiotics #TODO: change to antibiotics present in the validation set
-        ab_stats['num_tot'], ab_stats['num_S'], ab_stats['num_R'] = 0, 0, 0
+        ab_stats['antibiotic'] = self.antibiotics
+        ab_stats['num_masked_tot'], ab_stats['num_masked_S'], ab_stats['num_masked_R'] = 0, 0, 0
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
         
-        iso_stats = ds_obj.ds_MM.drop(columns=['genotypes', 'phenotypes'])
-        iso_stats['num_masked'], iso_stats['num_masked_S'], iso_stats['num_masked_R'] = 0, 0, 0
+        iso_stats = ds_obj.ds.copy()
+        iso_stats['num_masked_ab'], iso_stats['num_masked_genes'] = 0, 0 
+        iso_stats['num_masked_S'], iso_stats['num_masked_R'] = 0, 0
         iso_stats['num_correct'], iso_stats['correct_S'], iso_stats['correct_R'] = 0, 0, 0
         iso_stats['sensitivity'], iso_stats['specificity'], iso_stats['accuracy'] = 0, 0, 0
+        iso_stats['masked_ab'], iso_stats['correct_ab'], iso_stats['masked_genes'] = None, None, None
         iso_stats['all_correct'] = False  
         return ab_stats, iso_stats
     
     
     def _update_ab_eval_stats(self, ab_stats: pd.DataFrame, num, num_preds, num_correct):
         for j in range(self.num_ab): 
-            ab_stats.loc[j, 'num_tot'] = num[j, :].sum()
-            ab_stats.loc[j, 'num_S'], ab_stats.loc[j, 'num_R'] = num[j, 0], num[j, 1]
+            ab_stats.loc[j, 'num_masked_tot'] = num[j, :].sum()
+            ab_stats.loc[j, 'num_masked_S'], ab_stats.loc[j, 'num_masked_R'] = num[j, 0], num[j, 1]
             ab_stats.loc[j, 'num_pred_S'], ab_stats.loc[j, 'num_pred_R'] = num_preds[j, 0], num_preds[j, 1]
             ab_stats.loc[j, 'num_correct'] = num_correct[j, :].sum()
             ab_stats.loc[j, 'num_correct_S'], ab_stats.loc[j, 'num_correct_R'] = num_correct[j, 0], num_correct[j, 1]
         ab_stats['accuracy'] = ab_stats.apply(
-            lambda row: row['num_correct']/row['num_tot'] if row['num_tot'] > 0 else np.nan, axis=1)
+            lambda row: row['num_correct']/row['num_masked_tot'] if row['num_masked_tot'] > 0 else np.nan, axis=1)
         ab_stats['sensitivity'] = ab_stats.apply(
-            lambda row: row['num_correct_R']/row['num_R'] if row['num_R'] > 0 else np.nan, axis=1)
+            lambda row: row['num_correct_R']/row['num_masked_R'] if row['num_masked_R'] > 0 else np.nan, axis=1)
         ab_stats['specificity'] = ab_stats.apply(
-            lambda row: row['num_correct_S']/row['num_S'] if row['num_S'] > 0 else np.nan, axis=1)
+            lambda row: row['num_correct_S']/row['num_masked_S'] if row['num_masked_S'] > 0 else np.nan, axis=1)
         ab_stats['precision'] = ab_stats.apply(
             lambda row: row['num_correct_R']/row['num_pred_R'] if row['num_pred_R'] > 0 else np.nan, axis=1)
         ab_stats['F1'] = ab_stats.apply(
@@ -1009,36 +1212,49 @@ class MMBertFineTuner():
         return [num_pred_S, num_pred_R]
     
     
-    def _update_pheno_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, 
-                          ab_mask: torch.Tensor, iso_stats: pd.DataFrame):
+    def _update_iso_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, target_ids: torch.Tensor,
+                          ab_mask: torch.Tensor, token_types:torch.tensor, iso_stats: pd.DataFrame):
         for i in range(pred_res.shape[0]): 
             iso_ab_mask = ab_mask[i]
+            iso_token_types = token_types[i][target_ids[i] != -1] # token types masked tokens
+            iso_target_ids = target_ids[i][target_ids[i] != -1] # token ids of the antibiotics and genes that are masked
             df_idx = batch_idx * self.batch_size + i # index of the isolate in the combined dataset
             
             # counts
-            num_masked_tot = iso_ab_mask.sum().item()
+            num_masked_ab = iso_ab_mask.sum().item()
             num_masked_R = target_res[i][iso_ab_mask].sum().item()
-            num_masked_S = num_masked_tot - num_masked_R
+            num_masked_S = num_masked_ab - num_masked_R
             
-            # statistics            
-            iso_target_res = target_res[i][iso_ab_mask]
-            eq = torch.eq(pred_res[i][iso_ab_mask], iso_target_res)
+            # statistics
+            masked_ab_indices = iso_ab_mask.nonzero().squeeze(-1).tolist() # ab-indexing index of the masked antibiotics 
+            iso_target_res = target_res[i][iso_ab_mask] # (num_masked_ab,)
+            eq = torch.eq(pred_res[i][iso_ab_mask], iso_target_res) # (num_masked_ab,)
             num_correct_R = eq[iso_target_res == 1].sum().item()
             num_correct_S = eq[iso_target_res == 0].sum().item()
             num_correct = num_correct_S + num_correct_R
             all_correct = eq.all().item()
             
+            # add masked genes and antibiotics
+            ab_indices = iso_target_ids[iso_token_types == 2].tolist() # token ids of the masked antibiotics, sequence order
+            masked_ab = [self.vocab.lookup_token(idx) for idx in ab_indices] # token, sequence order
+            masked_ab_indices_seq = [self.ab_to_idx[token.split('_')[0]] for token in masked_ab] # index in the ab-indexing, sequence order
+            correct_ab = [eq[masked_ab_indices.index(idx)].item() for idx in masked_ab_indices_seq]
+            
+            geno_indices = iso_target_ids[iso_token_types == 1].tolist()
+            masked_genes = [self.vocab.lookup_token(idx) for idx in geno_indices]
+            
             data = {
-                'num_masked': num_masked_tot, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
+                'num_masked_genes': len(geno_indices), 'masked_genes': masked_genes, 
+                'masked_ab': pd.Series(masked_ab).tolist(), 'correct_ab': correct_ab,
+                'num_masked_ab': num_masked_ab, 'num_masked_S': num_masked_S, 'num_masked_R': num_masked_R, 
                 'num_correct': num_correct, 'correct_S': num_correct_S, 'correct_R': num_correct_R,
                 'all_correct': all_correct
             }
             iso_stats.loc[df_idx, data.keys()] = data.values()
-                          
         return iso_stats
     
     def _calculate_iso_stats(self, iso_stats: pd.DataFrame): 
-        iso_stats['accuracy'] = iso_stats['num_correct'] / iso_stats['num_masked']
+        iso_stats['accuracy'] = iso_stats['num_correct'] / iso_stats['num_masked_ab']
         iso_stats['sensitivity'] = iso_stats.apply(
             lambda row: row['correct_R']/row['num_masked_R'] if row['num_masked_R'] > 0 else np.nan, axis=1
         )
@@ -1056,6 +1272,7 @@ class MMBertFineTuner():
             
             config={
                 "trainer_type": "fine-tuning",
+                "exp_folder": self.exp_folder,
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
                 "hidden_dim": self.model.hidden_dim,
@@ -1076,7 +1293,8 @@ class MMBertFineTuner():
                 "antibiotics": self.antibiotics,
                 "train_size": self.train_size,
                 "random_state": self.random_state,
-                'val_share': self.val_share,
+                "CV_mode": self.CV_mode,
+                'val_share': round(self.val_share, 2),
                 "val_size": self.val_size,
                 "is_pretrained": self.model.is_pretrained,
             }
@@ -1090,10 +1308,16 @@ class MMBertFineTuner():
         self.wandb_run.define_metric("Losses/val_loss", summary="min", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_acc", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Accuracies/val_iso_acc", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Class_metrics/val_sens", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Class_metrics/val_spec", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Class_metrics/val_F1", summary="max", step_metric="epoch")
         
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
         self.wandb_run.define_metric("Accuracies/final_val_iso_acc")
+        self.wandb_run.define_metric("Class_metrics/final_val_sens")
+        self.wandb_run.define_metric("Class_metrics/final_val_spec")
+        self.wandb_run.define_metric("Class_metrics/final_val_F1")
         
         self.wandb_run.define_metric("best_epoch", hidden=True)
 
@@ -1104,12 +1328,12 @@ class MMBertFineTuner():
             "epoch": self.current_epoch+1,
             "Losses/train_loss": self.losses[-1],
             "Losses/val_loss": self.val_losses[-1],
-            # "Losses/val_geno_loss": self.val_geno_losses[-1],
             "Losses/val_loss": self.val_losses[-1],
+            "Class_metrics/val_sens": self.val_sensitivities[-1],
+            "Class_metrics/val_spec": self.val_specificities[-1],
+            "Class_metrics/val_F1": self.val_F1_scores[-1],
             "Accuracies/val_acc": self.val_accs[-1],
             "Accuracies/val_iso_acc": self.val_iso_accs[-1],
-            # "Accuracies/val_geno_acc": self.val_geno_accs[-1],
-            # "Accuracies/val_geno_iso_acc": self.val_geno_iso_accs[-1],
         }
         self.wandb_run.log(wandb_dict)
     
@@ -1142,6 +1366,6 @@ class MMBertFineTuner():
     def load_model(self, savepath: Path):
         print("="*self._splitter_size)
         print(f"Loading model from {savepath}")
-        self.model.load_state_dict(torch.load(savepath))
+        self.model.set_state_dict(torch.load(savepath))
         self.model.to(device)
         print("Model loaded")
