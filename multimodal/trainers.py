@@ -180,10 +180,13 @@ class MMBertPreTrainer(nn.Module):
                 self.val_losses.append(val_losses['loss'])
                 self.val_geno_losses.append(val_losses['geno_loss'])
                 self.val_pheno_losses.append(val_losses['pheno_loss'])
-            print("="*self._splitter_size)
-            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
+                print(f"Validation loss: {val_losses['loss']:.4f}")
+                print(f"Genotype loss: {val_losses['geno_loss']:.4f} | Phenotype loss: {val_losses['pheno_loss']:.4f}")
             self._report_epoch_results()
             early_stop = self.early_stopping()
+            print(f"Early stopping counter: {self.early_stopping_counter}/{self.patience}")
+            print("="*self._splitter_size)
+            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
                 if self.do_eval:
@@ -940,12 +943,13 @@ class MMBertFineTuner():
             s = f"Val loss: {val_results['loss']:.4f}"
             s += f" | Accuracy {val_results['acc']:.2%} | Isolate accuracy {val_results['iso_acc']:.2%}"
             print(s)
-            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
-            print("="*self._splitter_size)
             self._update_val_lists(val_results)
             if not self.CV_mode:
                 self._report_epoch_results()
             early_stop = self.early_stopping()
+            print(f"Early stopping counter: {self.early_stop_counter}/{self.patience}")
+            print("="*self._splitter_size)
+            print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
                 print(f"Validation stats at best epoch ({self.best_epoch+1}):")
