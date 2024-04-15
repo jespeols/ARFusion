@@ -38,6 +38,7 @@ class MMPretrainDataset(Dataset):
         max_seq_len: int,
         mask_prob_geno: float,
         masking_method: str,
+        num_known_classes: int = None,
         mask_prob_pheno: float = None,
         num_known_ab: int = None,
         always_mask_replace: bool = False,
@@ -64,18 +65,19 @@ class MMPretrainDataset(Dataset):
             print("Always masking using MASK tokens")
         else:
             print("Masking using BERT 80-10-10 strategy")
-        
         self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_geno = mask_prob_geno
         self.mask_prob_pheno = mask_prob_pheno
         self.num_known_ab = num_known_ab
+        self.num_known_classes = num_known_classes
         if self.masking_method == 'random':
             assert self.mask_prob_pheno, "mask_prob_pheno must be given if masking_method is 'random'"
-        elif self.masking_method == 'num_known':
+        elif self.masking_method == 'num_known_ab':
             assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
             self.ds_pheno = self.ds_pheno[self.ds_pheno['num_ab'] > self.num_known_ab].reset_index(drop=True)
-        # elif self.masking_method == 'keep_one_class':
-        self.ds_pheno = self.ds_pheno[self.ds_pheno['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
+        elif self.masking_method == 'num_known_classes':
+            assert num_known_classes, "num_known_classes must be given if masking_method is 'num_known_classes'"
+            self.ds_pheno = self.ds_pheno[self.ds_pheno['ab_classes'].apply(lambda x: len(set(x)) > self.num_known_classes)].reset_index(drop=True)
         self.num_pheno = self.ds_pheno.shape[0]
         self.num_samples = self.num_geno + self.num_pheno
         
@@ -120,7 +122,7 @@ class MMPretrainDataset(Dataset):
         geno_target_resistances = [[-1]*self.num_ab for _ in range(self.num_geno)] # no ab masking for genotypes
         geno_token_types = [[0]*3 + [1]*(self.max_seq_len - 3) for _ in range(self.num_geno)]
         
-        if self.masking_method == "keep_one_class":
+        if self.masking_method == "num_known_classes":
             ab_classes = deepcopy(self.ds_pheno['ab_classes'].tolist())
             masked_pheno_sequences, pheno_target_resistances = self._mask_pheno_sequences(pheno_sequences, ab_classes)
         else:
@@ -192,7 +194,7 @@ class MMPretrainDataset(Dataset):
         ages = self.ds_pheno['age'].astype(int).astype(str).tolist()
         seq_starts = [[self.CLS, years[i], countries[i], genders[i], ages[i]] for i in range(self.num_pheno)]
 
-        if self.mask_prob_pheno:
+        if self.masking_method == 'random':
             for i, pheno_seq in enumerate(pheno_sequences):
                 seq_len = len(pheno_seq)
                 token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
@@ -206,7 +208,7 @@ class MMPretrainDataset(Dataset):
                 pheno_seq = seq_starts[i] + pheno_seq
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
-        elif self.num_known_ab:
+        elif self.masking_method == 'num_known_ab':
             for i, pheno_seq in enumerate(pheno_sequences):
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
@@ -218,19 +220,18 @@ class MMPretrainDataset(Dataset):
                 pheno_seq = seq_starts[i] + pheno_seq
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
-        elif self.masking_method == "keep_one_class":
+        elif self.masking_method == "num_known_classes":
             for i, pheno_seq in enumerate(pheno_sequences):
                 classes = ab_classes[i]                # randomly choose one class to keep
                 unique_classes, counts = np.unique(classes, return_counts=True)
-                # freq = counts / counts.sum()
-                # inv_freq = 1 / freq
-                # prob = inv_freq / inv_freq.sum()
-                # keep_class = self.rng.choice(unique_classes, p=prob) # less frequent classes are more likely
-                keep_class = self.rng.choice(unique_classes) # all classes are equally likely
-                # keep_class = self.rng.choice(classes) # more frequent classes are more likely
+                freq = counts / counts.sum()
+                inv_freq = 1 / freq
+                prob = inv_freq / inv_freq.sum()
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
-                indices = [idx for idx in range(seq_len) if classes[idx] != keep_class]
+                indices = [idx for idx in range(seq_len) if classes[idx] not in keep_classes]
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
@@ -275,6 +276,7 @@ class MMFinetuneDataset(Dataset):
         mask_prob_geno: float,
         mask_prob_pheno: float,
         num_known_ab: int,
+        num_known_classes: int = None,
         no_geno_masking: bool = False,
         always_mask_replace: bool = True,
         filter_genes_by_ab_class: list = None,
@@ -321,19 +323,20 @@ class MMFinetuneDataset(Dataset):
         else:
             self.genotype_col = 'genotypes'
         
-        self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
+        self.masking_method = masking_method # 'random', 'num_known_ab' or 'num_known_classes' 
         self.mask_prob_geno = mask_prob_geno
-        self.mask_prob_pheno = mask_prob_pheno
         self.no_genotype_masking = no_geno_masking
         self.mask_prob_pheno = mask_prob_pheno
         self.num_known_ab = num_known_ab
+        self.num_known_classes = num_known_classes
         if self.masking_method == 'random':
             assert self.mask_prob_pheno, "mask_prob_pheno must be given if masking_method is 'random'"
-        elif self.masking_method == 'num_known':
+        elif self.masking_method == 'num_known_ab':
             assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
             self.ds = self.ds[self.ds['num_ab'] > self.num_known_ab].reset_index(drop=True)
-        elif self.masking_method == 'keep_one_class':            
-            self.ds = self.ds[self.ds['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
+        elif self.masking_method == 'num_known_classes':
+            assert num_known_classes, "num_known_classes must be given if masking_method is 'num_known_classes'"
+            self.ds = self.ds[self.ds['ab_classes'].apply(lambda x: len(set(x)) > self.num_known_classes)].reset_index(drop=True)
         self.num_samples = self.ds.shape[0]
                     
         self.include_sequences = include_sequences
@@ -369,7 +372,7 @@ class MMFinetuneDataset(Dataset):
         countries = self.ds['country'].tolist()
         seq_starts = [[self.CLS, years[i], countries[i]] for i in range(self.num_samples)]
         
-        if self.masking_method == "keep_one_class":
+        if self.masking_method == "num_known_classes":
             ab_classes = deepcopy(self.ds['ab_classes'].tolist())
             masked_pheno_sequences, target_resistances, target_ids_pheno = self._mask_pheno_sequences(pheno_sequences, ab_classes)
         else:
@@ -471,21 +474,20 @@ class MMFinetuneDataset(Dataset):
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())  
-        elif self.masking_method == "keep_one_class":
+        elif self.masking_method == "num_known_classes":
             for i, pheno_seq in enumerate(pheno_sequences):
                 classes = ab_classes[i]     
                 ## randomly choose one class to keep        
                 unique_classes, counts = np.unique(classes, return_counts=True)
-                # freq = counts / counts.sum()
-                # inv_freq = 1 / freq
-                # prob = inv_freq / inv_freq.sum()
-                # keep_class = self.rng.choice(unique_classes, p=prob) # less frequent classes are more likely
-                keep_class = self.rng.choice(unique_classes) # all classes are equally likely
-                # keep_class = self.rng.choice(classes) # more frequent classes are more likely
+                freq = counts / counts.sum()
+                inv_freq = 1 / freq
+                prob = inv_freq / inv_freq.sum()
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
                 seq_len = len(pheno_seq)
                 target_ids = np.array([-1]*seq_len)
                 target_res = [-1]*self.num_ab
-                indices = [idx for idx in range(seq_len) if classes[idx] != keep_class] 
+                indices = [idx for idx in range(seq_len) if classes[idx] not in keep_classes] 
                 target_ids[indices] = self.vocab.lookup_indices([pheno_seq[i] for i in indices])
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
@@ -679,13 +681,13 @@ class PhenoFinetuneDataset(Dataset):
                 # freq = counts / counts.sum()
                 # inv_freq = 1 / freq
                 # prob = inv_freq / inv_freq.sum()
-                # keep_class = self.rng.choice(unique_classes, p=prob) # less frequent classes are more likely
-                keep_class = self.rng.choice(unique_classes) # all classes are equally likely
-                # keep_class = self.rng.choice(classes) # more frequent classes are more likely
+                # keep_classes = self.rng.choice(unique_classes, p=prob) # less frequent classes are more likely
+                keep_classes = self.rng.choice(unique_classes) # all classes are equally likely
+                # keep_classes = self.rng.choice(classes) # more frequent classes are more likely
                 seq_len = len(pheno_seq)
                 target_ids = np.array([-1]*seq_len)
                 target_res = [-1]*self.num_ab
-                indices = [idx for idx in range(seq_len) if classes[idx] != keep_class] 
+                indices = [idx for idx in range(seq_len) if classes[idx] != keep_classes] 
                 target_ids[indices] = self.vocab.lookup_indices([pheno_seq[i] for i in indices])
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
