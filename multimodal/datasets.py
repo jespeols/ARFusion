@@ -167,14 +167,11 @@ class MMPretrainDataset(Dataset):
             token_mask = self.rng.random(seq_len) < self.mask_prob_geno   
             target_ids = np.array([-1]*seq_len)
             if not token_mask.any():                ## if no tokens are masked, mask one random token
-                idx = self.rng.integers(seq_len)
-                target_ids[idx] = self.vocab[geno_seq[idx]]
+                token_mask[self.rng.integers(seq_len)] = True
+            masking_indices = token_mask.nonzero()[0]
+            target_ids[masking_indices] = self.vocab.lookup_indices([geno_seq[i] for i in masking_indices])
+            for idx in masking_indices:
                 geno_seq[idx] = self._get_replace_token(self.GENE_MASK, geno_seq[idx])
-            else:
-                masking_indices = token_mask.nonzero()[0]
-                target_ids[masking_indices] = self.vocab.lookup_indices([geno_seq[i] for i in masking_indices])
-                for idx in masking_indices:
-                    geno_seq[idx] = self._get_replace_token(self.GENE_MASK, geno_seq[idx])
             geno_seq = seq_starts[i] + geno_seq
             target_ids = [-1]*3 + target_ids.tolist() 
             masked_geno_sequences.append(geno_seq)
@@ -201,15 +198,11 @@ class MMPretrainDataset(Dataset):
                 token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
                 target_res = [-1]*self.num_ab
                 if not token_mask.any():
-                    idx = self.rng.integers(seq_len)
+                    token_mask[self.rng.integers(seq_len)] = True
+                for idx in token_mask.nonzero()[0]:
                     ab, res = pheno_seq[idx].split('_')
-                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]  
-                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx]) 
-                else:
-                    for idx in token_mask.nonzero()[0]:
-                        ab, res = pheno_seq[idx].split('_')
-                        target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
+                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]
+                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
                 pheno_seq = seq_starts[i] + pheno_seq
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
@@ -418,16 +411,12 @@ class MMFinetuneDataset(Dataset):
             if not seq_len == 0:
                 token_mask = self.rng.random(seq_len) < self.mask_prob_geno
                 if not token_mask.any():
-                    idx = self.rng.integers(seq_len)
-                    target_ids[idx] = self.vocab[geno_seq[idx]]
+                    token_mask[self.rng.integers(seq_len)] = True
+                masking_indices = token_mask.nonzero()[0]
+                target_ids[token_mask] = self.vocab.lookup_indices([geno_seq[i] for i in masking_indices])
+                for idx in masking_indices:
                     # geno_seq[idx] = self.PAD 
                     geno_seq[idx] = self.GENE_MASK
-                else:
-                    masking_indices = token_mask.nonzero()[0]
-                    target_ids[token_mask] = self.vocab.lookup_indices([geno_seq[i] for i in masking_indices])
-                    for idx in masking_indices:
-                        # geno_seq[idx] = self.PAD 
-                        geno_seq[idx] = self.GENE_MASK
             masked_geno_sequences.append(geno_seq)
             geno_target_ids.append(target_ids.tolist())
         return masked_geno_sequences, geno_target_ids
@@ -458,18 +447,13 @@ class MMFinetuneDataset(Dataset):
                 target_res = [-1]*self.num_ab
                 target_ids = np.array([-1]*seq_len)
                 if not token_mask.any():
-                    idx = self.rng.integers(seq_len)
-                    target_ids[idx] = self.vocab[pheno_seq[idx]]
+                    token_mask[self.rng.integers(seq_len)] = True 
+                masking_indices = token_mask.nonzero()[0]
+                target_ids[token_mask] = self.vocab.lookup_indices([pheno_seq[i] for i in masking_indices])
+                for idx in masking_indices:
                     ab, res = pheno_seq[idx].split('_')
-                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]  
-                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx]) 
-                else:
-                    masking_indices = token_mask.nonzero()[0]
-                    target_ids[token_mask] = self.vocab.lookup_indices([pheno_seq[i] for i in masking_indices])
-                    for idx in masking_indices:
-                        ab, res = pheno_seq[idx].split('_')
-                        target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
+                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]
+                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())
@@ -662,17 +646,12 @@ class PhenoFinetuneDataset(Dataset):
                 target_res = [-1]*self.num_ab
                 target_ids = np.array([-1]*seq_len)
                 if not token_mask.any():
-                    idx = self.rng.integers(seq_len)
-                    target_ids[idx] = self.vocab[pheno_seq[idx]]
+                    token_mask[self.rng.integers(seq_len)] = True
+                target_ids[token_mask] = self.vocab.lookup_indices([pheno_seq[i] for i in token_mask.nonzero()[0]])
+                for idx in token_mask.nonzero()[0]:
                     ab, res = pheno_seq[idx].split('_')
-                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]  
-                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx]) 
-                else:
-                    target_ids[token_mask] = self.vocab.lookup_indices([pheno_seq[i] for i in token_mask.nonzero()[0]])
-                    for idx in token_mask.nonzero()[0]:
-                        ab, res = pheno_seq[idx].split('_')
-                        target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
+                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]
+                    pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())

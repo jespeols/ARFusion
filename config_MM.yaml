@@ -37,7 +37,7 @@ fine_tuning:
   exp_folder:
   # ds_path: 'data/TESSy_15.pkl'
   ds_path: 'data/NCBI_15.pkl'
-  loadpath_vocab: 'MM_vocab_15_2mask.pt'
+  loadpath_vocab: 'MM_vocab_15.pt'
   construct_vocab: False
   no_pt: False
   model_path: 
