@@ -44,7 +44,7 @@ if __name__ == "__main__":
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--always_mask_replace", action="store_true", help="Always replace masked tokens with mask token")
-    argparser.add_argument("--wl_strength", type='string', options=['mild', 'strong'], help="Strength of weighted loss functions")
+    argparser.add_argument("--wl_strength", type=str, help="Strength of weighted loss functions")
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--prepare_TESSy", action="store_true", help="Prepare TESSy data")
     argparser.add_argument("--prepare_NCBI", action="store_true", help="Prepare NCBI data")
@@ -125,10 +125,7 @@ if __name__ == "__main__":
         print(f"Loading preprocessed TESSy data from {data_dict['TESSy']['load_path']}...")
         ds_TESSy = pd.read_pickle(os.path.join(BASE_DIR, data_dict['TESSy']['load_path']))
     ds_pheno = ds_TESSy.copy()
-    
-    # ds_pheno = ds_pheno.sample(frac=1, random_state=config['random_state']).reset_index(drop=True)
-    # ds_pheno = ds_pheno.iloc[:int(0.5*len(ds_pheno))].reset_index(drop=True)
-    
+        
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_pheno['ab_classes'] = ds_pheno['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
     

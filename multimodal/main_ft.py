@@ -66,7 +66,7 @@ if __name__ == "__main__":
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--ds_path", type=str)
     argparser.add_argument("--no_pt", action="store_true", help="Enable naive model")
-    argparser.add_argument("--wl_strength", type='string', options=['mild', 'strong'], help="Strength of weighted loss functions")
+    argparser.add_argument("--wl_strength", type=str, help="Strength of weighted loss functions")
     argparser.add_argument("--mask_prob_geno", type=float)
     argparser.add_argument("--no_geno_masking", action="store_true", help="Disable geno masking")
     argparser.add_argument("--masking_method", type=str)

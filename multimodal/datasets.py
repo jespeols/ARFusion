@@ -60,6 +60,10 @@ class MMPretrainDataset(Dataset):
         self.CLS, self.PAD = specials['CLS'], specials['PAD']
         self.AB_MASK, self.GENE_MASK = specials['AB_MASK'], specials['GENE_MASK']        
         self.always_mask_replace = always_mask_replace
+        if self.always_mask_replace:
+            print("Always masking using MASK tokens")
+        else:
+            print("Masking using BERT 80-10-10 strategy")
         
         self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob_geno = mask_prob_geno
@@ -301,6 +305,10 @@ class MMFinetuneDataset(Dataset):
         self.CLS, self.PAD = specials['CLS'], specials['PAD']
         self.AB_MASK, self.GENE_MASK = specials['AB_MASK'], specials['GENE_MASK']
         self.always_mask_replace = always_mask_replace
+        if self.always_mask_replace:
+            print("Always masking using MASK tokens")
+        else:
+            print("Masking using BERT 80-10-10 strategy")
         
         self.filter_genes_by_ab_class = filter_genes_by_ab_class
         if self.filter_genes_by_ab_class:

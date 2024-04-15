@@ -13,7 +13,7 @@ mask_prob_geno: 0.25
 masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
 mask_prob_pheno: 0.25
 num_known_ab: 
-always_mask_replace: True
+always_mask_replace: False
 batch_size: 64
 val_share: 0.1 # CV split
 do_eval: True
@@ -51,7 +51,7 @@ fine_tuning:
   mask_prob_pheno: 0.75
   num_known_ab: 
   always_mask_replace: True
-  lr: 1e-5
+  lr: 0.00001
   weight_decay: 0.01
   use_weighted_loss: False
   early_stopping_patience: 10
