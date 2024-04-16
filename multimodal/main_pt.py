@@ -32,9 +32,9 @@ if __name__ == "__main__":
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--exp_folder", type=str, help="Folder to save experiment results in")
     argparser.add_argument("--mask_prob_geno", type=float)
-    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
+    argparser.add_argument("--num_known_classes", type=int)
     argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--num_heads", type=int)
     argparser.add_argument("--emb_dim", type=int)
@@ -44,7 +44,10 @@ if __name__ == "__main__":
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--always_mask_replace", action="store_true", help="Always replace masked tokens with mask token")
-    argparser.add_argument("--wl_strength", type='string', options=['mild', 'strong'], help="Strength of weighted loss functions")
+    argparser.add_argument("--loss_fn", type=str, help="Loss function to use")
+    argparser.add_argument("--wl_strength", type=str, help="Strength of weighted CE loss functions for antibiotics ('mild' or 'strong')")
+    argparser.add_argument("--alpha", type=float, help="Alpha parameter for focal loss")
+    argparser.add_argument("--gamma", type=float, help="Gamma parameter for focal loss")
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--prepare_TESSy", action="store_true", help="Prepare TESSy data")
     argparser.add_argument("--prepare_NCBI", action="store_true", help="Prepare NCBI data")
@@ -69,17 +72,21 @@ if __name__ == "__main__":
     config['name'] = args.name if args.name else config['name']
     config['exp_folder'] = args.exp_folder if args.exp_folder else config['exp_folder']
     config['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config['mask_prob_geno']
-    config['masking_method'] = args.masking_method if args.masking_method else config['masking_method']
-    assert config['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
-    if config['masking_method'] == 'random':
-        config['mask_prob_pheno'] = args.mask_prob_pheno if args.mask_prob_pheno else config['mask_prob_pheno']
-        config['num_known_ab'] = None
-    elif config['masking_method'] == 'num_known':
-        config['num_known_ab'] = args.num_known_ab if args.num_known_ab else config['num_known_ab']
-        config['mask_prob_pheno'] = None
-    elif config['masking_method'] == 'keep_one_class':
-        config['num_known_ab'] = None
-        config['mask_prob_pheno'] = None
+    assert sum([
+        (args.mask_prob_pheno is not None), (args.num_known_ab is not None), (args.num_known_classes is not None)
+    ]) <= 1, "Choose only one masking method."
+    if args.mask_prob_pheno:
+        config['masking_method'] = 'random'
+        config['mask_prob_pheno'] = args.mask_prob_pheno
+        config['num_known_ab'], config['num_known_classes'] = None, None
+    elif args.num_known_ab:
+        config['masking_method'] = 'num_known_ab'
+        config['num_known_ab'] = args.num_known_ab
+        config['mask_prob_pheno'], config['num_known_classes'] = None, None
+    elif args.num_known_classes:
+        config['masking_method'] = 'num_known_classes'
+        config['num_known_classes'] = args.num_known_classes
+        config['mask_prob_pheno'], config['num_known_ab'] = None, None
     config['always_mask_replace'] = args.always_mask_replace if args.always_mask_replace else config['always_mask_replace']
     config['num_layers'] = args.num_layers if args.num_layers else config['num_layers']
     config['num_heads'] = args.num_heads if args.num_heads else config['num_heads']
@@ -87,10 +94,19 @@ if __name__ == "__main__":
     config['ff_dim'] = args.ff_dim if args.ff_dim else config['ff_dim']
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
     config['epochs'] = args.epochs if args.epochs else config['epochs']
-    config['lr'] = args.lr if args.lr else config['lr']
+    if args.loss_fn:
+        if not args.loss_fn in ['focal', 'bce']:
+            raise NotImplementedError("Invalid loss function, choose from ['focal', 'bce']")
+        config['loss_fn'] = args.loss_fn
     if args.wl_strength:
         assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
+        assert config['loss_fn'] == 'bce', 'Weighted loss strength only available for BCE loss function. Use parameter arguments for focal.'
         config['wl_strength'] = args.wl_strength
+    if args.alpha or args.gamma:
+        assert config['loss_fn'] == 'focal', 'Alpha and gamma parameters only available for focal loss function. Use weighted loss strength for BCE.'
+        config['alpha'] = args.alpha if args.alpha else config['alpha']
+        config['gamma'] = args.gamma if args.gamma else config['gamma']
+    config['lr'] = args.lr if args.lr else config['lr']
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['data']['TESSy']['prepare_data'] = args.prepare_TESSy if args.prepare_TESSy else config['data']['TESSy']['prepare_data']
     config['data']['NCBI']['prepare_data'] = args.prepare_NCBI if args.prepare_NCBI else config['data']['NCBI']['prepare_data']
@@ -125,10 +141,7 @@ if __name__ == "__main__":
         print(f"Loading preprocessed TESSy data from {data_dict['TESSy']['load_path']}...")
         ds_TESSy = pd.read_pickle(os.path.join(BASE_DIR, data_dict['TESSy']['load_path']))
     ds_pheno = ds_TESSy.copy()
-    
-    # ds_pheno = ds_pheno.sample(frac=1, random_state=config['random_state']).reset_index(drop=True)
-    # ds_pheno = ds_pheno.iloc[:int(0.5*len(ds_pheno))].reset_index(drop=True)
-    
+        
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_pheno['ab_classes'] = ds_pheno['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
     
@@ -190,6 +203,7 @@ if __name__ == "__main__":
         masking_method=config['masking_method'],
         mask_prob_pheno=config['mask_prob_pheno'],
         num_known_ab=config['num_known_ab'],
+        num_known_classes=config['num_known_classes'],
         random_state=config['random_state']
     )
     ds_pt_val = MMPretrainDataset(
@@ -204,6 +218,7 @@ if __name__ == "__main__":
         masking_method=config['masking_method'],
         mask_prob_pheno=config['mask_prob_pheno'],
         num_known_ab=config['num_known_ab'],
+        num_known_classes=config['num_known_classes'],
         random_state=config['random_state']
     )
     bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx=pad_idx).to(device)

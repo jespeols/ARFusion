@@ -161,7 +161,7 @@ class BERT(nn.Module):
         self.token_prediction_layer = nn.Linear(self.emb_dim, self.vocab_size) # MLM task
         
         self.hidden_dim = config['hidden_dim'] # for the classification layer
-        self.classification_layer = [AbPredictor(self.emb_dim, self.hidden_dim).to(device) for _ in range(num_ab)] 
+        self.classification_layer = nn.ModuleList([AbPredictor(self.emb_dim, self.hidden_dim) for _ in range(num_ab)])
         
     def forward(self, input_tensor: torch.Tensor, token_type_tensor: torch.Tensor, attn_mask:torch.Tensor): 
         embedded = self.embedding(input_tensor, token_type_tensor)
@@ -176,28 +176,6 @@ class BERT(nn.Module):
             return resistance_predictions, token_predictions
         else:
             return resistance_predictions
-        
-    def get_state_dict(self):
-        return {
-            'model': self.state_dict(),
-            'ab_predictors': [net.state_dict() for net in self.classification_layer]
-        }
-    
-    def set_state_dict(self, state_dict):
-        self.load_state_dict(state_dict['model'])
-        for i, net in enumerate(self.classification_layer):
-            net.load_state_dict(state_dict['ab_predictors'][i])
-        self.is_pretrained = True
-    
-    def train_mode(self):
-        self.train()
-        for net in self.classification_layer:
-            net.train()
-    
-    def eval_mode(self):
-        self.eval()
-        for net in self.classification_layer:
-            net.eval()
 
 
 class AbPredictor(nn.Module): # predicts resistance or susceptibility for an antibiotic

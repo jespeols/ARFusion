@@ -42,6 +42,56 @@ def get_multimodal_split_indices(sizes: list[int], val_share, random_state:int=4
         val_indices.append(indices[train_size:])
     
     return train_indices, val_indices
+
+
+############################ Loss functions ############################
+
+from torch.nn import functional as F
+
+class WeightedBCEWithLogitsLoss(torch.nn.Module):
+    def __init__(self, alpha:float, reduction='mean'):
+        super(WeightedBCEWithLogitsLoss, self).__init__()
+        if not 0 <= alpha <= 1:
+            raise ValueError("alpha must be between 0 and 1")
+        self.alpha = alpha
+        self.reduction = reduction
+
+    def forward(self, pred, target):
+        loss = F.binary_cross_entropy_with_logits(pred, target, reduction='none')
+        if self.alpha >= 0:
+            alpha_t = self.alpha * target + (1 - self.alpha) * (1 - target)
+            loss = alpha_t * loss
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss
+
+
+class BinaryFocalWithLogitsLoss(torch.nn.Module):
+    def __init__(self, alpha:float, gamma:float, reduction='mean'):
+        super(BinaryFocalWithLogitsLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+        
+        
+    def forward(self, input, target):
+        BCE_loss = F.binary_cross_entropy_with_logits(input, target, reduction='none')
+        pt = torch.exp(-BCE_loss)
+        loss = BCE_loss * (1-pt)**self.gamma
+        
+        if self.alpha >= 0:
+            alpha_t = self.alpha * target + (1-self.alpha) * (1-target)
+            loss = alpha_t * loss
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss       
+
     
 ############################# Data processing #############################
 

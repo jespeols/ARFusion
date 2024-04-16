@@ -66,16 +66,19 @@ if __name__ == "__main__":
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--ds_path", type=str)
     argparser.add_argument("--no_pt", action="store_true", help="Enable naive model")
-    argparser.add_argument("--wl_strength", type='string', options=['mild', 'strong'], help="Strength of weighted loss functions")
     argparser.add_argument("--mask_prob_geno", type=float)
     argparser.add_argument("--no_geno_masking", action="store_true", help="Disable geno masking")
-    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
+    argparser.add_argument("--num_known_ab", type=int)
+    argparser.add_argument("--num_known_classes", type=int)
     argparser.add_argument("--filter_genes_by_ab_class", type=list_of_strings, help="Filter genes by antibiotic classes provided in list")
     argparser.add_argument("--min_num_ab", type=int)
-    argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
+    argparser.add_argument("--loss_fn", type=str, help="Loss function to use")
+    argparser.add_argument("--wl_strength", type=str, help="Strength of weighted CE loss functions for antibiotics ('mild' or 'strong')")
+    argparser.add_argument("--alpha", type=float, help="Alpha parameter for focal loss")
+    argparser.add_argument("--gamma", type=float, help="Gamma parameter for focal loss")
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--train_shares", type=list_of_floats, help="List of shares for training sizes to indices_list over")
@@ -116,24 +119,37 @@ if __name__ == "__main__":
         config_ft['no_pt'] = True
     config_ft['mask_prob_geno'] = args.mask_prob_geno if args.mask_prob_geno else config_ft['mask_prob_geno']
     config_ft['no_geno_masking'] = args.no_geno_masking if args.no_geno_masking else config_ft['no_geno_masking']
-    config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
-    assert config_ft['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
-    if config_ft['masking_method'] == 'random':
-        config_ft['mask_prob_pheno'] = args.mask_prob_pheno if args.mask_prob_pheno else config_ft['mask_prob_pheno']
-        config_ft['num_known_ab'] = None
-    elif config_ft['masking_method'] == 'num_known':
-        config_ft['num_known_ab'] = args.num_known_ab if args.num_known_ab else config_ft['num_known_ab']
-        config_ft['mask_prob_pheno'] = None
-    elif config_ft['masking_method'] == 'keep_one_class':
-        config_ft['num_known_ab'] = None
-        config_ft['mask_prob_pheno'] = None
+    assert sum([
+        (args.mask_prob_pheno is not None), (args.num_known_ab is not None), (args.num_known_classes is not None)
+    ]) <= 1, "Choose only one masking method."
+    if args.mask_prob_pheno:
+        config_ft['masking_method'] = 'random'
+        config_ft['mask_prob_pheno'] = args.mask_prob_pheno
+        config_ft['num_known_ab'], config_ft['num_known_classes'] = None, None
+    elif args.num_known_ab:
+        config_ft['masking_method'] = 'num_known_ab'
+        config_ft['num_known_ab'] = args.num_known_ab
+        config_ft['mask_prob_pheno'], config_ft['num_known_classes'] = None, None
+    elif args.num_known_classes:
+        config_ft['masking_method'] = 'num_known_classes'
+        config_ft['num_known_classes'] = args.num_known_classes
+        config_ft['mask_prob_pheno'], config_ft['num_known_ab'] = None, None
     config_ft['batch_size'] = args.batch_size if args.batch_size else config_ft['batch_size']
     config_ft['epochs'] = args.epochs if args.epochs else config_ft['epochs']
-    config_ft['lr'] = args.lr if args.lr else config['lr']
     config_ft['random_state'] = args.random_state if args.random_state else config_ft['random_state']
+    if args.loss_fn:
+        if not args.loss_fn in ['focal', 'bce']:
+            raise NotImplementedError("Invalid loss function, choose from ['focal', 'bce']")
+        config_ft['loss_fn'] = args.loss_fn
     if args.wl_strength:
         assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
-        config['wl_strength'] = args.wl_strength    
+        assert config_ft['loss_fn'] == 'bce', 'Weighted loss strength only available for BCE loss function. Use parameter arguments for focal.'
+        config_ft['wl_strength'] = args.wl_strength   
+    if args.alpha or args.gamma:
+        assert config_ft['loss_fn'] == 'focal', 'Alpha and gamma parameters only available for focal loss function. Use weighted loss strength for BCE.'
+        config_ft['alpha'] = args.alpha if args.alpha else config_ft['alpha']
+        config_ft['gamma'] = args.gamma if args.gamma else config_ft['gamma']
+    config_ft['lr'] = args.lr if args.lr else config_ft['lr']
     train_shares = args.train_shares if args.train_shares else [0.8]
     if not args.no_cv:
         config_ft['num_folds'] = args.num_folds if args.num_folds else config_ft['num_folds']
@@ -240,6 +256,7 @@ if __name__ == "__main__":
                 mask_prob_geno=config_ft['mask_prob_geno'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
+                num_known_classes=config_ft['num_known_classes'],
                 always_mask_replace=config_ft['always_mask_replace'],
                 filter_genes_by_ab_class=data_dict['NCBI']['filter_genes_by_ab_class'],
                 random_state=config_ft['random_state'],
@@ -255,14 +272,13 @@ if __name__ == "__main__":
                 mask_prob_geno=config_ft['mask_prob_geno'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
+                num_known_classes=config_ft['num_known_classes'],
                 always_mask_replace=config_ft['always_mask_replace'],
                 random_state=config_ft['random_state'],
                 no_geno_masking=config_ft['no_geno_masking']
             )
             pad_idx = vocab[pad_token]
             bert = BERT(config, vocab_size, max_seq_len, len(antibiotics), pad_idx, pheno_only=True).to(device)
-            # print(f"Randomly intitialized model:")
-            # print(bert.classification_layer[2].state_dict())
             tuner = MMBertFineTuner(
                 config=config,
                 model=bert,
@@ -288,6 +304,7 @@ if __name__ == "__main__":
                     "emb_dim": tuner.model.emb_dim,
                     'ff_dim': tuner.model.ff_dim,
                     "lr": tuner.lr,
+                    "loss_fn": tuner.loss_fn,
                     "weight_decay": tuner.weight_decay,
                     "masking_method": tuner.masking_method, 
                     "mask_prob_geno": tuner.mask_prob_geno,
@@ -307,8 +324,6 @@ if __name__ == "__main__":
                 wandb_run = init_wandb(config_ft['project_name'], config_ft['name'], wandb_config)
                 
             ft_results = tuner()
-            # print("Trained model:")
-            # print(bert.classification_layer[2].state_dict())
             log_dict = {
                 "fold": j+1,
                 "Losses/train_loss": ft_results['train_loss'],
@@ -336,7 +351,7 @@ if __name__ == "__main__":
                     best_val_loss = ft_results['loss']
                     best_fold = j
                     if args.save_best_model:
-                        best_model_state = tuner.model.get_state_dict()
+                        best_model_state = tuner.model.state_dict()
         if num_folds:
             print("All folds completed!")
         if args.save_best_model:
