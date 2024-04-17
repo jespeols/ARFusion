@@ -848,7 +848,7 @@ class MMBertFineTuner():
             else:
                 self.alphas = [0.5]*self.num_ab         ## equal class weights for all antibiotics
             self.ab_criterions = [WeightedBCEWithLogitsLoss(alpha=alpha).to(device) for alpha in self.alphas]
-        elif self.loss_fn == 'focal':
+        elif self.loss_fn == 'focal':       ## TODO: Add individual parameter values for each antibiotic
             self.ab_criterions = [BinaryFocalWithLogitsLoss(self.alpha, self.gamma).to(device) for _ in range(self.num_ab)]
         else:
             raise NotImplementedError("Only 'bce' and 'focal' functions are supported")
@@ -967,7 +967,7 @@ class MMBertFineTuner():
             if not self.CV_mode:
                 self._report_epoch_results()
             early_stop = self.early_stopping()
-            print(f"Early stopping counter: {self.early_stop_counter}/{self.patience}")
+            print(f"Early stopping counter: {self.early_stopping_counter}/{self.patience}")
             print("="*self._splitter_size)
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             if early_stop:

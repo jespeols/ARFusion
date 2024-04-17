@@ -273,7 +273,7 @@ if __name__ == "__main__":
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
                 num_known_classes=config_ft['num_known_classes'],
-                always_mask_replace=config_ft['always_mask_replace'],
+                always_mask_replace=True,
                 random_state=config_ft['random_state'],
                 no_geno_masking=config_ft['no_geno_masking']
             )
