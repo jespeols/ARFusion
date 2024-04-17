@@ -197,7 +197,7 @@ class MMBertPreTrainer(nn.Module):
             print(f"Early stopping counter: {self.early_stopping_counter}/{self.patience}")
             print("="*self._splitter_size)
             num_days = (time.time() - start_time) // (24*60*60)
-            print(f"Elapsed time: {num_days:02d}-{time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
+            print(f"Elapsed time: {int(num_days):02d}-{time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
                 if self.do_eval:
