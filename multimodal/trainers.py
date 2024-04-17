@@ -50,6 +50,7 @@ class MMBertPreTrainer(nn.Module):
         assert round(self.val_size / (self.train_size + self.val_size), 2) == config["val_share"], "Validation set size does not match intended val_share"
         self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
+        self.val_batch_size = 8*self.batch_size
         self.num_batches = np.ceil(self.train_size / self.batch_size).astype(int)
         self.vocab = self.train_set.vocab
          
@@ -155,7 +156,7 @@ class MMBertPreTrainer(nn.Module):
         print("Preparing validation set...")
         self.val_set.prepare_dataset()
         self.val_set.shuffle() # to avoid batches of only genotypes or only phenotypes
-        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        self.val_loader = DataLoader(self.val_set, batch_size=self.val_batch_size, shuffle=False)
         print("Initializing training...")
         
         start_time = time.time()
@@ -574,7 +575,7 @@ class MMBertPreTrainer(nn.Module):
         indices = ab_mask.any(dim=1).nonzero().squeeze(-1).tolist() # list of isolates where phenotypes are present
         for idx in indices: 
             iso_ab_mask = ab_mask[idx]
-            df_idx = batch_idx * self.batch_size + idx # index of the isolate in the combined dataset
+            df_idx = batch_idx * self.val_batch_size + idx # index of the isolate in the combined dataset
             
             # counts
             num_masked_tot = iso_ab_mask.sum().item()
@@ -604,7 +605,7 @@ class MMBertPreTrainer(nn.Module):
         indices = token_mask.any(dim=1).nonzero().squeeze(-1).tolist() # list of isolates where genotypes are present
         for idx in indices:
             iso_token_mask = token_mask[idx]    
-            df_idx = batch_idx * self.batch_size + idx # index of the isolate in the combined dataset
+            df_idx = batch_idx * self.val_batch_size + idx # index of the isolate in the combined dataset
             
             num_masked = iso_token_mask.sum().item()
             pred_tokens = token_pred[idx, iso_token_mask].argmax(dim=-1)
@@ -822,6 +823,7 @@ class MMBertFineTuner():
         self.dataset_size = self.train_size + self.val_size
         self.val_share, self.train_share = self.val_size / self.dataset_size, self.train_size / self.dataset_size
         self.batch_size = config_ft["batch_size"]
+        self.val_batch_size = 8*self.batch_size
         self.num_batches = round(self.train_size / self.batch_size)
         self.vocab = self.train_set.vocab
         self.ab_to_idx = self.train_set.ab_to_idx
@@ -840,16 +842,16 @@ class MMBertFineTuner():
         self.loss_fn = config_ft["loss_fn"]
         self.alpha, self.gamma = config_ft["alpha"], config_ft["gamma"]  ## hyperparameters for focal loss
         self.wl_strength = config_ft["wl_strength"] 
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.alphas = [v for v in self.ab_weights.values()]
+        else:   
+            self.alphas = [0.5]*self.num_ab   ## equal class weights for all antibiotics
         if self.loss_fn == 'bce':
-            if self.wl_strength:
-                self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
-                self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
-                self.alphas = [v for v in self.ab_weights.values()]
-            else:
-                self.alphas = [0.5]*self.num_ab         ## equal class weights for all antibiotics
             self.ab_criterions = [WeightedBCEWithLogitsLoss(alpha=alpha).to(device) for alpha in self.alphas]
         elif self.loss_fn == 'focal':       ## TODO: Add individual parameter values for each antibiotic
-            self.ab_criterions = [BinaryFocalWithLogitsLoss(self.alpha, self.gamma).to(device) for _ in range(self.num_ab)]
+            self.ab_criterions = [BinaryFocalWithLogitsLoss(self.alpha, self.gamma).to(device) for self.alpha in self.alphas]
         else:
             raise NotImplementedError("Only 'bce' and 'focal' functions are supported")
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -935,7 +937,7 @@ class MMBertFineTuner():
             self.wandb_run = self._init_wandb()
         print("Initializing training...")
         self.val_set.prepare_dataset()
-        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        self.val_loader = DataLoader(self.val_set, batch_size=self.val_batch_size, shuffle=False)
         
         start_time = time.time()
         self.best_val_loss = float('inf') 
@@ -1238,7 +1240,7 @@ class MMBertFineTuner():
             iso_ab_mask = ab_mask[i]
             iso_token_types = token_types[i][target_ids[i] != -1] # token types masked tokens
             iso_target_ids = target_ids[i][target_ids[i] != -1] # token ids of the antibiotics and genes that are masked
-            df_idx = batch_idx * self.batch_size + i # index of the isolate in the combined dataset
+            df_idx = batch_idx * self.val_batch_size + i # index of the isolate in the combined dataset
             
             # counts
             num_masked_ab = iso_ab_mask.sum().item()

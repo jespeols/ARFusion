@@ -143,7 +143,6 @@ if __name__ == "__main__":
         config_ft['loss_fn'] = args.loss_fn
     if args.wl_strength:
         assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
-        assert config_ft['loss_fn'] == 'bce', 'Weighted loss strength only available for BCE loss function. Use parameter arguments for focal.'
         config_ft['wl_strength'] = args.wl_strength   
     if args.alpha or args.gamma:
         assert config_ft['loss_fn'] == 'focal', 'Alpha and gamma parameters only available for focal loss function. Use weighted loss strength for BCE.'
@@ -273,7 +272,7 @@ if __name__ == "__main__":
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
                 num_known_classes=config_ft['num_known_classes'],
-                always_mask_replace=True,
+                always_mask_replace=config_ft['always_mask_replace'],
                 random_state=config_ft['random_state'],
                 no_geno_masking=config_ft['no_geno_masking']
             )
