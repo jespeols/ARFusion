@@ -851,7 +851,7 @@ class MMBertFineTuner():
         if self.loss_fn == 'bce':
             self.ab_criterions = [WeightedBCEWithLogitsLoss(alpha=alpha).to(device) for alpha in self.alphas]
         elif self.loss_fn == 'focal':       ## TODO: Add individual parameter values for each antibiotic
-            self.ab_criterions = [BinaryFocalWithLogitsLoss(self.alpha, self.gamma).to(device) for self.alpha in self.alphas]
+            self.ab_criterions = [BinaryFocalWithLogitsLoss(alpha, self.gamma).to(device) for alpha in self.alphas]
         else:
             raise NotImplementedError("Only 'bce' and 'focal' functions are supported")
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
