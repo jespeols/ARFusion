@@ -289,6 +289,7 @@ if __name__ == "__main__":
             )
             if not config_ft['no_pt']:
                 tuner.load_model(Path(BASE_DIR / 'results' / 'MM' / config_ft['model_path']))
+                tuner.model.is_pretrained = True
             if j == 0:
                 tuner.print_model_summary()
                 tuner.print_trainer_summary()

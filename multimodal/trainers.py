@@ -838,6 +838,7 @@ class MMBertFineTuner():
         self.mask_prob_geno = self.train_set.mask_prob_geno
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
+        self.num_known_classes = self.train_set.num_known_classes
         
         self.loss_fn = config_ft["loss_fn"]
         self.alpha, self.gamma = config_ft["alpha"], config_ft["gamma"]  ## hyperparameters for focal loss
@@ -918,10 +919,12 @@ class MMBertFineTuner():
         else:
             print(f"No genotype masking")
         print(f"Masking method: {self.masking_method}")
-        if self.mask_prob_pheno:
+        if self.masking_method == 'random':
             print(f"Mask probability for prediction task (phenotype): {self.mask_prob_pheno:.0%}")
-        if self.num_known_ab:
+        elif self.masking_method == 'num_known_ab':
             print(f"Number of known antibiotics: {self.num_known_ab}")
+        elif self.masking_method == 'num_known_classes':
+            print(f"Number of known classes: {self.num_known_classes}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
         print(f"Loss function: {'BCE' if self.loss_fn == 'bce' else 'Focal'}")
