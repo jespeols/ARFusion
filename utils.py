@@ -233,8 +233,7 @@ def plot_metric_by_ab(
     df_CV_ab,
     metric,
     use_std = True,
-    sort_by_desc: str = 'metric',
-    sort_by_desc_S_share = False,
+    sort_by_desc: str = 'S_share',
     use_legend = True,
     legend_labels = None,
     legend_loc = None,
@@ -373,7 +372,8 @@ def load_and_create_abs_and_rel_diff_dfs(
     train_params: str,
     train_share: str = None,
     exp_folder: str = None,
-    model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'], 
+    model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
+    ref_model = 'No PT',  ## default could be model_names[0]
 ):
     results_dict_list = []
     if train_share:
@@ -396,12 +396,12 @@ def load_and_create_abs_and_rel_diff_dfs(
     df_CV_list = [get_average_and_std_df(results_dict) for results_dict in results_dict_list]
     df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('metric', append=True).unstack(level=0)
     df_CV = df_CV.reindex(columns=model_names, level=1)
-    df_diff = df_CV.drop(('avg', 'No PT'), axis=1).drop(('std', 'No PT'), axis=1)
+    df_diff = df_CV.drop(('avg', ref_model), axis=1).drop(('std', ref_model), axis=1)
     for i in range(df_diff.shape[0]):
-        df_diff.iloc[i, :].loc['avg'] = df_diff.iloc[i, :] - df_CV.loc[:, ('avg', 'No PT')].values[i]
+        df_diff.iloc[i, :].loc['avg'] = df_diff.iloc[i, :] - df_CV.loc[:, ('avg', ref_model)].values[i]
         num_folds = 5 # sample size
         var_1 = df_diff.iloc[i, :].loc['std'].values**2
-        var_2 = df_CV.loc[:, ('std', 'No PT')].values[i]**2
+        var_2 = df_CV.loc[:, ('std', ref_model)].values[i]**2
         df_diff.iloc[i, :].loc['std'] = np.sqrt((var_1 + var_2)/num_folds) # standard error of the difference of means
     return df_CV, df_diff
 

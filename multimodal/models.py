@@ -161,7 +161,7 @@ class BERT(nn.Module):
         self.token_prediction_layer = nn.Linear(self.emb_dim, self.vocab_size) # MLM task
         
         self.hidden_dim = config['hidden_dim'] # for the classification layer
-        self.classification_layer = nn.ModuleList([AbPredictor(self.emb_dim, self.hidden_dim) for _ in range(num_ab)])
+        self.classification_layer = [AbPredictor(self.emb_dim, self.hidden_dim) for _ in range(num_ab)]
         
     def forward(self, input_tensor: torch.Tensor, token_type_tensor: torch.Tensor, attn_mask:torch.Tensor): 
         embedded = self.embedding(input_tensor, token_type_tensor)
