@@ -6,6 +6,6 @@ data/NCBI_genotype_parsed.pkl
 ARFusion.def
 data/*.pkl
 # results
-# model_state.pt
+model_state.pt
 *vocab*.pt
 *.png
