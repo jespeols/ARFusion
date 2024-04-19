@@ -309,6 +309,8 @@ class MMFinetuneDataset(Dataset):
         if self.filter_genes_by_ab_class:
             unique_genotypes = self.ds['genotypes'].explode().unique().tolist()
             genotype_to_ab_class = get_genotype_to_ab_class(unique_genotypes)
+            unique_classes = set(genotype_to_ab_class.values())
+            assert all(f in unique_classes for f in self.filter_genes_by_ab_class), "Unknown antibiotic class"
             print(f"Filtering genes by antibiotic classes: {self.filter_genes_by_ab_class}")
             ## Feature: remove filtered genes from the genotypes ##
             # self.ds['genotypes_filtered'] = self.ds['genotypes'].apply(
