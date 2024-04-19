@@ -23,7 +23,6 @@ early_stopping_patience: 3
 loss_fn: 'bce' # 'bce' or 'focal'
 wl_strength:      # 'mild' or 'strong' (or None for no weighting)
 gamma: 2          # only for focal loss (optimizable)
-alpha: 0.5        # only for focal loss (optimizable)
 lr: 0.00005
 weight_decay: 0.01
 print_progress_every: 3000
@@ -57,7 +56,6 @@ fine_tuning:
   loss_fn: 'bce'            # 'bce' or 'focal'
   wl_strength:       # 'mild' or 'strong' (or None for no weighting)
   gamma: 2                 # only for focal loss (optimizable)
-  alpha: 0.5              # only for focal loss (optimizable)
   lr: 0.00001
   weight_decay: 0.01
   early_stopping_patience: 10

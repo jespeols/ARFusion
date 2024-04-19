@@ -68,28 +68,22 @@ class MMBertPreTrainer(nn.Module):
         
         self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_ids == -1
         self.loss_fn = config["loss_fn"]
-        self.alpha, self.gamma = config["alpha"], config["gamma"]  ## hyperparameters for focal loss
+        self.gamma = config["gamma"]  ## hyperparameters for focal loss
         self.wl_strength = config["wl_strength"]  ## positive class weight for weighted BCELoss
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.alphas = [v for v in self.ab_weights.values()]
+        else:
+            self.alphas = [0.5]*self.num_ab         ## equal class weights for all antibiotics
+            
         if self.loss_fn == 'bce':
-            if self.wl_strength:
-                self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
-                self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
-                self.alphas = [v for v in self.ab_weights.values()]
-            else:
-                self.alphas = [0.5]*self.num_ab         ## equal class weights for all antibiotics
             self.ab_criterions = [WeightedBCEWithLogitsLoss(alpha=alpha).to(device) for alpha in self.alphas]
         elif self.loss_fn == 'focal':                   ## can implement antibiotic-specific parameters
-            self.ab_criterions = [BinaryFocalWithLogitsLoss(self.alpha, self.gamma).to(device) for _ in range(self.num_ab)]
+            self.ab_criterions = [BinaryFocalWithLogitsLoss(alpha, self.gamma).to(device) for alpha in self.alphas]
         else:
             raise NotImplementedError("Only 'bce' and 'focal' functions are supported")
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        # self.optimizer = torch.optim.AdamW(
-            # [
-                # {'params': self.model.parameters()},
-                # {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
-            # ],
-            # lr=self.lr, weight_decay=self.weight_decay
-        # )
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
@@ -841,7 +835,7 @@ class MMBertFineTuner():
         self.num_known_classes = self.train_set.num_known_classes
         
         self.loss_fn = config_ft["loss_fn"]
-        self.alpha, self.gamma = config_ft["alpha"], config_ft["gamma"]  ## hyperparameters for focal loss
+        self.gamma = config_ft["gamma"]
         self.wl_strength = config_ft["wl_strength"] 
         if self.wl_strength:
             self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
@@ -849,6 +843,7 @@ class MMBertFineTuner():
             self.alphas = [v for v in self.ab_weights.values()]
         else:   
             self.alphas = [0.5]*self.num_ab   ## equal class weights for all antibiotics
+            
         if self.loss_fn == 'bce':
             self.ab_criterions = [WeightedBCEWithLogitsLoss(alpha=alpha).to(device) for alpha in self.alphas]
         elif self.loss_fn == 'focal':       ## TODO: Add individual parameter values for each antibiotic
@@ -856,13 +851,6 @@ class MMBertFineTuner():
         else:
             raise NotImplementedError("Only 'bce' and 'focal' functions are supported")
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        # self.optimizer = torch.optim.AdamW(
-        #     [
-        #         {'params': self.model.parameters()},
-        #         {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
-        #     ],
-        #     lr=self.lr, weight_decay=self.weight_decay
-        # )
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
@@ -929,7 +917,7 @@ class MMBertFineTuner():
         print(f"Early stopping patience: {self.patience}")
         print(f"Loss function: {'BCE' if self.loss_fn == 'bce' else 'Focal'}")
         if self.loss_fn == 'focal':
-            print(f"Alpha: {self.alpha} | Gamma: {self.gamma}")
+            print(f"Gamma: {self.gamma}")
         print(f"Learning rate: {self.lr}")
         print(f"Weight decay: {self.weight_decay}")
         print("="*self._splitter_size)

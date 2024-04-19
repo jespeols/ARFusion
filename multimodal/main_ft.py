@@ -77,7 +77,6 @@ if __name__ == "__main__":
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--loss_fn", type=str, help="Loss function to use")
     argparser.add_argument("--wl_strength", type=str, help="Strength of weighted CE loss functions for antibiotics ('mild' or 'strong')")
-    argparser.add_argument("--alpha", type=float, help="Alpha parameter for focal loss")
     argparser.add_argument("--gamma", type=float, help="Gamma parameter for focal loss")
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--random_state", type=int)
@@ -146,7 +145,6 @@ if __name__ == "__main__":
         config_ft['wl_strength'] = args.wl_strength   
     if args.alpha or args.gamma:
         assert config_ft['loss_fn'] == 'focal', 'Alpha and gamma parameters only available for focal loss function. Use weighted loss strength for BCE.'
-        config_ft['alpha'] = args.alpha if args.alpha else config_ft['alpha']
         config_ft['gamma'] = args.gamma if args.gamma else config_ft['gamma']
     config_ft['lr'] = args.lr if args.lr else config_ft['lr']
     train_shares = args.train_shares if args.train_shares else [0.8]
