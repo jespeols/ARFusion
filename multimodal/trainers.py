@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 from itertools import chain
 from datetime import datetime
+from sklearn.metrics import roc_curve, auc
 
 from utils import WeightedBCEWithLogitsLoss, BinaryFocalWithLogitsLoss
 
@@ -409,7 +410,7 @@ class MMBertPreTrainer(nn.Module):
                 
                 pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
-                        
+                
                 ###### Phenotype loss ######
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
                 if ab_mask.any(): # if there are phenotypes in the batch
@@ -978,6 +979,7 @@ class MMBertFineTuner():
                         "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
                         "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
                         "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
+                        "Class_metrics/final_val_auc_score": self.val_auc_scores[self.best_epoch],
                         "best_epoch": self.best_epoch+1
                     })
                 self.model.load_state_dict(self.best_model_state) 
@@ -993,6 +995,7 @@ class MMBertFineTuner():
                     "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
                     "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
                     "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
+                    "Class_metrics/final_val_auc_score": self.val_auc_scores[self.best_epoch],
                     "best_epoch": self.current_epoch+1
                 })
         if self.save_model_:
@@ -1019,6 +1022,8 @@ class MMBertFineTuner():
             "spec": self.val_specificities[self.best_epoch],
             "prec": self.val_precisions[self.best_epoch],
             "F1": self.val_F1_scores[self.best_epoch],
+            "auc_score": self.val_auc_scores[self.best_epoch],
+            "roc": self.val_roc_results[self.best_epoch],
             "iso_stats": self.val_iso_stats[self.best_epoch],
             "ab_stats": self.val_ab_stats[self.best_epoch]
         }
@@ -1089,13 +1094,18 @@ class MMBertFineTuner():
             ab_num_preds = np.zeros_like(ab_num) # tracks the number of predictions for each antibiotic & resistance
             ab_num_correct = np.zeros_like(ab_num) # tracks the number of correct predictions for each antibiotic & resistance
             ## General tracking ##
+            pred_sigmoids = torch.tensor([]).to(device)
+            target_resistances = torch.tensor([]).to(device)
             loss = 0
             for i, batch in enumerate(loader):                  
                 input, target_res, target_ids, token_types, attn_mask = batch
-                       
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
+                
+                ###### ROC ######
+                pred_sigmoids = torch.cat((pred_sigmoids, torch.sigmoid(pred_logits)), dim=0) # (+batch_size, num_ab)
+                target_resistances = torch.cat((target_resistances, target_res), dim=0)
+                
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
-                        
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
                 iso_stats = self._update_iso_stats(i, pred_res, target_res, target_ids, ab_mask, token_types, iso_stats) 
                 
@@ -1120,7 +1130,9 @@ class MMBertFineTuner():
                 loss += sum(losses) / len(losses) # average loss over antibiotics
                     
             avg_loss = loss.item() / len(loader)
-        
+
+            roc_results = self._calculate_roc_results(pred_sigmoids, target_resistances)
+            
             ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
             iso_stats = self._calculate_iso_stats(iso_stats)
         
@@ -1141,6 +1153,8 @@ class MMBertFineTuner():
                 "F1": F1_score,
                 "ab_stats": ab_stats,
                 "iso_stats": iso_stats,
+                "roc_results": roc_results,
+                "auc_score": roc_results["auc_score"]
             }
         return results
             
@@ -1156,6 +1170,8 @@ class MMBertFineTuner():
         self.val_F1_scores = []
         self.val_ab_stats = []
         self.val_iso_stats = []
+        self.val_roc_results = []
+        self.val_auc_scores = []
         
         
     def _update_val_lists(self, results: dict):
@@ -1168,6 +1184,8 @@ class MMBertFineTuner():
         self.val_F1_scores.append(results["F1"])
         self.val_ab_stats.append(results["ab_stats"])
         self.val_iso_stats.append(results["iso_stats"])
+        self.val_roc_results.append(results["roc_results"])
+        self.val_auc_scores.append(results["auc_score"])
     
     
     def _init_eval_stats(self, ds_obj):
@@ -1223,6 +1241,19 @@ class MMBertFineTuner():
         num_pred_S = (pred_res == 0).sum().item()
         num_pred_R = (pred_res == 1).sum().item()
         return [num_pred_S, num_pred_R]
+    
+    
+    def _get_roc_results(self, pred_sigmoids: torch.Tensor, target_resistances: torch.Tensor, drop_intermediate: bool = False):
+        pred_sigmoids_flat = pred_sigmoids[target_resistances >= 0].cpu().numpy()
+        target_resistances_flat = target_resistances[target_resistances >= 0].cpu().numpy()
+        assert pred_sigmoids_flat.shape == target_resistances_flat.shape, "Shapes do not match"
+        assert len(pred_sigmoids_flat.shape) == 1, "Only 1D arrays are supported"
+        
+        fpr, tpr, thresholds = roc_curve(target_resistances_flat, pred_sigmoids_flat, drop_intermediate=drop_intermediate)
+        auc_score = auc(fpr, tpr)
+        roc_results = {"fpr": fpr, "tpr": tpr, "thresholds": thresholds, "auc_score": auc_score}
+        
+        return roc_results
     
     
     def _update_iso_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, target_ids: torch.Tensor,
@@ -1325,6 +1356,7 @@ class MMBertFineTuner():
         self.wandb_run.define_metric("Class_metrics/val_sens", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Class_metrics/val_spec", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Class_metrics/val_F1", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Class_metrics/val_auc_score", summary="max", step_metric="epoch")
         
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
@@ -1332,6 +1364,7 @@ class MMBertFineTuner():
         self.wandb_run.define_metric("Class_metrics/final_val_sens")
         self.wandb_run.define_metric("Class_metrics/final_val_spec")
         self.wandb_run.define_metric("Class_metrics/final_val_F1")
+        self.wandb_run.define_metric("Class_metrics/final_val_auc_score")
         
         self.wandb_run.define_metric("best_epoch", hidden=True)
 
@@ -1346,6 +1379,7 @@ class MMBertFineTuner():
             "Class_metrics/val_sens": self.val_sensitivities[-1],
             "Class_metrics/val_spec": self.val_specificities[-1],
             "Class_metrics/val_F1": self.val_F1_scores[-1],
+            "Class_metrics/val_auc_score": self.val_auc_scores[-1],
             "Accuracies/val_acc": self.val_accs[-1],
             "Accuracies/val_iso_acc": self.val_iso_accs[-1],
         }
