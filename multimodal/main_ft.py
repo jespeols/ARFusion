@@ -143,7 +143,7 @@ if __name__ == "__main__":
     if args.wl_strength:
         assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
         config_ft['wl_strength'] = args.wl_strength   
-    if args.alpha or args.gamma:
+    if args.gamma:
         assert config_ft['loss_fn'] == 'focal', 'Alpha and gamma parameters only available for focal loss function. Use weighted loss strength for BCE.'
         config_ft['gamma'] = args.gamma if args.gamma else config_ft['gamma']
     config_ft['lr'] = args.lr if args.lr else config_ft['lr']
@@ -212,6 +212,8 @@ if __name__ == "__main__":
         sensitivities = []
         specificities = []
         F1_scores = []
+        auc_scores = []
+        roc_results = []
         iso_stats = []
         ab_stats = []
         
@@ -330,7 +332,8 @@ if __name__ == "__main__":
                 "Accuracies/val_iso_acc": ft_results['iso_acc'],
                 "Class_metrics/val_sens": ft_results['sens'],
                 "Class_metrics/val_spec": ft_results['spec'],
-                "Class_metrics/val_F1": ft_results['F1']
+                "Class_metrics/val_F1": ft_results['F1'],
+                "Class_metrics/val_auc_score": ft_results['auc_score'],
             }
             wandb_run.log(log_dict)
             
@@ -341,6 +344,8 @@ if __name__ == "__main__":
             sensitivities.append(ft_results['sens'])
             specificities.append(ft_results['spec'])
             F1_scores.append(ft_results['F1'])
+            auc_scores.append(ft_results['auc_score'])
+            roc_results.append(ft_results['roc'])
             iso_stats.append(ft_results['iso_stats'])
             ab_stats.append(ft_results['ab_stats'])
             
@@ -365,6 +370,8 @@ if __name__ == "__main__":
             'sensitivities': sensitivities,
             'specificities': specificities,
             'F1_scores': F1_scores,
+            "auc_scores": auc_scores,
+            "roc_results": roc_results,
             'iso_stats': iso_stats,
             'ab_stats': ab_stats
         }  
@@ -375,7 +382,8 @@ if __name__ == "__main__":
             "Accuracies/avg_val_iso_acc": df_CV.loc["Isolate accuracy", 'avg'],
             "Class_metrics/avg_val_sens": df_CV.loc["Sensitivity", 'avg'],
             "Class_metrics/avg_val_spec": df_CV.loc["Specificity", 'avg'],
-            "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg']
+            "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg'],
+            "Class_metrics/avg_val_auc_score": df_CV.loc["AUC", 'avg'],
         }
         wandb_run.log(log_dict)
         wandb_run.finish()

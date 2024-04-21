@@ -1131,7 +1131,7 @@ class MMBertFineTuner():
                     
             avg_loss = loss.item() / len(loader)
 
-            roc_results = self._calculate_roc_results(pred_sigmoids, target_resistances)
+            roc_results = self._get_roc_results(pred_sigmoids, target_resistances)
             
             ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
             iso_stats = self._calculate_iso_stats(iso_stats)

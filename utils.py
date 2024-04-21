@@ -167,6 +167,7 @@ def get_average_and_std_df(results_dict, with_metric_as_index=False):
     sensitivities = results_dict['sensitivities']
     specificities = results_dict['specificities']
     f1_scores = results_dict['F1_scores']
+    auc_scores = results_dict['auc_scores']
     
     losses_avg = np.mean(losses)
     losses_std = np.std(losses)
@@ -180,11 +181,13 @@ def get_average_and_std_df(results_dict, with_metric_as_index=False):
     spec_std = np.std(specificities)
     f1_avg = np.mean(f1_scores)
     f1_std = np.std(f1_scores)
+    auc_avg = np.mean(auc_scores)
+    auc_std = np.std(auc_scores)
     
     df_CV = pd.DataFrame(data={
-        "metric": ["Loss", 'Accuracy', 'Isolate accuracy', 'Sensitivity', 'Specificity', 'F1'], 
-        "avg": [losses_avg, accs_avg, iso_accs_avg, sens_avg, spec_avg, f1_avg], 
-        "std": [losses_std, accs_std, iso_accs_std, sens_std, spec_std, f1_std]
+        "metric": ["Loss", 'Accuracy', 'Isolate accuracy', 'Sensitivity', 'Specificity', 'F1', 'AUC'], 
+        "avg": [losses_avg, accs_avg, iso_accs_avg, sens_avg, spec_avg, f1_avg, auc_avg], 
+        "std": [losses_std, accs_std, iso_accs_std, sens_std, spec_std, f1_std, auc_std]
     })
     if with_metric_as_index:
         df_CV.set_index("metric", inplace=True)
