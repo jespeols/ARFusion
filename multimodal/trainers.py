@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 from itertools import chain
 from datetime import datetime
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, roc_auc_score
 
 from utils import WeightedBCEWithLogitsLoss, BinaryFocalWithLogitsLoss
 
@@ -1130,10 +1130,12 @@ class MMBertFineTuner():
                 loss += sum(losses) / len(losses) # average loss over antibiotics
                     
             avg_loss = loss.item() / len(loader)
-
+            pred_sigmoids = pred_sigmoids.cpu().numpy()
+            target_resistances = target_resistances.cpu().numpy()
             roc_results = self._get_roc_results(pred_sigmoids, target_resistances)
             
-            ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
+            ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct, 
+                                                  pred_sigmoids, target_resistances)
             iso_stats = self._calculate_iso_stats(iso_stats)
         
             acc = ab_stats['num_correct'].sum() / ab_stats['num_masked_tot'].sum()
@@ -1198,6 +1200,8 @@ class MMBertFineTuner():
         ab_stats['num_masked_tot'], ab_stats['num_masked_S'], ab_stats['num_masked_R'] = 0, 0, 0
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
+        ab_stats['auc_score'] = 0.0
+        ab_stats['roc_fpr'], ab_stats['roc_tpr'], ab_stats['roc_thresholds'] = None, None, None
         
         iso_stats = ds_obj.ds.copy()
         iso_stats['num_masked_ab'], iso_stats['num_masked_genes'] = 0, 0 
@@ -1209,8 +1213,24 @@ class MMBertFineTuner():
         return ab_stats, iso_stats
     
     
-    def _update_ab_eval_stats(self, ab_stats: pd.DataFrame, num, num_preds, num_correct):
+    def _update_ab_eval_stats(self, ab_stats: pd.DataFrame, num, num_preds, num_correct, 
+                              pred_sigmoids: np.ndarray, target_resistances: np.ndarray):
         for j in range(self.num_ab): 
+            target_resistances_ab, pred_sigmoids_ab = target_resistances[:, j], pred_sigmoids[:, j]
+            pred_sigmoids_ab = pred_sigmoids_ab[target_resistances_ab >= 0]
+            target_resistances_ab = target_resistances_ab[target_resistances_ab >= 0]
+            try:
+                if len(np.unique(target_resistances_ab)) == 1:
+                    auc_score_ab = np.nan
+                    raise ValueError(f"Only one class present for antibiotic {self.antibiotics[j]}. AUC score is undefined.")
+                
+                auc_score_ab = roc_auc_score(target_resistances_ab, pred_sigmoids_ab)
+                fpr, tpr, thresholds = roc_curve(target_resistances_ab, pred_sigmoids_ab)
+            except ValueError as e:
+                print(e)
+                auc_score_ab = np.nan              
+            ab_stats.at[j, 'roc_fpr'], ab_stats.at[j, 'roc_tpr'], ab_stats.at[j, 'roc_thresholds'] = fpr, tpr, thresholds   
+            ab_stats.loc[j, 'auc_score'] = auc_score_ab
             ab_stats.loc[j, 'num_masked_tot'] = num[j, :].sum()
             ab_stats.loc[j, 'num_masked_S'], ab_stats.loc[j, 'num_masked_R'] = num[j, 0], num[j, 1]
             ab_stats.loc[j, 'num_pred_S'], ab_stats.loc[j, 'num_pred_R'] = num_preds[j, 0], num_preds[j, 1]
@@ -1243,9 +1263,9 @@ class MMBertFineTuner():
         return [num_pred_S, num_pred_R]
     
     
-    def _get_roc_results(self, pred_sigmoids: torch.Tensor, target_resistances: torch.Tensor, drop_intermediate: bool = False):
-        pred_sigmoids_flat = pred_sigmoids[target_resistances >= 0].cpu().numpy()
-        target_resistances_flat = target_resistances[target_resistances >= 0].cpu().numpy()
+    def _get_roc_results(self, pred_sigmoids: np.ndarray, target_resistances: np.ndarray, drop_intermediate: bool = False):
+        pred_sigmoids_flat = pred_sigmoids[target_resistances >= 0]
+        target_resistances_flat = target_resistances[target_resistances >= 0]
         assert pred_sigmoids_flat.shape == target_resistances_flat.shape, "Shapes do not match"
         assert len(pred_sigmoids_flat.shape) == 1, "Only 1D arrays are supported"
         

@@ -160,37 +160,18 @@ def export_results(results, savepath):
         pickle.dump(results, f)
     print(f"Results saved to {savepath}")
 
-def get_average_and_std_df(results_dict, with_metric_as_index=False):
-    losses = results_dict['losses']
-    accs = results_dict['accs']
-    iso_accs = results_dict['iso_accs']
-    sensitivities = results_dict['sensitivities']
-    specificities = results_dict['specificities']
-    f1_scores = results_dict['F1_scores']
-    auc_scores = results_dict['auc_scores']
-    
-    losses_avg = np.mean(losses)
-    losses_std = np.std(losses)
-    accs_avg = np.mean(accs)
-    accs_std = np.std(accs)
-    iso_accs_avg = np.mean(iso_accs)
-    iso_accs_std = np.std(iso_accs)
-    sens_avg = np.mean(sensitivities)
-    sens_std = np.std(sensitivities)
-    spec_avg = np.mean(specificities)
-    spec_std = np.std(specificities)
-    f1_avg = np.mean(f1_scores)
-    f1_std = np.std(f1_scores)
-    auc_avg = np.mean(auc_scores)
-    auc_std = np.std(auc_scores)
-    
-    df_CV = pd.DataFrame(data={
-        "metric": ["Loss", 'Accuracy', 'Isolate accuracy', 'Sensitivity', 'Specificity', 'F1', 'AUC'], 
-        "avg": [losses_avg, accs_avg, iso_accs_avg, sens_avg, spec_avg, f1_avg, auc_avg], 
-        "std": [losses_std, accs_std, iso_accs_std, sens_std, spec_std, f1_std, auc_std]
-    })
-    if with_metric_as_index:
-        df_CV.set_index("metric", inplace=True)
+def get_average_and_std_df(results_dict):   
+    metrics = {'loss': 'losses', 'accuracy': 'accs', 'isolate accuracy': 'iso_accs', 
+               'sensitivity': 'sensitivities', 'specificity': 'specificities', 
+               'F1': 'F1_scores', 'auc_score': 'auc_scores'}
+    data_dict = {}
+    for metric, key in metrics.items():
+        list_ = results_dict[key]
+        avg = np.mean(list_)
+        std = np.std(list_)
+        data_dict.update({metric: [avg, std]})
+    df_CV = pd.DataFrame.from_dict(data_dict, orient='index', columns=['avg', 'std'])
+    df_CV.index.name = 'metric'
     return df_CV
 
 
@@ -219,7 +200,8 @@ def get_ab_stats_df(results_dict, with_ab_as_index=False):
         "S_share_std":s_share_std, "R_share_std": r_share_std
     })
     
-    metrics = ['accuracy', 'sensitivity', 'specificity', "precision", 'F1']
+    metrics = ['accuracy', 'sensitivity', 'specificity', "precision", 'F1', 'auc_score']
+    print("metrics: ", metrics)
     for metric in metrics:
         arr = np.array([ab_stats[metric] for ab_stats in ab_stats_list])
         avg = np.nanmean(arr, axis=0)

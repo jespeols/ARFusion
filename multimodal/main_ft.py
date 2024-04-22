@@ -233,7 +233,6 @@ if __name__ == "__main__":
             
         best_fold, best_val_loss = 0, float('inf')
         for j, (train_indices, val_indices) in enumerate(indices_list):
-            print()
             print("="*80)
             print("="*80)
             if num_folds:
@@ -375,15 +374,15 @@ if __name__ == "__main__":
             'iso_stats': iso_stats,
             'ab_stats': ab_stats
         }  
-        df_CV = get_average_and_std_df(CV_results, with_metric_as_index=True)
+        df_CV = get_average_and_std_df(CV_results)
         log_dict = {
-            "Losses/avg_val_loss": df_CV.loc['Loss', 'avg'],
-            "Accuracies/avg_val_acc": df_CV.loc['Accuracy', 'avg'],
-            "Accuracies/avg_val_iso_acc": df_CV.loc["Isolate accuracy", 'avg'],
-            "Class_metrics/avg_val_sens": df_CV.loc["Sensitivity", 'avg'],
-            "Class_metrics/avg_val_spec": df_CV.loc["Specificity", 'avg'],
+            "Losses/avg_val_loss": df_CV.loc['loss', 'avg'],
+            "Accuracies/avg_val_acc": df_CV.loc['accuracy', 'avg'],
+            "Accuracies/avg_val_iso_acc": df_CV.loc["isolate accuracy", 'avg'],
+            "Class_metrics/avg_val_sens": df_CV.loc["sensitivity", 'avg'],
+            "Class_metrics/avg_val_spec": df_CV.loc["specificity", 'avg'],
             "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg'],
-            "Class_metrics/avg_val_auc_score": df_CV.loc["AUC", 'avg'],
+            "Class_metrics/avg_val_auc_score": df_CV.loc["auc_score", 'avg'],
         }
         wandb_run.log(log_dict)
         wandb_run.finish()
