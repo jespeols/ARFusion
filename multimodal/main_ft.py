@@ -314,6 +314,7 @@ if __name__ == "__main__":
                     "num_parameters": sum(p.numel() for p in tuner.model.parameters() if p.requires_grad),
                     "num_antibiotics": tuner.num_ab,
                     "antibiotics": tuner.antibiotics,
+                    "train_share": train_share,
                     "train_size": tuner.train_size,
                     "CV_mode": tuner.CV_mode,
                     'val_share': round(tuner.val_share, 2),

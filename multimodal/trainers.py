@@ -1356,6 +1356,7 @@ class MMBertFineTuner():
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "num_antibiotics": self.num_ab,
                 "antibiotics": self.antibiotics,
+                "train_share": round(self.train_share, 2),
                 "train_size": self.train_size,
                 "random_state": self.random_state,
                 "CV_mode": self.CV_mode,
