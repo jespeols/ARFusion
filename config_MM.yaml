@@ -94,6 +94,7 @@ data:
     filter_genes_by_ab_class:   # e.g. BETA-LACTAM, AMINOGLYCOSIDE. Applies to training set in fine-tuning only
     # filter_genes_by_ab_class: ['BETA-LACTAM'] 
     # filter_genes_by_ab_class: ['FLUOROQUINOLONE', 'QUINOLONE'] 
+    filter_isolates_by_ab_class: # e.g. BETA-LACTAM, AMINOGLYCOSIDE. Applies to training set in fine-tuning only
     # exclude_assembly_variants: 
     exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
     exclusion_chars: 

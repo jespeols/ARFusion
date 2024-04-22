@@ -72,6 +72,7 @@ if __name__ == "__main__":
     argparser.add_argument("--num_known_ab", type=int)
     argparser.add_argument("--num_known_classes", type=int)
     argparser.add_argument("--filter_genes_by_ab_class", type=list_of_strings, help="Filter genes by antibiotic classes provided in list")
+    argparser.add_argument("--filter_isolates_by_ab_class", type=list_of_strings, help="Filter isolates by presence of genes associated with antibiotic classes provided in list")
     argparser.add_argument("--min_num_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
@@ -175,6 +176,8 @@ if __name__ == "__main__":
     
     if args.filter_genes_by_ab_class:
         data_dict['NCBI']['filter_genes_by_ab_class'] = args.filter_genes_by_ab_class
+    if args.filter_isolates_by_ab_class:
+        data_dict['NCBI']['filter_isolates_by_ab_class'] = args.filter_isolates_by_ab_class
 
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
     if config_ft['no_pt']: ## REMOVE LATER 
@@ -256,6 +259,7 @@ if __name__ == "__main__":
                 num_known_ab=config_ft['num_known_ab'],
                 num_known_classes=config_ft['num_known_classes'],
                 always_mask_replace=config_ft['always_mask_replace'],
+                filter_isolates_by_ab_class=data_dict['NCBI']['filter_isolates_by_ab_class'],
                 filter_genes_by_ab_class=data_dict['NCBI']['filter_genes_by_ab_class'],
                 random_state=config_ft['random_state'],
                 no_geno_masking=config_ft['no_geno_masking']

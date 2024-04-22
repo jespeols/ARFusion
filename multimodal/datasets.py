@@ -280,6 +280,7 @@ class MMFinetuneDataset(Dataset):
         no_geno_masking: bool = False,
         always_mask_replace: bool = True,
         filter_genes_by_ab_class: list = None,
+        filter_isolates_by_ab_class: list = None,
         random_state: int = 42,
         include_sequences: bool = False,
     ):
@@ -305,6 +306,22 @@ class MMFinetuneDataset(Dataset):
         else:
             print("Masking using BERT 80-10-10 strategy")
         
+        assert (not(all(filter_genes_by_ab_class, filter_isolates_by_ab_class))), "Choose only one filter"
+        self.filter_isolates_by_ab_class = filter_isolates_by_ab_class
+        if self.filter_isolates_by_ab_class:
+            unique_genotypes = self.ds['genotypes'].explode().unique().tolist()
+            genotype_to_ab_class = get_genotype_to_ab_class(unique_genotypes)
+            unique_classes = set(genotype_to_ab_class.values())
+            assert any(f in unique_classes for f in self.filter_isolates_by_ab_class), "Unknown antibiotic class"
+            print(f"Filtering isolates by antibiotic classes: {self.filter_isolates_by_ab_class}")
+            num_before = self.ds.shape[0]
+            self.ds = self.ds[self.ds['genotypes'].apply(
+                lambda x: any(f in genotype_to_ab_class(gene) for f in self.filter_isolates_by_ab_class for gene in x)
+            )].reset_index(drop=True)
+            num_after = self.ds.shape[0]
+            print("Dropping {:,} isolates that contain genes associated with {:,}. Now {:,} isolates left".format(
+                num_before - num_after, self.filter_isolates_by_ab_class, num_after
+                ))
         self.filter_genes_by_ab_class = filter_genes_by_ab_class
         if self.filter_genes_by_ab_class:
             unique_genotypes = self.ds['genotypes'].explode().unique().tolist()
