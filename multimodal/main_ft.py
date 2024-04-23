@@ -379,7 +379,7 @@ if __name__ == "__main__":
             'iso_stats': iso_stats,
             'ab_stats': ab_stats
         }  
-        df_CV = get_average_and_std_df(CV_results)
+        df_CV = get_average_and_std_df(CV_results, include_auc=True)
         log_dict = {
             "Losses/avg_val_loss": df_CV.loc['loss', 'avg'],
             "Accuracies/avg_val_acc": df_CV.loc['accuracy', 'avg'],
