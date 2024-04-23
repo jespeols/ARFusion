@@ -299,6 +299,7 @@ if __name__ == "__main__":
                 wandb_config = {
                     "trainer_type": "fine-tuning",
                     "exp_folder": config_ft['exp_folder'],
+                    "Device:" : f"{device.type} ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else device.type,
                     "epochs": tuner.epochs,
                     "batch_size": tuner.batch_size,
                     "hidden_dim": tuner.model.hidden_dim,

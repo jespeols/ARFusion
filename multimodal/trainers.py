@@ -637,6 +637,7 @@ class MMBertPreTrainer(nn.Module):
             
             config={
                 "trainer_type": "pre-training",
+                "Device:" : f"{device.type} ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else device.type,
                 "exp_folder": self.exp_folder,
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
@@ -818,7 +819,7 @@ class MMBertFineTuner():
         self.dataset_size = self.train_size + self.val_size
         self.val_share, self.train_share = self.val_size / self.dataset_size, self.train_size / self.dataset_size
         self.batch_size = config_ft["batch_size"]
-        self.val_batch_size = 8*self.batch_size
+        self.val_batch_size = self.batch_size * 16
         self.num_batches = round(self.train_size / self.batch_size)
         self.vocab = self.train_set.vocab
         self.ab_to_idx = self.train_set.ab_to_idx
@@ -1336,6 +1337,7 @@ class MMBertFineTuner():
             
             config={
                 "trainer_type": "fine-tuning",
+                "Device:" : f"{device.type} ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else device.type,
                 "exp_folder": self.exp_folder,
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
