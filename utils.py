@@ -328,7 +328,7 @@ def load_and_create_ab_df(
     exp_folder: str = None,
     model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
     train_share: str = None,
-    include_auc = False,
+    include_auc = True,
 ):
     results_dict_list = []
     for model_name in model_names:
@@ -361,7 +361,7 @@ def load_and_create_abs_and_rel_diff_dfs(
     exp_folder: str = None,
     model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
     ref_model = 'No PT',  ## default could be model_names[0],
-    include_auc = False,
+    include_auc = True,
 ):
     results_dict_list = []
     if train_share:
