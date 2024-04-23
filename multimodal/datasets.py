@@ -315,7 +315,7 @@ class MMFinetuneDataset(Dataset):
             assert any(f in unique_classes for f in self.filter_isolates_by_ab_class), "Unknown antibiotic class"
             num_before = self.ds.shape[0]
             self.ds = self.ds[self.ds['genotypes'].apply(
-                lambda x: any(f in genotype_to_ab_class[gene] for f in self.filter_isolates_by_ab_class for gene in x)
+                lambda x: not any(f in genotype_to_ab_class[gene] for f in self.filter_isolates_by_ab_class for gene in x)
             )].reset_index(drop=True)
             num_after = self.ds.shape[0]
             diff = num_before - num_after
