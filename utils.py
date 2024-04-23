@@ -475,7 +475,7 @@ def calculate_ab_level_differences(
 def plot_ab_level_differences(
     df_diff_ab,
     plot_metric,
-    figsize=(13, 6),
+    figsize=(13, 4),
     plot_title=None,
     colors=['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     ab_classes=None,
