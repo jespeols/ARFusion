@@ -309,6 +309,7 @@ if __name__ == "__main__":
                     'ff_dim': tuner.model.ff_dim,
                     "lr": tuner.lr,
                     "loss_fn": tuner.loss_fn,
+                    "ab_weights": tuner.ab_weights if tuner.wl_strength else None,
                     "weight_decay": tuner.weight_decay,
                     "masking_method": tuner.masking_method, 
                     "mask_prob_geno": tuner.mask_prob_geno,

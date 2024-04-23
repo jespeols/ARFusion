@@ -160,7 +160,7 @@ def export_results(results, savepath):
         pickle.dump(results, f)
     print(f"Results saved to {savepath}")
 
-def get_average_and_std_df(results_dict, include_auc=False):   
+def get_average_and_std_df(results_dict, include_auc=True):   
     metrics = {'loss': 'losses', 'accuracy': 'accs', 'isolate accuracy': 'iso_accs', 
                'sensitivity': 'sensitivities', 'specificity': 'specificities', 'F1': 'F1_scores'}
     if include_auc:
@@ -176,7 +176,7 @@ def get_average_and_std_df(results_dict, include_auc=False):
     return df_CV
 
 
-def get_ab_stats_df(results_dict, with_ab_as_index=False, include_auc=False):
+def get_ab_stats_df(results_dict, with_ab_as_index=False, include_auc=True):
     ab_stats_list = results_dict['ab_stats']
     
     data_dict = {}
@@ -398,7 +398,7 @@ def load_and_create_train_share_df(
     train_params: str,
     exp_folder: str = None,
     train_shares = [0.01, 0.05, 0.1, 0.2, 0.3],
-    include_auc = False,
+    include_auc = True,
 ):
     model_names = [f'{model_prefix}_{share}' for share in train_shares]
     results_dict_list = []

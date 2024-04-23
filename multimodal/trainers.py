@@ -1348,6 +1348,7 @@ class MMBertFineTuner():
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "loss_fn": self.loss_fn,
+                "ab_weights": self.ab_weights if self.wl_strength else None,
                 "weight_decay": self.weight_decay,
                 "masking_method": self.masking_method, 
                 "mask_prob_geno": self.mask_prob_geno,
