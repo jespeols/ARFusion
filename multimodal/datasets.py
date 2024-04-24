@@ -328,14 +328,16 @@ class MMFinetuneDataset(Dataset):
             genotype_to_ab_class = get_genotype_to_ab_class(unique_genotypes)
             unique_classes = set(genotype_to_ab_class.values())
             assert all(f in unique_classes for f in self.filter_genes_by_ab_class), "Unknown antibiotic class"
-            print(f"Filtering genes by antibiotic classes: {self.filter_genes_by_ab_class}")
             ## Feature: remove filtered genes from the genotypes ##
             # self.ds['genotypes_filtered'] = self.ds['genotypes'].apply(
             #     lambda x: [gene for gene in x if not any(f in genotype_to_ab_class(gene) for f in self.filter_genes_by_ab_class)]
             # )
             ## Alternative feature: change the tokens of filtered genes to special token ##
+            replace_token = self.GENE_MASK
+            # replace_token = self.PAD
+            print(f"Replacing genes associated with {self.filter_genes_by_ab_class} with {replace_token}")
             self.ds['genotypes_filtered'] = self.ds['genotypes'].apply(
-                lambda x: [gene if not any(f in genotype_to_ab_class[gene] for f in self.filter_genes_by_ab_class) else self.PAD for gene in x]
+                lambda x: [gene if not any(f in genotype_to_ab_class[gene] for f in self.filter_genes_by_ab_class) else replace_token for gene in x]
             )   
             self.ds['num_genotypes_filtered'] = self.ds['genotypes_filtered'].apply(len)
             self.genotype_col = 'genotypes_filtered'
@@ -498,11 +500,11 @@ class MMFinetuneDataset(Dataset):
                 classes = ab_classes[i]     
                 ## randomly choose one class to keep        
                 unique_classes, counts = np.unique(classes, return_counts=True)
-                freq = counts / counts.sum()
-                inv_freq = 1 / freq
-                prob = inv_freq / inv_freq.sum()
-                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
-                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
+                # freq = counts / counts.sum()
+                # inv_freq = 1 / freq
+                # prob = inv_freq / inv_freq.sum()
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
                 seq_len = len(pheno_seq)
                 target_ids = np.array([-1]*seq_len)
                 target_res = [-1]*self.num_ab

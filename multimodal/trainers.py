@@ -1074,15 +1074,19 @@ class MMBertFineTuner():
     
     
     def early_stopping(self):
-        if self.val_losses[-1] < self.best_val_loss:
-            self.best_val_loss = self.val_losses[-1]
-            self.best_epoch = self.current_epoch
-            self.best_model_state = self.model.state_dict()
+        if self.current_epoch > 4: # excempt the first 5 epochs from early stopping
+            if self.val_losses[-1] < self.best_val_loss:
+                self.best_val_loss = self.val_losses[-1]
+                self.best_epoch = self.current_epoch
+                self.best_model_state = self.model.state_dict()
+                self.early_stopping_counter = 0
+                return False
+            else:
+                self.early_stopping_counter += 1
+                return True if self.early_stopping_counter >= self.patience else False
+        else:
             self.early_stopping_counter = 0
             return False
-        else:
-            self.early_stopping_counter += 1
-            return True if self.early_stopping_counter >= self.patience else False
         
             
     def evaluate(self, loader: DataLoader, ds_obj):
