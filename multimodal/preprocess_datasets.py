@@ -50,6 +50,7 @@ if __name__ == "__main__":
             exclusion_chars=data_dict['NCBI']['exclusion_chars'],
             gene_count_threshold=data_dict['NCBI']['gene_count_threshold']
         )
+        print()
     if args.preprocess_TESSy:
         print("Preprocessing TESSy data...")
         ds_TESSy = preprocess_TESSy(

@@ -51,7 +51,7 @@ class MMBertPreTrainer(nn.Module):
         assert round(self.val_size / (self.train_size + self.val_size), 2) == config["val_share"], "Validation set size does not match intended val_share"
         self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
-        self.val_batch_size = 8*self.batch_size
+        self.val_batch_size = 16*self.batch_size
         self.num_batches = np.ceil(self.train_size / self.batch_size).astype(int)
         self.vocab = self.train_set.vocab
          
@@ -64,8 +64,8 @@ class MMBertPreTrainer(nn.Module):
         
         self.mask_prob_geno = self.train_set.mask_prob_geno
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
-        self.mask_probs = {'geno': self.mask_prob_geno, 'pheno': self.mask_prob_pheno}
         self.num_known_ab = self.train_set.num_known_ab
+        self.num_known_classes = self.train_set.num_known_classes
         
         self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_ids == -1
         self.loss_fn = config["loss_fn"]
@@ -135,11 +135,13 @@ class MMBertPreTrainer(nn.Module):
             print(f"Mask probability (phenotypes): {self.mask_prob_pheno:.0%}")
         if self.num_known_ab:
             print(f"Number of known antibiotics: {self.num_known_ab}")
+        if self.num_known_classes:
+            print(f"Number of known classes: {self.num_known_classes}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
         print(f"Loss function: {'BCE' if self.loss_fn == 'bce' else 'Focal'}")
         if self.loss_fn == 'focal':
-            print(f"Alpha: {self.alpha} | Gamma: {self.gamma}")
+            print(f"Gamma: {self.gamma}")
         print(f"Learning rate: {self.lr}")
         print(f"Weight decay: {self.weight_decay}")
         print("="*self._splitter_size)
@@ -648,12 +650,17 @@ class MMBertPreTrainer(nn.Module):
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
-                "mask_probs": self.mask_probs,
+                "mask_prob_geno:": self.mask_prob_geno,
+                "masking_method": self.train_set.masking_method,
+                "mask_prob_pheno:": self.mask_prob_pheno if self.mask_prob_pheno else None,
+                "num_known_ab": self.num_known_ab if self.num_known_ab else None,
+                "num_known_classes": self.num_known_classes if self.num_known_classes else None,
                 "max_seq_len": self.model.max_seq_len,
                 "vocab_size": len(self.vocab),
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "num_antibiotics": self.num_ab,
                 "antibiotics": self.antibiotics,
+                "antibiotic weights:": self.ab_weights if self.wl_strength else None,
                 "loss_fn": self.loss_fn,
                 "train_size": self.train_size,
                 "random_state": self.random_state,
