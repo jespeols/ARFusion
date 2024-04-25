@@ -27,6 +27,10 @@ if __name__ == "__main__":
         config = yaml.safe_load(config_file)
     
     args = argparser.parse_args()
+    if not any([args.preprocess_TESSy, args.preprocess_NCBI, args.preprocess_both, args.construct_vocab]):
+        print("No action specified. Will prepare both TESSy and NCBI data and construct vocabulary.")
+        args.preprocess_both = True
+        args.construct_vocab = True
     if args.preprocess_both:
         print("Preparing both TESSy and NCBI data...\n")
         args.preprocess_TESSy = True
@@ -38,7 +42,7 @@ if __name__ == "__main__":
             path=data_dict['NCBI']['raw_path'],
             save_path=data_dict['NCBI']['save_path'],
             include_phenotype=data_dict['NCBI']['include_phenotype'],
-            ab_names_to_abbr=data_dict['antibiotics']['ab_names_to_abbr'],
+            ab_names_to_abbr=data_dict['antibiotics']['name_to_abbr'],
             exclude_antibiotics=data_dict['exclude_antibiotics'], 
             threshold_year=data_dict['NCBI']['threshold_year'],
             exclude_genotypes=data_dict['NCBI']['exclude_genotypes'],
@@ -62,9 +66,9 @@ if __name__ == "__main__":
     if args.construct_vocab:
         print("Constructing vocabulary...")
         if data_dict['exclude_antibiotics']:
-            antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+            antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
         else:
-            antibiotics = sorted(list(data_dict['antibiotics']['abbr_to_names'].keys()))
+            antibiotics = sorted(list(data_dict['antibiotics']['abbr_to_name'].keys()))
         print(f"{len(antibiotics)} antibiotics: {antibiotics}")
         specials = config['specials']
         print("Loading preprocessed datasets...")

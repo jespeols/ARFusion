@@ -164,7 +164,7 @@ data:
       'UZ': 'Uzbekistan'
       'XK': 'Kosovo'
   antibiotics:
-    abbr_to_names:
+    abbr_to_name:
       AMC: 'Amoxicillin/Clavulanic acid'
       AMK: 'Amikacin'
       AMP: 'Ampicillin'
@@ -245,7 +245,7 @@ data:
       TGC: 0.8
       TOB: 0.8
       TZP: 0.8
-    ab_names_to_abbr:
+    name_to_abbr:
       Amoxicillin/Clavulanic acid: 'AMC'
       Amikacin: 'AMK'
       Ampicillin: 'AMP'

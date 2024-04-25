@@ -35,10 +35,10 @@ def preprocess_NCBI(path,
         indices = df[df['phenotypes'].notnull()].index 
         df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].str.split(',')
         df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].apply(lambda x: [p for p in x if p.split("=")[1] in ['R', 'S']])
-        name_to_abbr_lower = {k.casefold(): v for k, v in ab_names_to_abbr.items()}
+        name_to_abbr = {k.casefold(): v for k, v in ab_names_to_abbr.items()}
         df.loc[indices, 'phenotypes'] = df.loc[indices, 'phenotypes'].apply(
-            lambda x: [name_to_abbr_lower[p.split("=")[0].casefold()] + "_" + p.split("=")[1] for p in x if 
-                       p.split("=")[0].casefold() in name_to_abbr_lower.keys() and p.split("=")[1] in ['R', 'S']]
+            lambda x: [name_to_abbr[p.split("=")[0].casefold()] + "_" + p.split("=")[1] for p in x if 
+                       p.split("=")[0].casefold() in name_to_abbr.keys() and p.split("=")[1] in ['R', 'S']]
         )
         if exclude_antibiotics:
             print(f"Filtering out antibiotics: {exclude_antibiotics}")

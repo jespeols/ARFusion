@@ -147,7 +147,7 @@ if __name__ == "__main__":
             path=data_dict['NCBI']['raw_path'],
             save_path=data_dict['NCBI']['save_path'],
             include_phenotype=data_dict['NCBI']['include_phenotype'],
-            ab_names_to_abbr=data_dict['antibiotics']['ab_names_to_abbr'],
+            ab_names_to_abbr=data_dict['antibiotics']['name_to_abbr'],
             exclude_antibiotics=data_dict['exclude_antibiotics'], 
             threshold_year=data_dict['NCBI']['threshold_year'],
             exclude_genotypes=data_dict['NCBI']['exclude_genotypes'],
@@ -168,7 +168,7 @@ if __name__ == "__main__":
         
     ## construct vocabulary
     print("Constructing vocabulary...")
-    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
     vocab = construct_MM_vocab(
         df_geno=ds_NCBI,
         df_pheno=ds_pheno,
