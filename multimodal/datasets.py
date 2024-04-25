@@ -224,11 +224,11 @@ class MMPretrainDataset(Dataset):
             for i, pheno_seq in enumerate(pheno_sequences):
                 classes = ab_classes[i]                # randomly choose one class to keep
                 unique_classes, counts = np.unique(classes, return_counts=True)
-                freq = counts / counts.sum()
-                inv_freq = 1 / freq
-                prob = inv_freq / inv_freq.sum()
-                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
-                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
+                # freq = counts / counts.sum()
+                # inv_freq = 1 / freq
+                # prob = inv_freq / inv_freq.sum()
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
                 indices = [idx for idx in range(seq_len) if classes[idx] not in keep_classes]
