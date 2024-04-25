@@ -25,8 +25,8 @@ wl_strength:      # 'mild' or 'strong' (or None for no weighting)
 gamma: 2          # only for focal loss (optimizable)
 lr: 0.00002
 weight_decay: 0.01
-print_progress_every: 3000
-report_every: 1000
+print_progress_every: 5000
+report_every: 1500
 savepath_vocab: 'MM_vocab_15.pt'
 save_model: True
 random_state: 42

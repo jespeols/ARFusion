@@ -4,6 +4,7 @@ import argparse
 import pandas as pd
 import os
 import sys
+import time
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
@@ -37,6 +38,7 @@ if __name__ == "__main__":
         args.preprocess_NCBI = True
     data_dict = config['data']
     if args.preprocess_NCBI:
+        NCBI_start = time.time()
         print("Preprocessing NCBI data...")
         ds_NCBI = preprocess_NCBI(
             path=data_dict['NCBI']['raw_path'],
@@ -50,8 +52,15 @@ if __name__ == "__main__":
             exclusion_chars=data_dict['NCBI']['exclusion_chars'],
             gene_count_threshold=data_dict['NCBI']['gene_count_threshold']
         )
+        NCBI_time = time.time() - NCBI_start
+        if NCBI_time > 60:
+            disp_time = f"{NCBI_time/60:.2f} minutes"
+        else:
+            disp_time = f"{NCBI_time:.2f} seconds"
+        print(f"Preprocessing NCBI completed in {disp_time}.")
         print()
     if args.preprocess_TESSy:
+        TESSy_start = time.time()
         print("Preprocessing TESSy data...")
         ds_TESSy = preprocess_TESSy(
             path=data_dict['TESSy']['raw_path'],
@@ -61,6 +70,12 @@ if __name__ == "__main__":
             impute_age=data_dict['TESSy']['impute_age'],
             impute_gender=data_dict['TESSy']['impute_gender']
         )
+        TESSy_time = time.time() - TESSy_start
+        if TESSy_time > 60:
+            disp_time = f"{TESSy_time/60:.2f} minutes"
+        else:
+            disp_time = f"{TESSy_time:.2f} seconds"
+        print(f"Preprocessing TESSy completed in {disp_time}.")
     if any([args.preprocess_TESSy, args.preprocess_NCBI]):
         print("Preprocessing complete.")
         

@@ -100,7 +100,7 @@ if __name__ == "__main__":
     if args.wl_strength:
         assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
         config['wl_strength'] = args.wl_strength
-    if args.alpha or args.gamma:
+    if args.gamma:
         assert config['loss_fn'] == 'focal', 'Alpha and gamma parameters only available for focal loss function. Use weighted loss strength for BCE.'
         config['gamma'] = args.gamma if args.gamma else config['gamma']
     config['lr'] = args.lr if args.lr else config['lr']
