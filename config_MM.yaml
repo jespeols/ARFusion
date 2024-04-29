@@ -26,7 +26,7 @@ gamma: 2          # only for focal loss (optimizable)
 lr: 0.00002
 weight_decay: 0.01
 print_progress_every: 5000
-report_every: 15000
+report_every:   # log training loss to wandb every X batches
 savepath_vocab: 'MM_vocab_15.pt'
 save_model: True
 random_state: 42

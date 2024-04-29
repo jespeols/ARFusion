@@ -90,8 +90,8 @@ class MMBertPreTrainer(nn.Module):
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
         self.current_epoch = 0
-        self.report_every = config["report_every"] if config["report_every"] else 1000
-        self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
+        self.report_every = config["report_every"]
+        self.print_progress_every = config["print_progress_every"]
         self._splitter_size = 80
         self.results_dir = results_dir
         if self.results_dir:
@@ -323,9 +323,10 @@ class MMBertPreTrainer(nn.Module):
             
             loss.backward() 
             self.optimizer.step() 
-            if batch_index % self.report_every == 0:
-                self._report_loss_results(batch_index, reporting_loss)
-                reporting_loss = 0 
+            if self.report_every:
+                if batch_index % self.report_every == 0:
+                    self._report_loss_results(batch_index, reporting_loss)
+                    reporting_loss = 0 
                 
             if batch_index % self.print_progress_every == 0:
                 time_elapsed = time.gmtime(time.time() - time_ref) 
