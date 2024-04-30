@@ -179,7 +179,7 @@ if __name__ == "__main__":
     if args.filter_isolates_by_ab_class:
         data_dict['NCBI']['filter_isolates_by_ab_class'] = args.filter_isolates_by_ab_class
 
-    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
     if config_ft['no_pt']: ## REMOVE LATER 
         for ab in antibiotics:
             tokens = list(vocab.get_stoi().keys())
