@@ -77,7 +77,7 @@ if __name__ == "__main__":
             disp_time = f"{TESSy_time:.2f} seconds"
         print(f"Preprocessing TESSy completed in {disp_time}.")
     if any([args.preprocess_TESSy, args.preprocess_NCBI]):
-        print("Preprocessing complete.")
+        print("Preprocessing complete.\n")
         
     if args.construct_vocab:
         print("Constructing vocabulary...")

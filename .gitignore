@@ -1,11 +1,16 @@
-*__pycache__
-wandb
-runs
+# data
 data/raw
 data/NCBI_genotype_parsed.pkl
-ARFusion.def
 data/*.pkl
-# results
+# results and logs
+runs
 model_state.pt
 *vocab*.pt
 *.png
+*.eps
+*.tex
+*.csv
+# misc.
+*__pycache__
+wandb
+ARFusion.def

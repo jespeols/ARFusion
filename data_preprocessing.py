@@ -25,7 +25,8 @@ def preprocess_NCBI(path,
 
     NCBI_data = pd.read_csv(path, sep='\t', low_memory=False) 
     cols = ['collection_date', 'geo_loc_name', 'AMR_genotypes_core']
-    cols += ['AST_phenotypes'] if include_phenotype else []
+    if include_phenotype:
+        cols += ['AST_phenotypes']
     df = NCBI_data[cols]
     df = df.rename(columns={'AMR_genotypes_core': 'genotypes'})
     df = df[df['genotypes'].notnull()] # filter out missing genotypes
@@ -48,6 +49,7 @@ def preprocess_NCBI(path,
         df['num_ab'] = df['phenotypes'].apply(lambda x: len(x) if isinstance(x, list) else np.nan)
         df = df[df['num_ab'] != 0]
         df['num_ab'] = df['num_ab'].replace(np.nan, 0)
+        print(f"Number of isolates with phenotype info: {df[df['num_ab'] > 0].shape[0]:,}")
     
     #### geo_loc_name -> country 
     alternative_nan = ['not determined', 'not collected', 'not provided', 'Not Provided', 'OUTPATIENT',

@@ -73,11 +73,8 @@ specials:
   GENE_MASK: '[GENE_MASK]'
   UNK: '[UNK]'
 data:
-  # exclude_antibiotics: 
-  ## OFX, AMC, TZP, PIP don't occur in NCBI (or not frequently enough)
+  exclude_antibiotics: 
   # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # 10 AB
-  ## IPM: 99% S in TESSy, but 98% in NCBI
-  ## MFX: Reasonable imbalance, but few samples
   # exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'NOR', 'POL', 'DOR', 'TGC', 'MEM', 'ETP', 'COL', 'AMX', 'AMK', 'NET', 'PIP'] # 12 AB
   exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 15 AB
   pathogens: ['ESCCOL']
