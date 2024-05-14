@@ -547,6 +547,7 @@ class PhenoFinetuneDataset(Dataset):
         masking_method: str,
         mask_prob_pheno: float,
         num_known_ab: int,
+        num_known_classes: int = None,
         always_mask_replace: bool = False,
         random_state: int = 42,
         include_sequences: bool = False,
@@ -567,18 +568,20 @@ class PhenoFinetuneDataset(Dataset):
         self.CLS, self.PAD, self.AB_MASK = specials['CLS'], specials['PAD'], specials['AB_MASK']
         self.always_mask_replace = always_mask_replace
         
-        self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
-        self.mask_prob_pheno = mask_prob_pheno
         self.mask_prob_geno = 0 # not used in this dataset, required in trainer # TODO: use better solution
         self.no_genotype_masking = False # not used in this dataset, required in trainer
+        self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
+        self.mask_prob_pheno = mask_prob_pheno
+        self.num_known_classes = num_known_classes
         self.num_known_ab = num_known_ab
         if self.masking_method == 'random':
             assert self.mask_prob_pheno, "mask_prob_pheno must be given if masking_method is 'random'"
-        elif self.masking_method == 'num_known':
+        elif self.masking_method == 'num_known_ab':
             assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
             self.ds = self.ds[self.ds['num_ab'] > self.num_known_ab].reset_index(drop=True)
-        elif self.masking_method == 'keep_one_class':            
-            self.ds = self.ds[self.ds['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
+        elif self.masking_method == 'num_known_classes':
+            assert num_known_classes, "num_known_classes must be given if masking_method is 'num_known_classes'"
+            self.ds = self.ds[self.ds['ab_classes'].apply(lambda x: len(set(x)) > self.num_known_classes)].reset_index(drop=True)
         self.num_samples = self.ds.shape[0]
                     
         self.include_sequences = include_sequences
