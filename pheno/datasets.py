@@ -179,11 +179,11 @@ class PhenotypeDataset(Dataset):
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
                     pheno_seq[idx] = self._get_replace_token(self.MASK, pheno_seq[idx])
+                pheno_seq = seq_starts[i] + pheno_seq
                 masked_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
         else:
             raise ValueError(f"Unknown masking method: {self.masking_method}")  
         
-        masked_sequences = [seq_starts[i] + seq for i, seq in enumerate(masked_sequences)]
         masked_sequences = [seq + [self.PAD] * (self.max_seq_len - len(seq)) for seq in masked_sequences]      
         return masked_sequences, target_resistances 

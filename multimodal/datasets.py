@@ -236,6 +236,7 @@ class MMPretrainDataset(Dataset):
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
                     pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
+                pheno_seq = seq_starts[i] + pheno_seq
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
         else:
