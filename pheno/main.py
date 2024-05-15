@@ -127,7 +127,6 @@ if __name__ == "__main__":
     
     abbr_to_class_enc = config['data']['antibiotics']['abbr_to_class_enc']
     ds['ab_classes'] = ds['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
-    print(ds['ab_classes'].head())
     
     print("Constructing vocabulary...")
     specials = config['specials']
