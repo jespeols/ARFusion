@@ -65,6 +65,7 @@ if __name__ == "__main__":
     argparser.add_argument("--exp_folder", type=str, help="Name of experiment folder")
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--ds_path", type=str)
+    argparser.add_argument("--ds_share", type=float)
     argparser.add_argument("--no_pt", action="store_true", help="Enable naive model")
     argparser.add_argument("--mask_prob_pheno", type=float)
     argparser.add_argument("--num_known_ab", type=int)
@@ -150,8 +151,8 @@ if __name__ == "__main__":
     
     print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
     ds_TESSy = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
-    ds_TESSy = ds_TESSy.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)    
-    ds_TESSy = ds_TESSy.sample(frac=0.25, random_state=config_ft['random_state']).reset_index(drop=True)
+    ds_share = args.ds_share if args.ds_share else 1
+    ds_TESSy = ds_TESSy.sample(frac=ds_share, random_state=config_ft['random_state']).reset_index(drop=True) 
     
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_TESSy['ab_classes'] = ds_TESSy['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])

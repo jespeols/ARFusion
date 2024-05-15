@@ -465,7 +465,7 @@ class MMFinetuneDataset(Dataset):
         target_resistances = list()
         pheno_target_ids = list()
 
-        if self.mask_prob_pheno:
+        if self.masking_method == 'random':
             for pheno_seq in pheno_sequences:
                 seq_len = len(pheno_seq)
                 token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
@@ -482,7 +482,7 @@ class MMFinetuneDataset(Dataset):
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())
-        elif self.num_known_ab:
+        elif self.masking_method == 'num_known_ab':
             for pheno_seq in pheno_sequences:
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
@@ -495,8 +495,8 @@ class MMFinetuneDataset(Dataset):
                     pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])                
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
-                pheno_target_ids.append(target_ids.tolist())  
-        elif self.masking_method == "num_known_classes":
+                pheno_target_ids.append(target_ids.tolist())
+        elif self.masking_method == 'num_known_classes':
             for i, pheno_seq in enumerate(pheno_sequences):
                 classes = ab_classes[i]     
                 ## randomly choose one class to keep        
@@ -619,7 +619,7 @@ class PhenoFinetuneDataset(Dataset):
         ages = self.ds['age'].astype(int).astype(str).tolist()
         seq_starts = [[self.CLS, years[i], countries[i], genders[i], ages[i]] for i in range(self.num_samples)]
         
-        if self.masking_method == "keep_one_class":
+        if self.masking_method == "num_known_classes":
             ab_classes = deepcopy(self.ds['ab_classes'].tolist())
             masked_pheno_sequences, target_resistances, target_ids = self._mask_pheno_sequences(pheno_sequences, ab_classes)
         else:
@@ -699,20 +699,20 @@ class PhenoFinetuneDataset(Dataset):
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())  
-        elif self.masking_method == "keep_one_class":
+        elif self.masking_method == 'num_known_classes':
             for i, pheno_seq in enumerate(pheno_sequences):
-                classes = ab_classes[i]                # randomly choose one class to keep
+                classes = ab_classes[i]     
+                ## randomly choose one class to keep        
                 unique_classes, counts = np.unique(classes, return_counts=True)
                 # freq = counts / counts.sum()
                 # inv_freq = 1 / freq
                 # prob = inv_freq / inv_freq.sum()
-                # keep_classes = self.rng.choice(unique_classes, p=prob) # less frequent classes are more likely
-                keep_classes = self.rng.choice(unique_classes) # all classes are equally likely
-                # keep_classes = self.rng.choice(classes) # more frequent classes are more likely
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
                 seq_len = len(pheno_seq)
                 target_ids = np.array([-1]*seq_len)
                 target_res = [-1]*self.num_ab
-                indices = [idx for idx in range(seq_len) if classes[idx] != keep_classes] 
+                indices = [idx for idx in range(seq_len) if classes[idx] not in keep_classes] 
                 target_ids[indices] = self.vocab.lookup_indices([pheno_seq[i] for i in indices])
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
