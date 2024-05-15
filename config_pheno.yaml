@@ -13,8 +13,8 @@ num_known_classes:
 batch_size: 32
 val_share: 0.1 # CV split
 max_seq_len: 'auto'
-epochs: 30
-early_stopping_patience: 3
+epochs: 100
+early_stopping_patience: 5
 lr: 0.00002
 weight_decay: 0.01
 wl_strength: 
