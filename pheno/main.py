@@ -122,7 +122,7 @@ if __name__ == "__main__":
     else:
         print("\nLoading dataset...")
         ds = pd.read_pickle(config['data']['load_path'])
-    ds = ds.sample(frac=0.1, random_state=config['random_state']).reset_index(drop=True)
+    # ds = ds.sample(frac=0.1, random_state=config['random_state']).reset_index(drop=True)
     num_samples = ds.shape[0]
     
     abbr_to_class_enc = config['data']['antibiotics']['abbr_to_class_enc']
