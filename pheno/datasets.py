@@ -112,6 +112,8 @@ class PhenotypeDataset(Dataset):
         else:
             rows = zip(indices_masked, target_res)
         self.df = pd.DataFrame(rows, columns=self.columns)
+        # print("unique indices_masked sequence lengths:", self.df[self.INDICES_MASKED].apply(len).unique())
+        # print("unique target_res sequence lengths:", self.df[self.TARGET_RESISTANCES].apply(len).unique())
     
     
     def _get_replace_token(self, mask_token, original_token): 
