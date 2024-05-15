@@ -47,7 +47,7 @@ class PhenotypeDataset(Dataset):
         self.num_known_ab = num_known_ab
         self.num_known_classes = num_known_classes
         if self.masking_method == 'random':
-            assert self.mask_prob_pheno, "mask_prob_pheno must be given if masking_method is 'random'"
+            assert self.mask_prob, "mask_prob must be given if masking_method is 'random'"
         elif self.masking_method == 'num_known_ab':
             assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
             self.ds = self.ds[self.ds['num_ab'] > self.num_known_ab].reset_index(drop=True)
@@ -140,7 +140,7 @@ class PhenotypeDataset(Dataset):
         if self.masking_method == 'random':
             for i, pheno_seq in enumerate(sequences):
                 seq_len = len(pheno_seq)
-                token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
+                token_mask = self.rng.random(seq_len) < self.mask_prob
                 target_res = [-1]*self.num_ab
                 if not token_mask.any():
                     token_mask[self.rng.integers(seq_len)] = True
