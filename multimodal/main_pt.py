@@ -158,8 +158,7 @@ if __name__ == "__main__":
     else:
         print(f"Loading preprocessed NCBI data from {data_dict['NCBI']['load_path']}...")
         ds_NCBI = pd.read_pickle(os.path.join(BASE_DIR, data_dict['NCBI']['load_path']))
-    
-        
+         
     specials = config['specials']
     pad_token = specials['PAD']
     pad_idx = list(specials.values()).index(pad_token) # pass to model for embedding

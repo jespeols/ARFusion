@@ -31,6 +31,7 @@ if __name__ == "__main__":
     argparser.add_argument("--name", type=str)
     argparser.add_argument("--mask_prob", type=float)
     argparser.add_argument("--num_known_ab", type=int)
+    argparser.add_argument("--num_known_classes", type=int)
     argparser.add_argument("--num_layers", type=int)
     argparser.add_argument("--num_heads", type=int)
     argparser.add_argument("--emb_dim", type=int)
@@ -40,9 +41,10 @@ if __name__ == "__main__":
     argparser.add_argument("--epochs", type=int)
     argparser.add_argument("--lr", type=float)
     argparser.add_argument("--val_share", type=float)
-    argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss functions")
+    argparser.add_argument("--wl_strength", type=str, help="Strength of weighted CE loss functions for antibiotics ('mild' or 'strong')")
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--prepare_data", type=bool)
+    argparser.add_argument("--save_model", type=bool)
         
     if device.type == "cuda":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -76,8 +78,24 @@ if __name__ == "__main__":
     config['batch_size'] = args.batch_size if args.batch_size else config['batch_size']
     config['epochs'] = args.epochs if args.epochs else config['epochs']
     config['lr'] = args.lr if args.lr else config['lr']
-    if args.use_weighted_loss:
-        config['use_weighted_loss'] = args.use_weighted_loss
+    assert sum([
+        (args.mask_prob is not None), (args.num_known_ab is not None), (args.num_known_classes is not None)
+    ]) <= 1, "Choose only one masking method."
+    if args.mask_prob:
+        config['masking_method'] = 'random'
+        config['mask_prob'] = args.mask_prob
+        config['num_known_ab'], config['num_known_classes'] = None, None
+    elif args.num_known_ab:
+        config['masking_method'] = 'num_known_ab'
+        config['num_known_ab'] = args.num_known_ab
+        config['mask_prob'], config['num_known_classes'] = None, None
+    elif args.num_known_classes:
+        config['masking_method'] = 'num_known_classes'
+        config['num_known_classes'] = args.num_known_classes
+        config['mask_prob'], config['num_known_ab'] = None, None
+    if args.wl_strength:
+        assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
+        config['wl_strength'] = args.wl_strength
     config['random_state'] = args.random_state if args.random_state else config['random_state']
     config['data']['prepare_data'] = args.prepare_data if args.prepare_data else config['data']['prepare_data']
         
@@ -104,15 +122,19 @@ if __name__ == "__main__":
     else:
         print("\nLoading dataset...")
         ds = pd.read_pickle(config['data']['load_path'])
-    # ds = ds.iloc[:int(0.5*len(ds))].reset_index(drop=True)
+    ds = ds.sample(frac=0.1, random_state=config['random_state']).reset_index(drop=True)
     num_samples = ds.shape[0]
+    
+    abbr_to_class_enc = config['data']['antibiotics']['abbr_to_class_enc']
+    ds['ab_classes'] = ds['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
+    print(ds['ab_classes'].head())
     
     print("Constructing vocabulary...")
     specials = config['specials']
     pad_token = specials['PAD']
     pad_idx = list(specials.values()).index(pad_token)
     antibiotics = sorted(list(set(config['data']['antibiotics']['abbr_to_names'].keys()) - set(config['data']['exclude_antibiotics'])))
-    savepath_vocab = os.path.join(results_dir, "pheno_vocab.pt") if config['save_vocab'] else None
+    savepath_vocab = os.path.join(BASE_DIR, "pheno_vocab.pt") if config['save_vocab'] else None
     vocab = construct_pheno_vocab(ds, specials, antibiotics, savepath_vocab=savepath_vocab)
     vocab_size = len(vocab)
     
@@ -129,17 +151,21 @@ if __name__ == "__main__":
         antibiotics,
         specials,
         max_seq_len,
+        masking_method=config['masking_method'],
         num_known_ab=config['num_known_ab'],
         mask_prob=config['mask_prob'],
-        always_mask_replace=False
+        num_known_classes=config['num_known_classes'],
+        always_mask_replace=True
     )
     val_set = PhenotypeDataset(
         ds.iloc[val_indices],
         vocab, antibiotics,
         specials, 
         max_seq_len,
+        masking_method=config['masking_method'],
         num_known_ab=config['num_known_ab'],
         mask_prob=config['mask_prob'],
+        num_known_classes=config['num_known_classes'],
         always_mask_replace=True
     )
     print("Loading model...")

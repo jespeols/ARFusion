@@ -724,3 +724,81 @@ class PhenoFinetuneDataset(Dataset):
             raise ValueError(f"Unknown masking method: {self.masking_method}")
         
         return masked_pheno_sequences, target_resistances, pheno_target_ids
+    
+    
+class MMInferenceDataset(Dataset):
+    
+    def __init__(
+        self,
+        ds,
+        vocab,
+        defined_antibiotics,
+        max_seq_len,
+        specials,
+        selected_ab_idx,
+        patient_info_only=False
+        ):
+        self.ds = ds.reset_index(drop=True)
+        self.vocab = vocab
+        self.max_seq_len = max_seq_len
+        self.specials = specials
+        self.CLS, self.PAD = specials['CLS'], specials['PAD']
+        self.GENE_MASK, self.AB_MASK = specials['GENE_MASK'], specials['AB_MASK']
+        self.device = device
+        self.ab = defined_antibiotics[selected_ab_idx]
+        self.patient_info_only = patient_info_only
+        
+        self.phenotypes = self.ds['phenotypes'].tolist()
+        self.year_col = self.ds['year'].astype(str).tolist()
+        self.country_col = self.ds['country'].tolist()
+        self.gender_col = self.ds['gender'].tolist()
+        self.age_col = self.ds['age'].astype(int).astype(str).tolist()
+        
+        self.columns = ['indices_masked', 'token_types', 'attn_mask', 'target_res', 'masked_sequences']
+        
+    def prepare_dataset(self):
+        masked_phenotypes = []
+        target_res = []
+        for phen_list in self.phenotypes:
+            masked_phen_list = []
+            for p in phen_list:
+                if p.split('_')[0] != self.ab:
+                    if self.patient_info_only:
+                        pass
+                    else:
+                        masked_phen_list.append(p)
+                else:
+                    if p == self.ab+'_R':
+                        target_res.append(1)
+                    else:
+                        target_res.append(0)
+                    masked_phen_list.append(self.AB_MASK)
+            masked_phenotypes.append(masked_phen_list)
+
+        masked_sequences = [[self.specials['CLS'], self.year_col[i], self.country_col[i], self.gender_col[i], self.age_col[i]] + masked_phenotypes[i] for i in range(len(self.ds))]
+        token_types = [[0]*5 + [2]*(len(masked_sequences[i])-5) for i in range(len(self.ds))]
+        ########### without patient info ###########
+        # masked_sequences = [[self.specials['CLS']] + masked_phenotypes[i] for i in range(len(self.ds))]
+        # token_types = [[0] + [2]*(len(masked_sequences[i])-1) for i in range(len(self.ds))]
+        
+        masked_sequences = [seq + [self.specials['PAD']]*(self.max_seq_len-len(seq)) for seq in masked_sequences]
+        indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in masked_sequences]
+        token_types = [tt + [2]*(self.max_seq_len-len(tt)) for tt in token_types]
+        attn_mask = [[False if token == self.specials['PAD'] else True for token in seq] for seq in masked_sequences]
+        
+        rows = zip(indices_masked, token_types, attn_mask, target_res, masked_sequences)
+        self.df = pd.DataFrame(rows, columns=self.columns)
+    
+    def __len__(self):
+        return len(self.ds)
+    
+    def __getitem__(self, idx):
+        item = self.df.iloc[idx]
+        
+        input = torch.tensor(item['indices_masked'], dtype=torch.long, device=self.device)
+        token_types = torch.tensor(item['token_types'], dtype=torch.long, device=self.device)
+        masked_sequences = item['masked_sequences']
+        target_res = torch.tensor(item['target_res'], dtype=torch.float, device=self.device)
+        attn_mask = (input != self.vocab[self.PAD]).unsqueeze(0).unsqueeze(1)
+        
+        return input, token_types, attn_mask, target_res, masked_sequences

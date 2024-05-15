@@ -29,8 +29,10 @@ class PhenotypeDataset(Dataset):
                  antibiotics: list,
                  specials: dict,
                  max_seq_len: int,
+                 masking_method: str,
                  num_known_ab: int = None,
                  mask_prob: float = None,
+                 num_known_classes: int = None,
                  include_sequences: bool = False,
                  always_mask_replace: bool = False,
                  random_state: int = 42,
@@ -40,24 +42,23 @@ class PhenotypeDataset(Dataset):
         self.rng = np.random.default_rng(self.random_state) # creates a new generator
         
         self.ds = ds.reset_index(drop=True)
-        assert num_known_ab or mask_prob, "Either num_known_ab or mask_prob must be specified"
-        assert not (num_known_ab and mask_prob), "Only one of num_known_ab or mask_prob can be specified"
-        self.num_known_ab = num_known_ab
+        self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
         self.mask_prob = mask_prob
-        self.always_mask_replace = always_mask_replace
-        if self.num_known_ab:
-            original_num_samples = self.ds.shape[0] 
-            print(f"Preparing dataset for masking with {num_known_ab} known antibiotics")
+        self.num_known_ab = num_known_ab
+        self.num_known_classes = num_known_classes
+        if self.masking_method == 'random':
+            assert self.mask_prob_pheno, "mask_prob_pheno must be given if masking_method is 'random'"
+        elif self.masking_method == 'num_known_ab':
+            assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
             self.ds = self.ds[self.ds['num_ab'] > self.num_known_ab].reset_index(drop=True)
-            num_samples = self.ds.shape[0]
-            print(f"Original number of isolates: {original_num_samples:,}")
-            print(f"Dropping {(original_num_samples - num_samples):,} isolates with less than {self.num_known_ab+1} antibiotics")
-            tot_pheno = self.ds['num_ab'].sum()
-            tot_S = self.ds['num_S'].sum()
-            tot_R = self.ds['num_R'].sum()
-            print(f"Now {num_samples:,} samples left")
+        elif self.masking_method == 'num_known_classes':
+            assert num_known_classes, "num_known_classes must be given if masking_method is 'num_known_classes'"
+            self.ds = self.ds[self.ds['ab_classes'].apply(lambda x: len(set(x)) > self.num_known_classes)].reset_index(drop=True)
+        self.always_mask_replace = always_mask_replace
+        if self.always_mask_replace:
+            print("Always masking using MASK tokens")
         else:
-            print(f"Preparing dataset for masking with mask_prob = {self.mask_prob}")
+            print("Masking using BERT 80-10-10 strategy")
         tot_pheno = self.ds['num_ab'].sum()
         tot_S = self.ds['num_S'].sum()
         tot_R = self.ds['num_R'].sum()
@@ -99,9 +100,13 @@ class PhenotypeDataset(Dataset):
 
        
     def prepare_dataset(self): # will be called at the start of each epoch (dynamic masking)
-        masked_sequences, target_res = self._construct_masked_sequences()
+        if self.masking_method == 'num_known_classes':
+            ab_classes = deepcopy(self.ds['ab_classes'].tolist())
+            masked_sequences, target_res = self._construct_masked_sequences(ab_classes=ab_classes)
+        else:
+            masked_sequences, target_res = self._construct_masked_sequences()
         indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in masked_sequences]
-        
+            
         if self.include_sequences:
             rows = zip(indices_masked, target_res, masked_sequences)
         else:
@@ -109,24 +114,19 @@ class PhenotypeDataset(Dataset):
         self.df = pd.DataFrame(rows, columns=self.columns)
     
     
-    def _get_replace_token(self, token, mask_token):
-        # BERT: 80% -> [MASK], 10% -> original token, 10% -> random token   
+    def _get_replace_token(self, mask_token, original_token): 
         if self.always_mask_replace:
             return mask_token
-        else:
-            r = np.random.rand()
-            # if r < 0.8:
-            #     return mask_token
-            # elif r < 0.9:
-            #     return self.vocab.lookup_token(np.random.randint(self.vocab_size))
-            # else:
-            #     return token
-            if r < 0.95: # include 5% chance of replacing with original token
+        else:                       ## BERT masking
+            r = self.rng.random()
+            if r < 0.8:
                 return mask_token
+            elif r < 0.9:
+                return self.vocab.lookup_token(self.rng.integers(self.vocab_size))
             else:
-                return token
+                return original_token
     
-    def _construct_masked_sequences(self):  
+    def _construct_masked_sequences(self, ab_classes=None):  
         sequences = deepcopy(self.ds['phenotypes'].tolist())
         masked_sequences = list()
         target_resistances = list()
@@ -137,39 +137,53 @@ class PhenotypeDataset(Dataset):
         ages = self.ds['age'].astype(int).astype(str).tolist()
         seq_starts = [[self.CLS, years[i], countries[i], genders[i], ages[i]] for i in range(self.ds.shape[0])]
         
-        if self.mask_prob:
-            for i, seq in enumerate(sequences):
-                seq_len = len(seq)
-            
-                target_res = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
-                token_mask = np.random.rand(seq_len) < self.mask_prob
-                if not token_mask.any(): # mask at least one token
-                    idx = np.random.randint(seq_len)
-                    ab, res = seq[idx].split('_')
+        if self.masking_method == 'random':
+            for i, pheno_seq in enumerate(sequences):
+                seq_len = len(pheno_seq)
+                token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
+                target_res = [-1]*self.num_ab
+                if not token_mask.any():
+                    token_mask[self.rng.integers(seq_len)] = True
+                for idx in token_mask.nonzero()[0]:
+                    ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
-                else:
-                    for idx in token_mask.nonzero()[0]:
-                        ab, res = seq[idx].split('_')
-                        target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                        seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
-                seq = seq_starts[i] + seq
-                masked_sequences.append(seq)
-                target_resistances.append(target_res) 
-        else:
-            for i, seq in enumerate(sequences):
-                seq_len = len(seq) 
-                target_res = [-1]*self.num_ab # -1 indicates padding, will indicate the target resistance, same indexing as ab_mask
-
-                # randomly select seq_len - num_known_ab antibiotics to mask
-                mask_indices = np.random.choice(seq_len, seq_len - self.num_known_ab, replace=False)
-                for idx in mask_indices: 
-                    ab, res = seq[idx].split('_')
-                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]
-                    seq[idx] = self._get_replace_token(seq[idx], self.MASK) ## BERT
-                seq = seq_starts[i] + seq
-                masked_sequences.append(seq)
+                    pheno_seq[idx] = self._get_replace_token(self.MASK, pheno_seq[idx])
+                pheno_seq = seq_starts[i] + pheno_seq
+                masked_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
-                
+        elif self.masking_method == 'num_known_ab':
+            for i, pheno_seq in enumerate(sequences):
+                seq_len = len(pheno_seq)
+                target_res = [-1]*self.num_ab
+                indices = self.rng.choice(seq_len, seq_len - self.num_known_ab, replace=False)
+                for idx in indices:
+                    ab, res = pheno_seq[idx].split('_')
+                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]
+                    pheno_seq[idx] = self._get_replace_token(self.MASK, pheno_seq[idx])
+                pheno_seq = seq_starts[i] + pheno_seq
+                masked_sequences.append(pheno_seq)
+                target_resistances.append(target_res)
+        elif self.masking_method == "num_known_classes":
+            for i, pheno_seq in enumerate(sequences):
+                classes = ab_classes[i]                # randomly choose one class to keep
+                unique_classes, counts = np.unique(classes, return_counts=True)
+                # freq = counts / counts.sum()
+                # inv_freq = 1 / freq
+                # prob = inv_freq / inv_freq.sum()
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
+                seq_len = len(pheno_seq)
+                target_res = [-1]*self.num_ab
+                indices = [idx for idx in range(seq_len) if classes[idx] not in keep_classes]
+                for idx in indices:
+                    ab, res = pheno_seq[idx].split('_')
+                    target_res[self.ab_to_idx[ab]] = self.enc_res[res]
+                    pheno_seq[idx] = self._get_replace_token(self.MASK, pheno_seq[idx])
+                masked_sequences.append(pheno_seq)
+                target_resistances.append(target_res)
+        else:
+            raise ValueError(f"Unknown masking method: {self.masking_method}")  
+        
+        masked_sequences = [seq_starts[i] + seq for i, seq in enumerate(masked_sequences)]
         masked_sequences = [seq + [self.PAD] * (self.max_seq_len - len(seq)) for seq in masked_sequences]      
         return masked_sequences, target_resistances 

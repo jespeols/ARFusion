@@ -12,6 +12,8 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 from datetime import datetime
 
+from utils import WeightedBCEWithLogitsLoss
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
 ################################## Trainer for CLS task ##################################
@@ -39,11 +41,6 @@ class BertCLSTrainer(nn.Module):
         self.wandb_name = config["name"] if config["name"] else datetime.now().strftime("%Y%m%d-%H%M%S")
         self.antibiotics = antibiotics
         self.num_ab = len(self.antibiotics) 
-        self.use_weighted_loss = config['use_weighted_loss']
-        if self.use_weighted_loss:
-            self.ab_weights = config['data']['antibiotics']['ab_weights_mild']
-            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
-            self.pos_weights = [w[1]/w[0] for w in self.ab_weights.values()]
         
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
@@ -60,20 +57,18 @@ class BertCLSTrainer(nn.Module):
         
         self.mask_prob = self.train_set.mask_prob
         self.num_known_ab = self.train_set.num_known_ab
+        self.num_known_classes = self.train_set.num_known_classes
         
-        if not self.use_weighted_loss:
-            self.criterions = [nn.BCEWithLogitsLoss().to(device) for _ in range(self.num_ab)] # the list is so that we can introduce individual weights
+        self.wl_strength = config["wl_strength"]  ## positive class weight for weighted BCELoss
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.alphas = [v for v in self.ab_weights.values()]
         else:
-            self.criterions = [nn.BCEWithLogitsLoss(
-                pos_weight=torch.tensor(v, requires_grad=False).to(device)) for v in self.pos_weights
-            ]        
-        self.optimizer = torch.optim.AdamW(
-            [
-                {'params': self.model.parameters()},
-                {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
-            ],
-            lr=self.lr, weight_decay=self.weight_decay
-        )
+            self.alphas = [0.5]*self.num_ab         ## equal class weights for all antibiotics
+        self.criterions = [WeightedBCEWithLogitsLoss(alpha=alpha).to(device) for alpha in self.alphas]
+        
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
@@ -112,13 +107,16 @@ class BertCLSTrainer(nn.Module):
         print(f"Training dataset size: {self.train_size:,}")
         print(f"Number of antibiotics: {self.num_ab}")
         print(f"Antibiotics: {self.antibiotics}")
-        if self.use_weighted_loss:
+        if self.wl_strength:
             print("Antibiotic weights:", self.ab_weights)
         print(f"CV split: {self.train_share:.0%} train | {self.val_share:.0%} val")
+        print(f"Masking method: {self.train_set.masking_method}")
         if self.mask_prob:
-            print(f"Mask probability: {self.mask_prob:.0%}")
+            print(f"Masking probability: {self.mask_prob:.0%}")
         if self.num_known_ab:
             print(f"Number of known antibiotics: {self.num_known_ab}")
+        if self.num_known_classes:
+            print(f"Number of known classes: {self.num_known_classes}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
         print(f"Batch size: {self.batch_size}")
@@ -137,7 +135,7 @@ class BertCLSTrainer(nn.Module):
         self.best_val_loss = float('inf') 
         self._init_result_lists()
         for self.current_epoch in range(self.current_epoch, self.epochs):
-            self.model.train_mode()
+            self.model.train()
             # Dynamic masking: New mask for training set each epoch
             self.train_set.prepare_dataset()
             self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True)
@@ -163,7 +161,7 @@ class BertCLSTrainer(nn.Module):
                            "Accuracies/final_val_iso_acc": self.val_iso_accs[self.best_epoch],
                            "final_epoch": self.best_epoch+1})
                 print("="*self._splitter_size)
-                self.model.set_state_dict(self.best_model_state) 
+                self.model.load_state_dict(self.best_model_state) 
                 self.current_epoch = self.best_epoch
                 break
             if self.scheduler:
@@ -245,7 +243,7 @@ class BertCLSTrainer(nn.Module):
         if self.val_losses[-1] < self.best_val_loss:
             self.best_val_loss = self.val_losses[-1]
             self.best_epoch = self.current_epoch
-            self.best_model_state = self.model.get_state_dict()
+            self.best_model_state = self.model.state_dict()
             self.early_stopping_counter = 0
             return False
         else:
@@ -254,7 +252,7 @@ class BertCLSTrainer(nn.Module):
         
             
     def evaluate(self, loader: DataLoader, ds_obj: pd.DataFrame, print_mode: bool = True):
-        self.model.eval_mode()
+        self.model.eval()
         # prepare evaluation statistics dataframes
         eval_stats_ab, eval_stats_iso = self._init_eval_stats(ds_obj)
         with torch.no_grad():
@@ -423,11 +421,13 @@ class BertCLSTrainer(nn.Module):
                 "weight_decay": self.weight_decay,
                 "mask_prob": self.mask_prob,
                 "num_known_ab": self.num_known_ab,
+                "num_known_classes": self.num_known_classes,
                 "max_seq_len": self.model.max_seq_len,
                 "vocab_size": len(self.train_set.vocab),
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "num_antibiotics": self.num_ab,
                 "antibiotics": self.antibiotics,
+                "antibiotic weights:": self.ab_weights if self.wl_strength else None,
                 "train_size": self.train_size,
                 "random_state": self.random_state,
                 'val_share': self.val_share,
@@ -488,7 +488,7 @@ class BertCLSTrainer(nn.Module):
     def _load_model(self, savepath: Path):
         print("="*self._splitter_size)
         print(f"Loading model from {savepath}")
-        self.model.set_state_dict(torch.load(savepath))
+        self.model.load_state_dict(torch.load(savepath))
         self.model.to(device)
         print("Model loaded")
         print("="*self._splitter_size)
