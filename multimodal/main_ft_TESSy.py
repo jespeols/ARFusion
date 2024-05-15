@@ -75,6 +75,7 @@ if __name__ == "__main__":
     argparser.add_argument("--loss_fn", type=str, help="Loss function to use")
     argparser.add_argument("--wl_strength", type=str, help="Strength of weighted CE loss functions for antibiotics ('mild' or 'strong')")
     argparser.add_argument("--lr", type=float)
+    argparser.add_argument("--es_patience", type=int)
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--train_shares", type=list_of_floats, help="List of shares for training sizes to indices_list over")
     argparser.add_argument("--no_cv", action="store_true", help="Disable cross-validation")
@@ -112,6 +113,7 @@ if __name__ == "__main__":
     if args.no_pt:
         config_ft['model_path'] = None
         config_ft['no_pt'] = True
+    config_ft['mask_prob_geno'] = 0
     if args.mask_prob_pheno:
         config_ft['masking_method'] = 'random'
         config_ft['mask_prob_pheno'] = args.mask_prob_pheno
@@ -127,6 +129,7 @@ if __name__ == "__main__":
     config_ft['batch_size'] = args.batch_size if args.batch_size else config_ft['batch_size']
     config_ft['epochs'] = args.epochs if args.epochs else config_ft['epochs']
     config_ft['lr'] = args.lr if args.lr else config['lr']
+    config_ft['early_stopping_patience'] = args.es_patience if args.es_patience else config_ft['early_stopping_patience']
     if args.loss_fn:
         if not args.loss_fn in ['focal', 'bce']:
             raise NotImplementedError("Invalid loss function, choose from ['focal', 'bce']")
@@ -148,7 +151,7 @@ if __name__ == "__main__":
     print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
     ds_TESSy = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
     ds_TESSy = ds_TESSy.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)    
-    ds_TESSy = ds_TESSy.iloc[:int(0.25*len(ds_TESSy))].reset_index(drop=True)
+    ds_TESSy = ds_TESSy.sample(frac=0.25, random_state=config_ft['random_state']).reset_index(drop=True)
     
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_TESSy['ab_classes'] = ds_TESSy['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
@@ -164,13 +167,6 @@ if __name__ == "__main__":
     ds_TESSy.fillna(pad_token, inplace=True)
 
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
-    if config_ft['no_pt']: ## REMOVE LATER 
-        for ab in antibiotics:
-            tokens = list(vocab.get_stoi().keys())
-            if not (ab+"_S") in tokens:
-                print(f"Adding antibiotic {ab} to vocabulary")
-                vocab.append_token(ab+"_S")
-                vocab.append_token(ab+"_R")
     vocab_size = len(vocab)
     ds_NCBI = pd.read_pickle(BASE_DIR / data_dict['NCBI']['load_path'])
     if config['max_seq_len'] == 'auto':

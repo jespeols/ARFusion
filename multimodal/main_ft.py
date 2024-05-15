@@ -159,7 +159,7 @@ if __name__ == "__main__":
     os.environ['WANDB_MODE'] = config_ft['wandb_mode']
     
     print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
-    ds_NCBI = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
+    ds_NCBI = pd.read_pickle(BASE_DIR / data_dict['NCBI']['load_path'])
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 0].sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)
     # ds_MM = ds_MM[ds_MM['country'] != 'USA'].reset_index(drop=True) # smaller, non-American dataset
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
@@ -180,13 +180,6 @@ if __name__ == "__main__":
         data_dict['NCBI']['filter_isolates_by_ab_class'] = args.filter_isolates_by_ab_class
 
     antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
-    if config_ft['no_pt']: ## REMOVE LATER 
-        for ab in antibiotics:
-            tokens = list(vocab.get_stoi().keys())
-            if not (ab+"_S") in tokens:
-                print(f"Adding antibiotic {ab} to vocabulary")
-                vocab.append_token(ab+"_S")
-                vocab.append_token(ab+"_R")
     vocab_size = len(vocab)
     if config['max_seq_len'] == 'auto':
         max_seq_len = int((ds_NCBI['num_genotypes'] + ds_NCBI['num_ab']).max() + 3)

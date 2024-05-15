@@ -4,7 +4,7 @@ data/NCBI_genotype_parsed.pkl
 data/*.pkl
 # results and logs
 runs
-model_state.pt
+*model_state.pt
 *vocab*.pt
 *.png
 *.eps
