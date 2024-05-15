@@ -144,7 +144,13 @@ class BertCLSTrainer(nn.Module):
             self.losses.append(loss) 
             print(f"Epoch completed in {(time.time() - epoch_start_time)/60:.1f} min | Loss: {loss:.4f}")
             print("Evaluating on validation set...")
+            val_start = time.time()
             val_results = self.evaluate(self.val_loader, self.val_set)
+            if time.time() - val_start > 60:
+                    disp_time = f"{(time.time() - val_start)/60:.1f} min"
+            else:
+                    disp_time = f"{time.time() - val_start:.0f} sec"
+            print(f"Validation completed in " + disp_time)
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             self._update_val_lists(val_results)
             self._report_epoch_results()
