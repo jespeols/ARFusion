@@ -159,7 +159,7 @@ class BertCLSTrainer(nn.Module):
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
                 s = f"Best validation loss {self.best_val_loss:.4f}"
                 s += f" | Validation accuracy {self.val_accs[self.best_epoch]:.2%}"
-                s += f" | Validation sequence accuracy {self.val_iso_accs[self.best_epoch]:.2%}"
+                s += f" | Validation isolate accuracy {self.val_iso_accs[self.best_epoch]:.2%}"
                 s += f" at epoch {self.best_epoch+1}"
                 print(s)
                 self.wandb_run.log({"Losses/final_val_loss": self.best_val_loss, 
@@ -186,7 +186,7 @@ class BertCLSTrainer(nn.Module):
         if not early_stop:
             s = f"Final validation loss {self.val_losses[-1]:.4f}"
             s += f" | Final validation accuracy {self.val_accs[-1]:.2%}"
-            s += f" | Final validation sequence accuracy {self.val_iso_accs[-1]:.2%}"
+            s += f" | Final validation isolate accuracy {self.val_iso_accs[-1]:.2%}"
             print(s)
         
         results = {

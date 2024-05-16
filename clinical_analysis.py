@@ -45,6 +45,7 @@ if __name__ == "__main__":
     ds_MM = ds_NCBI[ds_NCBI['num_ab'] > 1].reset_index(drop=True)
     print(f"Total number of samples in TESSy: {len(ds_TESSy):,}")
 
+    # antibiotics = ['CAZ', 'CIP', 'AMP', 'GEN'] # original request
     antibiotics = ['CAZ', 'CIP', 'AMP', 'GEN'] # original request
     ds_CAZ = ds_TESSy.copy()
     ds_CAZ['phenotypes'] = ds_CAZ['phenotypes'].apply(lambda x: [p for p in x if p.split('_')[0] in antibiotics])
@@ -80,6 +81,10 @@ if __name__ == "__main__":
         ds_exp = ds_CIP.copy()
         num_samples = len(ds_exp)
         ab_idx = CIP_idx
+    else:
+        ab_idx = ab_to_idx[selected_ab]
+        ds_exp = ds_CAZ.copy()
+        num_samples = 40000
 
     selected_ab = defined_antibiotics[ab_idx]
     print("selected ab", selected_ab)
