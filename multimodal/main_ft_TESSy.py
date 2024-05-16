@@ -155,7 +155,7 @@ if __name__ == "__main__":
     ds_TESSy['frac_S'] = ds_TESSy['num_S'] / (ds_TESSy['num_ab'])
     ds_TESSy = ds_TESSy[(ds_TESSy['frac_R'] > 0.3) & (ds_TESSy['frac_R'] < 0.9)].reset_index(drop=True)
     print(f"Number of samples in balnced dataset: {len(ds_TESSy):,}")
-    print(f"S/R ratio: {(ds_TESSy['num_R'].sum() / ds_TESSy['num_ab'].sum()):.1%}/{(ds_TESSy['num_R'].sum() / ds_TESSy['num_ab'].sum()):.1%}")
+    print(f"S/R ratio: {(ds_TESSy['num_S'].sum() / ds_TESSy['num_ab'].sum()):.1%}/{(ds_TESSy['num_R'].sum() / ds_TESSy['num_ab'].sum()):.1%}")
     # ds_share = args.ds_share if args.ds_share else 1
     # ds_TESSy = ds_TESSy.sample(frac=ds_share, random_state=config_ft['random_state']).reset_index(drop=True) 
     
@@ -310,7 +310,8 @@ if __name__ == "__main__":
                 "Accuracies/val_iso_acc": ft_results['iso_acc'],
                 "Class_metrics/val_sens": ft_results['sens'],
                 "Class_metrics/val_spec": ft_results['spec'],
-                "Class_metrics/val_F1": ft_results['F1']
+                "Class_metrics/val_F1": ft_results['F1'],
+                "Class_metrics/val_auc_score": ft_results['auc_score'],
             }
             wandb_run.log(log_dict)
             
@@ -321,6 +322,8 @@ if __name__ == "__main__":
             sensitivities.append(ft_results['sens'])
             specificities.append(ft_results['spec'])
             F1_scores.append(ft_results['F1'])
+            auc_scores.append(ft_results['auc_score'])
+            roc_results.append(ft_results['roc'])
             iso_stats.append(ft_results['iso_stats'])
             ab_stats.append(ft_results['ab_stats'])
             
@@ -329,7 +332,7 @@ if __name__ == "__main__":
                     best_val_loss = ft_results['loss']
                     best_fold = j
                     if args.save_best_model:
-                        best_model_state = tuner.model.get_state_dict()
+                        best_model_state = tuner.model.state_dict()
         if num_folds:
             print("All folds completed!")
         if args.save_best_model:
@@ -345,17 +348,20 @@ if __name__ == "__main__":
             'sensitivities': sensitivities,
             'specificities': specificities,
             'F1_scores': F1_scores,
+            "auc_scores": auc_scores,
+            "roc_results": roc_results,
             'iso_stats': iso_stats,
             'ab_stats': ab_stats
         }  
-        df_CV = get_average_and_std_df(CV_results)
+        df_CV = get_average_and_std_df(CV_results, include_auc=True)
         log_dict = {
-            "Losses/avg_val_loss": df_CV.loc['Loss', 'avg'],
-            "Accuracies/avg_val_acc": df_CV.loc['Accuracy', 'avg'],
-            "Accuracies/avg_val_iso_acc": df_CV.loc["Isolate accuracy", 'avg'],
-            "Class_metrics/avg_val_sens": df_CV.loc["Sensitivity", 'avg'],
-            "Class_metrics/avg_val_spec": df_CV.loc["Specificity", 'avg'],
-            "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg']
+            "Losses/avg_val_loss": df_CV.loc['loss', 'avg'],
+            "Accuracies/avg_val_acc": df_CV.loc['accuracy', 'avg'],
+            "Accuracies/avg_val_iso_acc": df_CV.loc["isolate accuracy", 'avg'],
+            "Class_metrics/avg_val_sens": df_CV.loc["sensitivity", 'avg'],
+            "Class_metrics/avg_val_spec": df_CV.loc["specificity", 'avg'],
+            "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg'],
+            "Class_metrics/avg_val_auc_score": df_CV.loc["auc_score", 'avg'],
         }
         wandb_run.log(log_dict)
         wandb_run.finish()
