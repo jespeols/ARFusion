@@ -27,6 +27,7 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--selected_ab", type=str)
+    argparser.add_argument("--save_figures", action='store_true')
     
     args = argparser.parse_args()
     
@@ -129,7 +130,9 @@ if __name__ == "__main__":
             tot_num_pred_S, tot_num_pred_R = 0, 0
             pred_sigmoids = torch.tensor([]).to(device)
             targets = torch.tensor([]).to(device)
+            i = 0
             for input, token_types, attn_mask, target_res, masked_sequences in loader:
+                token_types[token_types == 2] = 1
                 pred_logits = bert(input, token_types, attn_mask)
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits))
                 pred_sigmoids = torch.cat((pred_sigmoids, torch.sigmoid(pred_logits[:, ab_idx])))
@@ -139,6 +142,14 @@ if __name__ == "__main__":
                 tot_num_pred_R += num_R_pred
                 num_S_pred = ab_preds.shape[0] - num_R_pred
                 tot_num_pred_S += num_S_pred 
+                # if i == 0 or i == len(loader)-1:
+                    # print(f"first masked sequence: {vocab.lookup_tokens(input[0].tolist())}")
+                    # print(f"target_res: {target_res[0]}")
+                    # print(f"pred_res: {pred_res[0]}")
+                    # print(f"pred_res ({selected_ab}): {pred_res[0, ab_idx]}")
+                    # print(f"Attention mask: {attn_mask[0]}")
+                    # print(f"Token types: {token_types[0]}")
+                i += 1
                     
                 num_S = target_res.eq(0).sum().item()
                 tot_num_S += num_S
@@ -187,6 +198,17 @@ if __name__ == "__main__":
             ax.set_xlabel('False Positive Rate')
             ax.set_ylabel('True Positive Rate')
             ax.set_title(f'ROC curve for {selected_ab}_R prediction')
+            if patient_info_only:
+                ax.set_title(f'ROC curve for {selected_ab}_R prediction (patient info only)')
+            else:
+                ax.set_title(f'ROC curve for {selected_ab}_R prediction')
+            if args.save_figures:
+                parent_dir = Path(args.model_path).parent
+                if patient_info_only:
+                    save_path = parent_dir / f"pat_only_ROC_{selected_ab}.png"
+                else:
+                    save_path = parent_dir / f"ROC_{selected_ab}.png"
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
             plt.show(block=False)
             plt.pause(3.5)
             plt.close(fig1)
@@ -201,6 +223,17 @@ if __name__ == "__main__":
             axes[1].hist(pred_sigmoids_R, bins=50, color='red', label=f'{selected_ab}_R')
             axes[1].set_title(f'{selected_ab}_R sigmoid distribution')
             axes[1].set_xlim(0, 1)
+            if patient_info_only:
+                plt.suptitle(f'Sigmoid distributions (patient info only)')
+            else:
+                plt.suptitle(f'Sigmoid distributions')
+            if args.save_figures:
+                parent_dir = Path(args.model_path).parent
+                if patient_info_only:
+                    save_path = parent_dir / f"pat_only_sigmoid_{selected_ab}.png"
+                else:
+                    save_path = parent_dir / f"sigmoid_{selected_ab}.png"
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
             plt.show(block=False)
             plt.pause(3.5)
             plt.close(fig2)
