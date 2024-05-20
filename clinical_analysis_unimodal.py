@@ -7,13 +7,14 @@ import pandas as pd
 import os
 import sys
 import matplotlib.pyplot as plt
+import time
 
 from pathlib import Path
 from datetime import datetime
 from sklearn.metrics import roc_auc_score, roc_curve, auc
 from torch.utils.data import Dataset, DataLoader
 
-BASE_DIR = Path(os.path.abspath(''))
+BASE_DIR = Path(__file__).resolve().parent
 sys.path.append(str(BASE_DIR))
 os.chdir(BASE_DIR)
 
@@ -29,10 +30,11 @@ if __name__ == "__main__":
     argparser.add_argument("--model_name", type=str)
     argparser.add_argument("--selected_ab", type=str)
     argparser.add_argument("--save_figures", action='store_true')
+    argparser.add_argument("--batch_size", type=int, default=1024)
     
     args = argparser.parse_args()
     
-    config = yaml.safe_load(open("config_pheno.yaml"))
+    config = yaml.safe_load(open(BASE_DIR / 'config_pheno.yaml'))
     data_config = config['data']
     defined_antibiotics = sorted(list(set(data_config['antibiotics']['abbr_to_names'].keys()) - set(data_config['exclude_antibiotics'])))
     ab_to_idx = {ab: idx for idx, ab in enumerate(defined_antibiotics)}
@@ -103,7 +105,7 @@ if __name__ == "__main__":
                 patient_info_only=patient_info_only
             )
             ds_inference.prepare_dataset()
-            inference_loader = DataLoader(ds_inference, batch_size=512, shuffle=False)
+            inference_loader = DataLoader(ds_inference, batch_size=args.batch_size, shuffle=False)
             
             vocab_size = len(vocab)
             num_ab = 15 # from fine-tuning
@@ -270,8 +272,10 @@ if __name__ == "__main__":
                 ab_idx,
                 patient_info_only=True
             )
+            t_start = time.time()
             ds_inference.prepare_dataset()
-            inference_loader = DataLoader(ds_inference, batch_size=1024, shuffle=False)
+            print(f"Time to prepare dataset: {time.time()-t_start:.0f} seconds")
+            inference_loader = DataLoader(ds_inference, batch_size=args.batch_size, shuffle=False)
             
             vocab_size = len(vocab)
             bert = BERT(
@@ -291,6 +295,8 @@ if __name__ == "__main__":
                 pred_sigmoids = torch.tensor([]).to(device)
                 targets = torch.tensor([]).to(device)
                 loader = inference_loader
+                print(f"Number of batches in inference loader: {len(loader)}")
+                t_start = time.time()
                 for input, attn_mask, target_res in loader:
                     pred_logits = bert(input, attn_mask)
                     pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits))
@@ -315,6 +321,7 @@ if __name__ == "__main__":
                     num_correct_S = eq[target_res == 0].sum().item()
                     tot_num_correct_S += num_correct_S
                     num_R_pred = pred_res[:, ab_idx].sum().item()
+                print(f"Time to predict {ab}: {time.time()-t_start:.0f} seconds\n")
                 print(f"Overall {ab} accuracy: {tot_correct/(tot_num_S+tot_num_R):.4f}")
                 print(f"{ab}_R accuracy: {tot_num_correct_R/tot_num_R:.4f}")
                 if tot_num_pred_R > 0:
@@ -375,6 +382,6 @@ if __name__ == "__main__":
         })
         print(results)
         if args.model_name:
-            results.to_csv(f"{args.model_name}_pat_info_only_all_ab.csv", index=False, float_format='%.4f')
+            results.to_csv(f"results/pheno/AE_request/{args.model_name}_pat_info_only_all_ab.csv", index=False, float_format='%.4f')
         else:    
-            results.to_csv(f"pat_info_only_all_ab.csv", index=False, float_format='%.4f')
+            results.to_csv(f"results/pheno/AE_request/pat_info_only_all_ab.csv", index=False, float_format='%.4f')
