@@ -249,6 +249,7 @@ if __name__ == "__main__":
         num_ab = len(defined_antibiotics)
         tpr_vals, fpr_vals = np.zeros(num_ab), np.zeros(num_ab) # at threshold 0.5
         tpr_vals_point1, thresholds_point1 = np.zeros(num_ab), np.zeros(num_ab) # at FPR = 0.1
+        tpr_vals_point05, thresholds_point05 = np.zeros(num_ab), np.zeros(num_ab) # at FPR = 0.05
         auc_scores = np.zeros(num_ab)
         S_shares, R_shares = np.zeros(num_ab), np.zeros(num_ab)
         for i, ab in enumerate(defined_antibiotics):
@@ -341,6 +342,15 @@ if __name__ == "__main__":
                 thresholds_point1[ab_idx] = threshold_point1
                 tpr_vals_point1[ab_idx] = tpr_point1
                 
+                ## Find values at FPR = 0.05
+                fpr_val = 0.05
+                fpr_index = np.argmin(np.abs(fpr - fpr_val))
+                threshold_point05 = thresholds[fpr_index]
+                fpr_point05, tpr_point05 = fpr[fpr_index], tpr[fpr_index]
+                fdr_point05 = fpr_point05/(fpr_point05+tpr_point05)
+                thresholds_point05[ab_idx] = threshold_point05
+                tpr_vals_point05[ab_idx] = tpr_point05
+                
                 ## Find values at threshold = 0.5
                 threshold_val = 0.5
                 threshold_index = np.argmin(np.abs(thresholds - threshold_val))
@@ -357,6 +367,8 @@ if __name__ == "__main__":
             'FPR (at threshold 0.5)': fpr_vals,
             'TPR (at FPR=0.1)': tpr_vals_point1,
             'threshold (at FPR=0.1)': thresholds_point1,
+            'TPR (at FPR=0.05)': tpr_vals_point05,
+            'threshold (at FPR=0.05)': thresholds_point05,
             'AUROC': auc_scores,
             'S_share': S_shares,
             'R_share': R_shares
