@@ -151,13 +151,13 @@ if __name__ == "__main__":
     
     print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
     ds_TESSy = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
+    ds_share = args.ds_share if args.ds_share else 1
+    ds_TESSy = ds_TESSy.sample(frac=ds_share, random_state=config_ft['random_state']).reset_index(drop=True) 
     ds_TESSy['frac_R'] = ds_TESSy['num_R'] / (ds_TESSy['num_ab'])
     ds_TESSy['frac_S'] = ds_TESSy['num_S'] / (ds_TESSy['num_ab'])
-    ds_TESSy = ds_TESSy[(ds_TESSy['frac_R'] > 0.3) & (ds_TESSy['frac_R'] < 0.9)].reset_index(drop=True)
-    print(f"Number of samples in balnced dataset: {len(ds_TESSy):,}")
+    # ds_TESSy = ds_TESSy[(ds_TESSy['frac_R'] > 0.15) & (ds_TESSy['frac_R'] < 0.9)].reset_index(drop=True)
+    print(f"Number of samples in the dataset: {len(ds_TESSy):,}")
     print(f"S/R ratio: {(ds_TESSy['num_S'].sum() / ds_TESSy['num_ab'].sum()):.1%}/{(ds_TESSy['num_R'].sum() / ds_TESSy['num_ab'].sum()):.1%}")
-    # ds_share = args.ds_share if args.ds_share else 1
-    # ds_TESSy = ds_TESSy.sample(frac=ds_share, random_state=config_ft['random_state']).reset_index(drop=True) 
     
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_TESSy['ab_classes'] = ds_TESSy['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])

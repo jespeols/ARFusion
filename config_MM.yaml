@@ -57,7 +57,7 @@ fine_tuning:
   gamma: 2                 # only for focal loss (optimizable)
   lr: 0.00001
   weight_decay: 0.01
-  early_stopping_patience: 5
+  early_stopping_patience: 10
   print_progress_every: 1000
   report_every: 500
   save_model: False
