@@ -257,7 +257,7 @@ if __name__ == "__main__":
             print("="*60)
             print(f"Predicting {ab} ({i+1}/{num_ab})...")
             ds_ab = ds_TESSy[ds_TESSy['phenotypes'].apply(lambda x: ab in [p.split('_')[0] for p in x])].reset_index(drop=True)
-            max_num_samples = 100000
+            # max_num_samples = 250000
             # num_samples = min(max_num_samples, len(ds_ab))
             num_samples = len(ds_ab)
             print(f"Number of samples in ds_{ab}: {len(ds_ab):,}")
