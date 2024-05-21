@@ -123,6 +123,7 @@ class BERT(nn.Module):
         self.num_ab = num_ab
         self.max_seq_len = max_seq_len
         self.pad_idx = pad_idx
+        self.is_pretrained = False
                 
         # parameters
         self.emb_dim = config['emb_dim']

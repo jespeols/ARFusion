@@ -33,28 +33,39 @@ def construct_geno_vocab(dataset: pd.DataFrame, specials:dict, savepath_vocab: P
     return vocab
 
 
-def construct_pheno_vocab(dataset: pd.DataFrame, specials:dict, antbiotics:list, savepath_vocab: Path = None):
+def construct_pheno_vocab(
+        df_pheno: pd.DataFrame,
+        df_geno: pd.DataFrame,
+        antibiotics: list,
+        specials: dict,
+        savepath_vocab: Path = None
+    ):
     token_counter = Counter()
-    ds = dataset.copy() 
-    
-    UNK = specials['UNK']
+    ds_geno = df_geno.copy()
+    ds_pheno = df_pheno.copy()
+        
+    UNK, PAD = specials['UNK'], specials['PAD']
     special_tokens = specials.values() 
     
-    min_year, max_year = ds['year'].min(), ds['year'].max()
+    years_geno = ds_geno[ds_geno['year'] != PAD]['year'].astype('Int16')
+    min_year = min(years_geno.min(), ds_pheno['year'].min()) 
+    max_year = max(years_geno.max(), ds_pheno['year'].max())
     year_range = range(min_year, max_year + 1)
     token_counter.update([str(y) for y in year_range]) 
     
-    min_age, max_age = ds['age'].min(), ds['age'].max()
+    min_age, max_age = ds_pheno['age'].min(), ds_pheno['age'].max()
     age_range = range(int(min_age), int(max_age + 1))
     token_counter.update([str(a) for a in age_range])
     
-    countries = ds['country'].unique().astype('str').tolist()
+    pheno_countries = ds_pheno['country'].sort_values().unique()
+    geno_countries = ds_geno['country'].sort_values().dropna().unique()
+    countries = set(pheno_countries).union(set(geno_countries))
     token_counter.update(countries)
     
-    gender = ds['gender'].unique().astype('str').tolist()
+    gender = ds_pheno['gender'].unique().astype('str').tolist()
     token_counter.update(gender)
     
-    token_counter.update([ab + '_' + res for ab in antbiotics for res in ['S', 'R']])
+    token_counter.update([ab + '_' + res for ab in antibiotics for res in ['S', 'R']])
     
     vocab = Vocab(token_counter, specials=special_tokens)
     vocab.set_default_index(vocab[UNK])

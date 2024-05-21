@@ -128,13 +128,15 @@ if __name__ == "__main__":
     abbr_to_class_enc = config['data']['antibiotics']['abbr_to_class_enc']
     ds['ab_classes'] = ds['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
     
+    ds_NCBI = pd.read_pickle(config['data']['NCBI']['load_path'])
+    
     print("Constructing vocabulary...")
     specials = config['specials']
     pad_token = specials['PAD']
     pad_idx = list(specials.values()).index(pad_token)
     antibiotics = sorted(list(set(config['data']['antibiotics']['abbr_to_name'].keys()) - set(config['data']['exclude_antibiotics'])))
     savepath_vocab = os.path.join(BASE_DIR, "pheno_vocab.pt") if config['save_vocab'] else None
-    vocab = construct_pheno_vocab(ds, specials, antibiotics, savepath_vocab=savepath_vocab)
+    vocab = construct_pheno_vocab(ds, ds_NCBI, antibiotics, specials, savepath_vocab=savepath_vocab)
     vocab_size = len(vocab)
     
     max_phenotypes_len = ds['num_ab'].max()    
@@ -169,7 +171,7 @@ if __name__ == "__main__":
     )
     print("Loading model...")
     bert = BERT(config, vocab_size, max_seq_len, num_ab=len(antibiotics), pad_idx=pad_idx).to(device)
-    trainer = BertCLSTrainer(
+    trainer = BertTrainer(
         config=config,
         model=bert,
         antibiotics=antibiotics,

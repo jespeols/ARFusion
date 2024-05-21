@@ -729,6 +729,15 @@ class BertTuner(nn.Module):
             self.optimizer.zero_grad() # zero out gradients
             pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
             
+            if batch_index == 1:
+                print("example batch:")
+                print(input)
+                print("first sequence:")
+                print(input[0])
+                print(self.train_set.vocab.lookup_tokens(input[0].tolist()))
+                print("first target_res:")
+                print(target_res[0])
+            
             ab_mask = target_res != -1 # (batch_size, num_ab), indicates which antibiotics are present in the batch
             ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
             losses = list()
