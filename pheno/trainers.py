@@ -648,7 +648,8 @@ class BertTuner(nn.Module):
             print(f"Validation completed in " + disp_time)
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             self._update_val_lists(val_results)
-            self._report_epoch_results()
+            if not self.CV_mode:
+                self._report_epoch_results()
             early_stop = self.early_stopping()
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
