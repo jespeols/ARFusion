@@ -28,6 +28,39 @@ specials:
   PAD: '[PAD]'
   MASK: '[MASK]'
   UNK: '[UNK]'
+
+#################### FINE-TUNING ####################
+fine_tuning:
+  wandb_mode: 'online'        # 'online' for syncing, or 'disabled' for no tracking
+  project_name: Phenotype-MLM
+  name: baseline_ft
+  exp_folder:
+  # ds_path: 'data/TESSy_15.pkl'
+  ds_path: 'data/NCBI_15.pkl'
+  loadpath_vocab: 'pheno_vocab.pt'
+  construct_vocab: False
+  no_pt: False
+  model_path: 
+  batch_size: 16
+  val_share: 0.2
+  num_folds: 5
+  epochs: 100
+  mask_prob: 0.75
+  num_known_ab: 
+  num_known_classes:
+  always_mask_replace: True
+  loss_fn: 'bce'            # 'bce' or 'focal'
+  wl_strength:       # 'mild' or 'strong' (or None for no weighting)
+  gamma: 2                 # only for focal loss (optimizable)
+  lr: 0.00001
+  weight_decay: 0.01
+  early_stopping_patience: 10
+  print_progress_every: 1000
+  report_every: 500
+  save_model: False
+  random_state: 42
+
+#################### DATA & MISC. ####################
 data:
   prepare_data: False
   raw_path: 'data/raw/AMR_TEST.csv'
@@ -38,8 +71,10 @@ data:
   pathogens: ['ESCCOL']
   impute_age: False
   impute_gender: False
+  NCBI:
+    load_path: 'data/NCBI_15.pkl'
   antibiotics:
-    abbr_to_names:
+    abbr_to_name:
       AMC: 'Amoxicillin/Clavulanic acid'
       AMK: 'Amikacin'
       AMP: 'Ampicillin'

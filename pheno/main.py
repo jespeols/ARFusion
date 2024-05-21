@@ -16,7 +16,7 @@ os.chdir(BASE_DIR)
 # user-defined modules
 from pheno.models import BERT
 from pheno.datasets import PhenotypeDataset
-from pheno.trainers import BertCLSTrainer
+from pheno.trainers import BertTrainer
 
 # user-defined functions
 from construct_vocab import construct_pheno_vocab
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     specials = config['specials']
     pad_token = specials['PAD']
     pad_idx = list(specials.values()).index(pad_token)
-    antibiotics = sorted(list(set(config['data']['antibiotics']['abbr_to_names'].keys()) - set(config['data']['exclude_antibiotics'])))
+    antibiotics = sorted(list(set(config['data']['antibiotics']['abbr_to_name'].keys()) - set(config['data']['exclude_antibiotics'])))
     savepath_vocab = os.path.join(BASE_DIR, "pheno_vocab.pt") if config['save_vocab'] else None
     vocab = construct_pheno_vocab(ds, specials, antibiotics, savepath_vocab=savepath_vocab)
     vocab_size = len(vocab)
