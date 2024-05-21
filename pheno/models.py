@@ -17,7 +17,6 @@ class JointEmbedding(nn.Module):
         self.dropout_prob = config['dropout_prob']
         
         self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim, padding_idx=self.pad_idx) 
-        # self.position_emb = nn.Embedding(self.max_seq_len, self.emb_dim) 
         
         self.dropout = nn.Dropout(self.dropout_prob)
         self.layer_norm = nn.LayerNorm(self.emb_dim)
@@ -27,10 +26,7 @@ class JointEmbedding(nn.Module):
         # seq_len = input_tensor.size(-1)        
         
         token_emb = self.token_emb(input_tensor) # (batch_size, seq_len, emb_dim)
-        # pos_tensor = torch.arange(seq_len, dtype=torch.long, device=device).expand_as(input_tensor) # (batch_size, seq_len)
-        # position_emb = self.position_emb(pos_tensor) # (batch_size, seq_len, emb_dim)
         
-        # emb = token_emb + position_emb
         emb = self.layer_norm(token_emb) 
         emb = self.dropout(emb)
         return emb
@@ -141,7 +137,7 @@ class BERT(nn.Module):
         
         # classifier
         self.hidden_dim = config['hidden_dim'] # for the classification layer
-        self.classification_layer = [AbPredictor(self.emb_dim, self.hidden_dim).to(device) for _ in range(num_ab)] 
+        self.classification_layer = nn.ModuleList([AbPredictor(self.emb_dim, self.hidden_dim).to(device) for _ in range(num_ab)] )
         
     def forward(self, input_tensor: torch.Tensor, attn_mask:torch.Tensor):
         embedded = self.embedding(input_tensor)
@@ -152,28 +148,6 @@ class BERT(nn.Module):
         cls_token = encoded[:, 0, :] # (batch_size, emb_dim)
         predictions = torch.cat([net(cls_token) for net in self.classification_layer], dim=1) # (batch_size, num_ab)
         return predictions
-    
-    def get_state_dict(self):
-        return {
-            'model': self.state_dict(),
-            'ab_predictors': [net.state_dict() for net in self.classification_layer]
-        }
-    
-    def set_state_dict(self, state_dict):
-        self.load_state_dict(state_dict['model'])
-        for i, net in enumerate(self.classification_layer):
-            net.load_state_dict(state_dict['ab_predictors'][i])
-        self.is_pretrained = True
-    
-    def train_mode(self):
-        self.train()
-        for net in self.classification_layer:
-            net.train()
-    
-    def eval_mode(self):
-        self.eval()
-        for net in self.classification_layer:
-            net.eval()
 
 
 class AbPredictor(nn.Module): # predicts resistance or susceptibility for an antibiotic
@@ -198,52 +172,3 @@ class AbPredictor(nn.Module): # predicts resistance or susceptibility for an ant
     def forward(self, X):
         # X is the CLS token of the BERT model
         return self.classifier(X)
-
-            
-################################################################################################################         
-################################################################################################################
-
-class PhenoEmbedding(nn.Module): 
-# uses a normal position embedding, an embedding for the antibiotic, and an embedding for the resistance (binary)
-    def __init__(self, config, vocab_size):
-        super(PhenoEmbedding, self).__init__()
-        
-        self.emb_dim = config['emb_dim']
-        self.vocab_size = vocab_size
-        self.dropout_prob = config['dropout_prob']
-        
-        self.token_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
-        self.res_emb = nn.Embedding(2, self.emb_dim) # 2 possible values for resistance: 0 or 1
-        # self.token_type_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
-        self.position_emb = nn.Embedding(self.vocab_size, self.emb_dim) 
-        
-        self.dropout = nn.Dropout(self.dropout_prob)
-        self.layer_norm = nn.LayerNorm(self.emb_dim)
-        
-    def forward(self, input_tensor, res_mask):
-        # input_tensor: (batch_size, seq_len)
-        # token_type_ids: (batch_size, seq_len)
-        # position_ids: (batch_size, seq_len)
-        # res_mask: (batch_size, seq_len) - determines resistance value for each token
-        
-        seq_len = input_tensor.size(-1)
-        
-        pos_tensor = self.numeric_position(seq_len, input_tensor)
-        # token_type not relevant for unimodal data
-        # token_type_tensor = torch.zeros_like(input_tensor).to(device) # (batch_size, seq_len)
-        # token_type_tensor[:, (seq_len//2 + 1):] = 1 # here, we assume that the sentence is split in half
-        
-        token_emb = self.token_emb(input_tensor) # (batch_size, seq_len, emb_dim)
-        # token_type_emb = self.token_type_emb(token_type_tensor) # (batch_size, seq_len, emb_dim)
-        position_emb = self.position_emb(pos_tensor) # (batch_size, seq_len, emb_dim)
-        
-        # emb = token_emb + token_type_emb + position_emb
-        emb = token_emb + position_emb
-        emb = self.dropout(emb)
-        emb = self.layer_norm(emb) 
-        return emb
-                
-    def numeric_position(self, dim, input_tensor): # input_tensor: (batch_size, seq_len)
-        # dim is the length of the sequence
-        position_ids = torch.arange(dim, dtype=torch.long, device=device) # create tensor of [0, 1, 2, ..., dim-1]
-        return position_ids.expand_as(input_tensor) # expand to (batch_size, seq_len)

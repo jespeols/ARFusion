@@ -46,7 +46,6 @@ if __name__ == "__main__":
     argparser.add_argument("--always_mask_replace", action="store_true", help="Always replace masked tokens with mask token")
     argparser.add_argument("--loss_fn", type=str, help="Loss function to use")
     argparser.add_argument("--wl_strength", type=str, help="Strength of weighted CE loss functions for antibiotics ('mild' or 'strong')")
-    argparser.add_argument("--alpha", type=float, help="Alpha parameter for focal loss")
     argparser.add_argument("--gamma", type=float, help="Gamma parameter for focal loss")
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--prepare_TESSy", action="store_true", help="Prepare TESSy data")
@@ -100,11 +99,9 @@ if __name__ == "__main__":
         config['loss_fn'] = args.loss_fn
     if args.wl_strength:
         assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
-        assert config['loss_fn'] == 'bce', 'Weighted loss strength only available for BCE loss function. Use parameter arguments for focal.'
         config['wl_strength'] = args.wl_strength
-    if args.alpha or args.gamma:
+    if args.gamma:
         assert config['loss_fn'] == 'focal', 'Alpha and gamma parameters only available for focal loss function. Use weighted loss strength for BCE.'
-        config['alpha'] = args.alpha if args.alpha else config['alpha']
         config['gamma'] = args.gamma if args.gamma else config['gamma']
     config['lr'] = args.lr if args.lr else config['lr']
     config['random_state'] = args.random_state if args.random_state else config['random_state']
@@ -150,7 +147,7 @@ if __name__ == "__main__":
             path=data_dict['NCBI']['raw_path'],
             save_path=data_dict['NCBI']['save_path'],
             include_phenotype=data_dict['NCBI']['include_phenotype'],
-            ab_names_to_abbr=data_dict['antibiotics']['ab_names_to_abbr'],
+            ab_names_to_abbr=data_dict['antibiotics']['name_to_abbr'],
             exclude_antibiotics=data_dict['exclude_antibiotics'], 
             threshold_year=data_dict['NCBI']['threshold_year'],
             exclude_genotypes=data_dict['NCBI']['exclude_genotypes'],
@@ -161,8 +158,7 @@ if __name__ == "__main__":
     else:
         print(f"Loading preprocessed NCBI data from {data_dict['NCBI']['load_path']}...")
         ds_NCBI = pd.read_pickle(os.path.join(BASE_DIR, data_dict['NCBI']['load_path']))
-    
-        
+         
     specials = config['specials']
     pad_token = specials['PAD']
     pad_idx = list(specials.values()).index(pad_token) # pass to model for embedding
@@ -171,7 +167,7 @@ if __name__ == "__main__":
         
     ## construct vocabulary
     print("Constructing vocabulary...")
-    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
     vocab = construct_MM_vocab(
         df_geno=ds_NCBI,
         df_pheno=ds_pheno,

@@ -10,24 +10,22 @@ num_heads: 4
 num_layers: 6
 dropout_prob: 0.1
 mask_prob_geno: 0.25
-masking_method: 'random' # 'random', 'num_known' or 'keep_one_class'
 mask_prob_pheno: 0.25
 num_known_ab: 
-always_mask_replace: False
-batch_size: 64
+always_mask_replace: True
+batch_size: 32
 val_share: 0.1 # CV split
 do_eval: True
 max_seq_len: 'auto'
 epochs: 100
-early_stopping_patience: 3
+early_stopping_patience: 5
 loss_fn: 'bce' # 'bce' or 'focal'
 wl_strength:      # 'mild' or 'strong' (or None for no weighting)
 gamma: 2          # only for focal loss (optimizable)
-alpha: 0.5        # only for focal loss (optimizable)
-lr: 0.00005
+lr: 0.00002
 weight_decay: 0.01
-print_progress_every: 3000
-report_every: 1000
+print_progress_every: 5000
+report_every:   # log training loss to wandb every X batches
 savepath_vocab: 'MM_vocab_15.pt'
 save_model: True
 random_state: 42
@@ -44,7 +42,7 @@ fine_tuning:
   construct_vocab: False
   no_pt: False
   model_path: 
-  batch_size: 32
+  batch_size: 16
   val_share: 0.2
   num_folds: 5
   epochs: 100
@@ -57,7 +55,6 @@ fine_tuning:
   loss_fn: 'bce'            # 'bce' or 'focal'
   wl_strength:       # 'mild' or 'strong' (or None for no weighting)
   gamma: 2                 # only for focal loss (optimizable)
-  alpha: 0.5              # only for focal loss (optimizable)
   lr: 0.00001
   weight_decay: 0.01
   early_stopping_patience: 10
@@ -75,11 +72,8 @@ specials:
   GENE_MASK: '[GENE_MASK]'
   UNK: '[UNK]'
 data:
-  # exclude_antibiotics: 
-  ## OFX, AMC, TZP, PIP don't occur in NCBI (or not frequently enough)
+  exclude_antibiotics: 
   # exclude_antibiotics: ['POL', 'DOR', 'MEM', 'IPM', 'ETP', 'TGC', 'COL', 'AMK', 'NET', 'OFX', 'AMC', 'TZP', 'PIP', 'AMX', 'NOR', 'MFX'] # 10 AB
-  ## IPM: 99% S in TESSy, but 98% in NCBI
-  ## MFX: Reasonable imbalance, but few samples
   # exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'NOR', 'POL', 'DOR', 'TGC', 'MEM', 'ETP', 'COL', 'AMX', 'AMK', 'NET', 'PIP'] # 12 AB
   exclude_antibiotics: ['TZP', 'AMC', 'OFX', 'POL', 'NOR', 'TGC', 'DOR', 'COL', 'AMX', 'NET', 'PIP'] # 15 AB
   pathogens: ['ESCCOL']
@@ -96,6 +90,7 @@ data:
     filter_genes_by_ab_class:   # e.g. BETA-LACTAM, AMINOGLYCOSIDE. Applies to training set in fine-tuning only
     # filter_genes_by_ab_class: ['BETA-LACTAM'] 
     # filter_genes_by_ab_class: ['FLUOROQUINOLONE', 'QUINOLONE'] 
+    filter_isolates_by_ab_class: # e.g. BETA-LACTAM, AMINOGLYCOSIDE. Applies to training set in fine-tuning only
     # exclude_assembly_variants: 
     exclude_assembly_variants: ["=PARTIAL", "=MISTRANSLATION", "=HMM"]
     exclusion_chars: 
@@ -165,7 +160,7 @@ data:
       'UZ': 'Uzbekistan'
       'XK': 'Kosovo'
   antibiotics:
-    abbr_to_names:
+    abbr_to_name:
       AMC: 'Amoxicillin/Clavulanic acid'
       AMK: 'Amikacin'
       AMP: 'Ampicillin'
@@ -246,7 +241,7 @@ data:
       TGC: 0.8
       TOB: 0.8
       TZP: 0.8
-    ab_names_to_abbr:
+    name_to_abbr:
       Amoxicillin/Clavulanic acid: 'AMC'
       Amikacin: 'AMK'
       Ampicillin: 'AMP'

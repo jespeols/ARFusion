@@ -224,11 +224,11 @@ class MMPretrainDataset(Dataset):
             for i, pheno_seq in enumerate(pheno_sequences):
                 classes = ab_classes[i]                # randomly choose one class to keep
                 unique_classes, counts = np.unique(classes, return_counts=True)
-                freq = counts / counts.sum()
-                inv_freq = 1 / freq
-                prob = inv_freq / inv_freq.sum()
-                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
-                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
+                # freq = counts / counts.sum()
+                # inv_freq = 1 / freq
+                # prob = inv_freq / inv_freq.sum()
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
                 indices = [idx for idx in range(seq_len) if classes[idx] not in keep_classes]
@@ -236,6 +236,7 @@ class MMPretrainDataset(Dataset):
                     ab, res = pheno_seq[idx].split('_')
                     target_res[self.ab_to_idx[ab]] = self.enc_res[res]
                     pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])
+                pheno_seq = seq_starts[i] + pheno_seq
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
         else:
@@ -280,6 +281,7 @@ class MMFinetuneDataset(Dataset):
         no_geno_masking: bool = False,
         always_mask_replace: bool = True,
         filter_genes_by_ab_class: list = None,
+        filter_isolates_by_ab_class: list = None,
         random_state: int = 42,
         include_sequences: bool = False,
     ):
@@ -305,18 +307,38 @@ class MMFinetuneDataset(Dataset):
         else:
             print("Masking using BERT 80-10-10 strategy")
         
+        assert (not all([filter_genes_by_ab_class, filter_isolates_by_ab_class])), "Choose only one filter"
+        self.filter_isolates_by_ab_class = filter_isolates_by_ab_class
+        if self.filter_isolates_by_ab_class:
+            unique_genotypes = self.ds['genotypes'].explode().unique().tolist()
+            genotype_to_ab_class = get_genotype_to_ab_class(unique_genotypes)
+            unique_classes = set(genotype_to_ab_class.values())
+            assert any(f in unique_classes for f in self.filter_isolates_by_ab_class), "Unknown antibiotic class"
+            num_before = self.ds.shape[0]
+            self.ds = self.ds[self.ds['genotypes'].apply(
+                lambda x: not any(f in genotype_to_ab_class[gene] for f in self.filter_isolates_by_ab_class for gene in x)
+            )].reset_index(drop=True)
+            num_after = self.ds.shape[0]
+            diff = num_before - num_after
+            s = f"Dropping {diff:,} isolates ({diff/num_before:.1%}) that contain genes associated with {self.filter_isolates_by_ab_class}."
+            s += f" Now {num_after:,} isolates left"
+            print(s)
         self.filter_genes_by_ab_class = filter_genes_by_ab_class
         if self.filter_genes_by_ab_class:
             unique_genotypes = self.ds['genotypes'].explode().unique().tolist()
             genotype_to_ab_class = get_genotype_to_ab_class(unique_genotypes)
-            print(f"Filtering genes by antibiotic classes: {self.filter_genes_by_ab_class}")
+            unique_classes = set(genotype_to_ab_class.values())
+            assert all(f in unique_classes for f in self.filter_genes_by_ab_class), "Unknown antibiotic class"
             ## Feature: remove filtered genes from the genotypes ##
             # self.ds['genotypes_filtered'] = self.ds['genotypes'].apply(
             #     lambda x: [gene for gene in x if not any(f in genotype_to_ab_class(gene) for f in self.filter_genes_by_ab_class)]
             # )
             ## Alternative feature: change the tokens of filtered genes to special token ##
+            replace_token = self.GENE_MASK
+            # replace_token = self.PAD
+            print(f"Replacing genes associated with {self.filter_genes_by_ab_class} with {replace_token}")
             self.ds['genotypes_filtered'] = self.ds['genotypes'].apply(
-                lambda x: [gene if not any(f in genotype_to_ab_class[gene] for f in self.filter_genes_by_ab_class) else self.PAD for gene in x]
+                lambda x: [gene if not any(f in genotype_to_ab_class[gene] for f in self.filter_genes_by_ab_class) else replace_token for gene in x]
             )   
             self.ds['num_genotypes_filtered'] = self.ds['genotypes_filtered'].apply(len)
             self.genotype_col = 'genotypes_filtered'
@@ -443,7 +465,7 @@ class MMFinetuneDataset(Dataset):
         target_resistances = list()
         pheno_target_ids = list()
 
-        if self.mask_prob_pheno:
+        if self.masking_method == 'random':
             for pheno_seq in pheno_sequences:
                 seq_len = len(pheno_seq)
                 token_mask = self.rng.random(seq_len) < self.mask_prob_pheno
@@ -460,7 +482,7 @@ class MMFinetuneDataset(Dataset):
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())
-        elif self.num_known_ab:
+        elif self.masking_method == 'num_known_ab':
             for pheno_seq in pheno_sequences:
                 seq_len = len(pheno_seq)
                 target_res = [-1]*self.num_ab
@@ -473,17 +495,17 @@ class MMFinetuneDataset(Dataset):
                     pheno_seq[idx] = self._get_replace_token(self.AB_MASK, pheno_seq[idx])                
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
-                pheno_target_ids.append(target_ids.tolist())  
-        elif self.masking_method == "num_known_classes":
+                pheno_target_ids.append(target_ids.tolist())
+        elif self.masking_method == 'num_known_classes':
             for i, pheno_seq in enumerate(pheno_sequences):
                 classes = ab_classes[i]     
                 ## randomly choose one class to keep        
                 unique_classes, counts = np.unique(classes, return_counts=True)
-                freq = counts / counts.sum()
-                inv_freq = 1 / freq
-                prob = inv_freq / inv_freq.sum()
-                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
-                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
+                # freq = counts / counts.sum()
+                # inv_freq = 1 / freq
+                # prob = inv_freq / inv_freq.sum()
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
                 seq_len = len(pheno_seq)
                 target_ids = np.array([-1]*seq_len)
                 target_res = [-1]*self.num_ab
@@ -526,6 +548,7 @@ class PhenoFinetuneDataset(Dataset):
         masking_method: str,
         mask_prob_pheno: float,
         num_known_ab: int,
+        num_known_classes: int = None,
         always_mask_replace: bool = False,
         random_state: int = 42,
         include_sequences: bool = False,
@@ -546,18 +569,20 @@ class PhenoFinetuneDataset(Dataset):
         self.CLS, self.PAD, self.AB_MASK = specials['CLS'], specials['PAD'], specials['AB_MASK']
         self.always_mask_replace = always_mask_replace
         
-        self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
-        self.mask_prob_pheno = mask_prob_pheno
         self.mask_prob_geno = 0 # not used in this dataset, required in trainer # TODO: use better solution
         self.no_genotype_masking = False # not used in this dataset, required in trainer
+        self.masking_method = masking_method # 'random', 'num_known' or 'keep_one_class'
+        self.mask_prob_pheno = mask_prob_pheno
+        self.num_known_classes = num_known_classes
         self.num_known_ab = num_known_ab
         if self.masking_method == 'random':
             assert self.mask_prob_pheno, "mask_prob_pheno must be given if masking_method is 'random'"
-        elif self.masking_method == 'num_known':
+        elif self.masking_method == 'num_known_ab':
             assert self.num_known_ab, "num_known_ab must be given if masking_method is 'num_known'"
             self.ds = self.ds[self.ds['num_ab'] > self.num_known_ab].reset_index(drop=True)
-        elif self.masking_method == 'keep_one_class':            
-            self.ds = self.ds[self.ds['ab_classes'].apply(lambda x: len(set(x)) > 1)].reset_index(drop=True)
+        elif self.masking_method == 'num_known_classes':
+            assert num_known_classes, "num_known_classes must be given if masking_method is 'num_known_classes'"
+            self.ds = self.ds[self.ds['ab_classes'].apply(lambda x: len(set(x)) > self.num_known_classes)].reset_index(drop=True)
         self.num_samples = self.ds.shape[0]
                     
         self.include_sequences = include_sequences
@@ -594,7 +619,7 @@ class PhenoFinetuneDataset(Dataset):
         ages = self.ds['age'].astype(int).astype(str).tolist()
         seq_starts = [[self.CLS, years[i], countries[i], genders[i], ages[i]] for i in range(self.num_samples)]
         
-        if self.masking_method == "keep_one_class":
+        if self.masking_method == "num_known_classes":
             ab_classes = deepcopy(self.ds['ab_classes'].tolist())
             masked_pheno_sequences, target_resistances, target_ids = self._mask_pheno_sequences(pheno_sequences, ab_classes)
         else:
@@ -674,20 +699,20 @@ class PhenoFinetuneDataset(Dataset):
                 masked_pheno_sequences.append(pheno_seq)
                 target_resistances.append(target_res)
                 pheno_target_ids.append(target_ids.tolist())  
-        elif self.masking_method == "keep_one_class":
+        elif self.masking_method == 'num_known_classes':
             for i, pheno_seq in enumerate(pheno_sequences):
-                classes = ab_classes[i]                # randomly choose one class to keep
+                classes = ab_classes[i]     
+                ## randomly choose one class to keep        
                 unique_classes, counts = np.unique(classes, return_counts=True)
                 # freq = counts / counts.sum()
                 # inv_freq = 1 / freq
                 # prob = inv_freq / inv_freq.sum()
-                # keep_classes = self.rng.choice(unique_classes, p=prob) # less frequent classes are more likely
-                keep_classes = self.rng.choice(unique_classes) # all classes are equally likely
-                # keep_classes = self.rng.choice(classes) # more frequent classes are more likely
+                # keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False, p=prob) # less frequent classes are more likely
+                keep_classes = self.rng.choice(unique_classes, self.num_known_classes, replace=False) # all classes are equally likely
                 seq_len = len(pheno_seq)
                 target_ids = np.array([-1]*seq_len)
                 target_res = [-1]*self.num_ab
-                indices = [idx for idx in range(seq_len) if classes[idx] != keep_classes] 
+                indices = [idx for idx in range(seq_len) if classes[idx] not in keep_classes] 
                 target_ids[indices] = self.vocab.lookup_indices([pheno_seq[i] for i in indices])
                 for idx in indices:
                     ab, res = pheno_seq[idx].split('_')
@@ -700,3 +725,81 @@ class PhenoFinetuneDataset(Dataset):
             raise ValueError(f"Unknown masking method: {self.masking_method}")
         
         return masked_pheno_sequences, target_resistances, pheno_target_ids
+    
+    
+class MMInferenceDataset(Dataset):
+    
+    def __init__(
+        self,
+        ds,
+        vocab,
+        defined_antibiotics,
+        max_seq_len,
+        specials,
+        selected_ab_idx,
+        patient_info_only=False
+        ):
+        self.ds = ds.reset_index(drop=True)
+        self.vocab = vocab
+        self.max_seq_len = max_seq_len
+        self.specials = specials
+        self.CLS, self.PAD = specials['CLS'], specials['PAD']
+        self.GENE_MASK, self.AB_MASK = specials['GENE_MASK'], specials['AB_MASK']
+        self.device = device
+        self.ab = defined_antibiotics[selected_ab_idx]
+        self.patient_info_only = patient_info_only
+        
+        self.phenotypes = self.ds['phenotypes'].tolist()
+        self.year_col = self.ds['year'].astype(str).tolist()
+        self.country_col = self.ds['country'].tolist()
+        self.gender_col = self.ds['gender'].tolist()
+        self.age_col = self.ds['age'].astype(int).astype(str).tolist()
+        
+        self.columns = ['indices_masked', 'token_types', 'attn_mask', 'target_res', 'masked_sequences']
+        
+    def prepare_dataset(self):
+        masked_phenotypes = []
+        target_res = []
+        for phen_list in self.phenotypes:
+            masked_phen_list = []
+            for p in phen_list:
+                if p.split('_')[0] != self.ab:
+                    if self.patient_info_only:
+                        pass
+                    else:
+                        masked_phen_list.append(p)
+                else:
+                    if p == self.ab+'_R':
+                        target_res.append(1)
+                    else:
+                        target_res.append(0)
+                    masked_phen_list.append(self.AB_MASK)
+            masked_phenotypes.append(masked_phen_list)
+
+        masked_sequences = [[self.specials['CLS'], self.year_col[i], self.country_col[i], self.gender_col[i], self.age_col[i]] + masked_phenotypes[i] for i in range(len(self.ds))]
+        token_types = [[0]*5 + [2]*(len(masked_sequences[i])-5) for i in range(len(self.ds))]
+        ########### without patient info ###########
+        # masked_sequences = [[self.specials['CLS']] + masked_phenotypes[i] for i in range(len(self.ds))]
+        # token_types = [[0] + [2]*(len(masked_sequences[i])-1) for i in range(len(self.ds))]
+        
+        masked_sequences = [seq + [self.specials['PAD']]*(self.max_seq_len-len(seq)) for seq in masked_sequences]
+        indices_masked = [self.vocab.lookup_indices(masked_seq) for masked_seq in masked_sequences]
+        token_types = [tt + [2]*(self.max_seq_len-len(tt)) for tt in token_types]
+        attn_mask = [[False if token == self.specials['PAD'] else True for token in seq] for seq in masked_sequences]
+        
+        rows = zip(indices_masked, token_types, attn_mask, target_res, masked_sequences)
+        self.df = pd.DataFrame(rows, columns=self.columns)
+    
+    def __len__(self):
+        return len(self.ds)
+    
+    def __getitem__(self, idx):
+        item = self.df.iloc[idx]
+        
+        input = torch.tensor(item['indices_masked'], dtype=torch.long, device=self.device)
+        token_types = torch.tensor(item['token_types'], dtype=torch.long, device=self.device)
+        masked_sequences = item['masked_sequences']
+        target_res = torch.tensor(item['target_res'], dtype=torch.float, device=self.device)
+        attn_mask = (input != self.vocab[self.PAD]).unsqueeze(0).unsqueeze(1)
+        
+        return input, token_types, attn_mask, target_res, masked_sequences

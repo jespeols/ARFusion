@@ -65,15 +65,18 @@ if __name__ == "__main__":
     argparser.add_argument("--exp_folder", type=str, help="Name of experiment folder")
     argparser.add_argument("--model_path", type=str)
     argparser.add_argument("--ds_path", type=str)
+    argparser.add_argument("--ds_share", type=float)
     argparser.add_argument("--no_pt", action="store_true", help="Enable naive model")
-    argparser.add_argument("--use_weighted_loss", action="store_true", help="Use weighted loss function")
-    argparser.add_argument("--masking_method", type=str)
     argparser.add_argument("--mask_prob_pheno", type=float)
-    argparser.add_argument("--min_num_ab", type=int)
     argparser.add_argument("--num_known_ab", type=int)
+    argparser.add_argument("--num_known_classes", type=int)
+    argparser.add_argument("--min_num_ab", type=int)
     argparser.add_argument("--batch_size", type=int)
     argparser.add_argument("--epochs", type=int)
+    argparser.add_argument("--loss_fn", type=str, help="Loss function to use")
+    argparser.add_argument("--wl_strength", type=str, help="Strength of weighted CE loss functions for antibiotics ('mild' or 'strong')")
     argparser.add_argument("--lr", type=float)
+    argparser.add_argument("--es_patience", type=int)
     argparser.add_argument("--random_state", type=int)
     argparser.add_argument("--train_shares", type=list_of_floats, help="List of shares for training sizes to indices_list over")
     argparser.add_argument("--no_cv", action="store_true", help="Disable cross-validation")
@@ -111,21 +114,30 @@ if __name__ == "__main__":
     if args.no_pt:
         config_ft['model_path'] = None
         config_ft['no_pt'] = True
-    config_ft['use_weighted_loss'] = args.use_weighted_loss if args.use_weighted_loss else config_ft['use_weighted_loss']
-    config_ft['masking_method'] = args.masking_method if args.masking_method else config_ft['masking_method']
-    assert config_ft['masking_method'] in ['random', 'num_known', 'keep_one_class'], "Invalid masking method"
-    if config_ft['masking_method'] == 'random':
-        config_ft['mask_prob_pheno'] = args.mask_prob_pheno if args.mask_prob_pheno else config_ft['mask_prob_pheno']
-        config_ft['num_known_ab'] = None
-    elif config_ft['masking_method'] == 'num_known':
-        config_ft['num_known_ab'] = args.num_known_ab if args.num_known_ab else config_ft['num_known_ab']
-        config_ft['mask_prob_pheno'] = None
-    elif config_ft['masking_method'] == 'keep_one_class':
-        config_ft['num_known_ab'] = None
-        config_ft['mask_prob_pheno'] = None
+    config_ft['mask_prob_geno'] = 0
+    if args.mask_prob_pheno:
+        config_ft['masking_method'] = 'random'
+        config_ft['mask_prob_pheno'] = args.mask_prob_pheno
+        config_ft['num_known_ab'], config_ft['num_known_classes'] = None, None
+    elif args.num_known_ab:
+        config_ft['masking_method'] = 'num_known_ab'
+        config_ft['num_known_ab'] = args.num_known_ab
+        config_ft['mask_prob_pheno'], config_ft['num_known_classes'] = None, None
+    elif args.num_known_classes:
+        config_ft['masking_method'] = 'num_known_classes'
+        config_ft['num_known_classes'] = args.num_known_classes
+        config_ft['mask_prob_pheno'], config_ft['num_known_ab'] = None, None
     config_ft['batch_size'] = args.batch_size if args.batch_size else config_ft['batch_size']
     config_ft['epochs'] = args.epochs if args.epochs else config_ft['epochs']
     config_ft['lr'] = args.lr if args.lr else config['lr']
+    config_ft['early_stopping_patience'] = args.es_patience if args.es_patience else config_ft['early_stopping_patience']
+    if args.loss_fn:
+        if not args.loss_fn in ['focal', 'bce']:
+            raise NotImplementedError("Invalid loss function, choose from ['focal', 'bce']")
+        config_ft['loss_fn'] = args.loss_fn
+    if args.wl_strength:
+        assert args.wl_strength in ['mild', 'strong'], "Invalid weighted loss strength, choose from ['mild', 'strong']"
+        config_ft['wl_strength'] = args.wl_strength
     config_ft['random_state'] = args.random_state if args.random_state else config_ft['random_state']
     train_shares = args.train_shares if args.train_shares else [0.8]
     if not args.no_cv:
@@ -139,10 +151,13 @@ if __name__ == "__main__":
     
     print(f"\nLoading dataset from {os.path.join(BASE_DIR, config_ft['ds_path'])}...")
     ds_TESSy = pd.read_pickle(BASE_DIR / config_ft['ds_path'])
-    ds_TESSy = ds_TESSy.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)
-    
-    ds_TESSy = ds_TESSy.sample(frac=1, random_state=config_ft['random_state']).reset_index(drop=True)
-    ds_TESSy = ds_TESSy.iloc[:int(0.5*len(ds_TESSy))].reset_index(drop=True)
+    ds_share = args.ds_share if args.ds_share else 1
+    ds_TESSy = ds_TESSy.sample(frac=ds_share, random_state=config_ft['random_state']).reset_index(drop=True) 
+    ds_TESSy['frac_R'] = ds_TESSy['num_R'] / (ds_TESSy['num_ab'])
+    ds_TESSy['frac_S'] = ds_TESSy['num_S'] / (ds_TESSy['num_ab'])
+    # ds_TESSy = ds_TESSy[(ds_TESSy['frac_R'] > 0.15) & (ds_TESSy['frac_R'] < 0.9)].reset_index(drop=True)
+    print(f"Number of samples in the dataset: {len(ds_TESSy):,}")
+    print(f"S/R ratio: {(ds_TESSy['num_S'].sum() / ds_TESSy['num_ab'].sum()):.1%}/{(ds_TESSy['num_R'].sum() / ds_TESSy['num_ab'].sum()):.1%}")
     
     abbr_to_class_enc = data_dict['antibiotics']['abbr_to_class_enc']
     ds_TESSy['ab_classes'] = ds_TESSy['phenotypes'].apply(lambda x: [abbr_to_class_enc[p.split('_')[0]] for p in x])
@@ -157,14 +172,7 @@ if __name__ == "__main__":
     pad_token = specials['PAD']
     ds_TESSy.fillna(pad_token, inplace=True)
 
-    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
-    if config_ft['no_pt']: ## REMOVE LATER 
-        for ab in antibiotics:
-            tokens = list(vocab.get_stoi().keys())
-            if not (ab+"_S") in tokens:
-                print(f"Adding antibiotic {ab} to vocabulary")
-                vocab.append_token(ab+"_S")
-                vocab.append_token(ab+"_R")
+    antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
     vocab_size = len(vocab)
     ds_NCBI = pd.read_pickle(BASE_DIR / data_dict['NCBI']['load_path'])
     if config['max_seq_len'] == 'auto':
@@ -233,6 +241,7 @@ if __name__ == "__main__":
                 masking_method=config_ft['masking_method'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
+                num_known_classes=config_ft['num_known_classes'],
                 random_state=config_ft['random_state'],
             )
             ds_ft_val = PhenoFinetuneDataset(
@@ -244,6 +253,7 @@ if __name__ == "__main__":
                 masking_method=config_ft['masking_method'],
                 mask_prob_pheno=config_ft['mask_prob_pheno'],
                 num_known_ab=config_ft['num_known_ab'],
+                num_known_classes=config_ft['num_known_classes'],
                 random_state=config_ft['random_state'],
             )
             pad_idx = vocab[pad_token]
@@ -300,7 +310,8 @@ if __name__ == "__main__":
                 "Accuracies/val_iso_acc": ft_results['iso_acc'],
                 "Class_metrics/val_sens": ft_results['sens'],
                 "Class_metrics/val_spec": ft_results['spec'],
-                "Class_metrics/val_F1": ft_results['F1']
+                "Class_metrics/val_F1": ft_results['F1'],
+                "Class_metrics/val_auc_score": ft_results['auc_score'],
             }
             wandb_run.log(log_dict)
             
@@ -311,6 +322,8 @@ if __name__ == "__main__":
             sensitivities.append(ft_results['sens'])
             specificities.append(ft_results['spec'])
             F1_scores.append(ft_results['F1'])
+            auc_scores.append(ft_results['auc_score'])
+            roc_results.append(ft_results['roc'])
             iso_stats.append(ft_results['iso_stats'])
             ab_stats.append(ft_results['ab_stats'])
             
@@ -319,7 +332,7 @@ if __name__ == "__main__":
                     best_val_loss = ft_results['loss']
                     best_fold = j
                     if args.save_best_model:
-                        best_model_state = tuner.model.get_state_dict()
+                        best_model_state = tuner.model.state_dict()
         if num_folds:
             print("All folds completed!")
         if args.save_best_model:
@@ -335,17 +348,20 @@ if __name__ == "__main__":
             'sensitivities': sensitivities,
             'specificities': specificities,
             'F1_scores': F1_scores,
+            "auc_scores": auc_scores,
+            "roc_results": roc_results,
             'iso_stats': iso_stats,
             'ab_stats': ab_stats
         }  
-        df_CV = get_average_and_std_df(CV_results, with_metric_as_index=True)
+        df_CV = get_average_and_std_df(CV_results, include_auc=True)
         log_dict = {
-            "Losses/avg_val_loss": df_CV.loc['Loss', 'avg'],
-            "Accuracies/avg_val_acc": df_CV.loc['Accuracy', 'avg'],
-            "Accuracies/avg_val_iso_acc": df_CV.loc["Isolate accuracy", 'avg'],
-            "Class_metrics/avg_val_sens": df_CV.loc["Sensitivity", 'avg'],
-            "Class_metrics/avg_val_spec": df_CV.loc["Specificity", 'avg'],
-            "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg']
+            "Losses/avg_val_loss": df_CV.loc['loss', 'avg'],
+            "Accuracies/avg_val_acc": df_CV.loc['accuracy', 'avg'],
+            "Accuracies/avg_val_iso_acc": df_CV.loc["isolate accuracy", 'avg'],
+            "Class_metrics/avg_val_sens": df_CV.loc["sensitivity", 'avg'],
+            "Class_metrics/avg_val_spec": df_CV.loc["specificity", 'avg'],
+            "Class_metrics/avg_val_F1": df_CV.loc["F1", 'avg'],
+            "Class_metrics/avg_val_auc_score": df_CV.loc["auc_score", 'avg'],
         }
         wandb_run.log(log_dict)
         wandb_run.finish()

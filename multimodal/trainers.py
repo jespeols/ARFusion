@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 from itertools import chain
 from datetime import datetime
+from sklearn.metrics import roc_curve, auc, roc_auc_score
 
 from utils import WeightedBCEWithLogitsLoss, BinaryFocalWithLogitsLoss
 
@@ -50,6 +51,7 @@ class MMBertPreTrainer(nn.Module):
         assert round(self.val_size / (self.train_size + self.val_size), 2) == config["val_share"], "Validation set size does not match intended val_share"
         self.val_share, self.train_share = config["val_share"], 1 - config["val_share"]
         self.batch_size = config["batch_size"]
+        self.val_batch_size = 16*self.batch_size
         self.num_batches = np.ceil(self.train_size / self.batch_size).astype(int)
         self.vocab = self.train_set.vocab
          
@@ -62,40 +64,34 @@ class MMBertPreTrainer(nn.Module):
         
         self.mask_prob_geno = self.train_set.mask_prob_geno
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
-        self.mask_probs = {'geno': self.mask_prob_geno, 'pheno': self.mask_prob_pheno}
         self.num_known_ab = self.train_set.num_known_ab
+        self.num_known_classes = self.train_set.num_known_classes
         
         self.geno_criterion = nn.CrossEntropyLoss(ignore_index = -1).to(device) # ignores loss where target_ids == -1
         self.loss_fn = config["loss_fn"]
-        self.alpha, self.gamma = config["alpha"], config["gamma"]  ## hyperparameters for focal loss
+        self.gamma = config["gamma"]  ## hyperparameters for focal loss
         self.wl_strength = config["wl_strength"]  ## positive class weight for weighted BCELoss
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.alphas = [v for v in self.ab_weights.values()]
+        else:
+            self.alphas = [0.5]*self.num_ab         ## equal class weights for all antibiotics
+            
         if self.loss_fn == 'bce':
-            if self.wl_strength:
-                self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
-                self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
-                self.alphas = [v for v in self.ab_weights.values()]
-            else:
-                self.alphas = [0.5]*self.num_ab         ## equal class weights for all antibiotics
             self.ab_criterions = [WeightedBCEWithLogitsLoss(alpha=alpha).to(device) for alpha in self.alphas]
         elif self.loss_fn == 'focal':                   ## can implement antibiotic-specific parameters
-            self.ab_criterions = [BinaryFocalWithLogitsLoss(self.alpha, self.gamma).to(device) for _ in range(self.num_ab)]
+            self.ab_criterions = [BinaryFocalWithLogitsLoss(alpha, self.gamma).to(device) for alpha in self.alphas]
         else:
             raise NotImplementedError("Only 'bce' and 'focal' functions are supported")
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        # self.optimizer = torch.optim.AdamW(
-            # [
-                # {'params': self.model.parameters()},
-                # {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
-            # ],
-            # lr=self.lr, weight_decay=self.weight_decay
-        # )
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
                  
         self.current_epoch = 0
-        self.report_every = config["report_every"] if config["report_every"] else 1000
-        self.print_progress_every = config["print_progress_every"] if config["print_progress_every"] else 1000
+        self.report_every = config["report_every"]
+        self.print_progress_every = config["print_progress_every"]
         self._splitter_size = 80
         self.results_dir = results_dir
         if self.results_dir:
@@ -139,11 +135,13 @@ class MMBertPreTrainer(nn.Module):
             print(f"Mask probability (phenotypes): {self.mask_prob_pheno:.0%}")
         if self.num_known_ab:
             print(f"Number of known antibiotics: {self.num_known_ab}")
+        if self.num_known_classes:
+            print(f"Number of known classes: {self.num_known_classes}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
         print(f"Loss function: {'BCE' if self.loss_fn == 'bce' else 'Focal'}")
         if self.loss_fn == 'focal':
-            print(f"Alpha: {self.alpha} | Gamma: {self.gamma}")
+            print(f"Gamma: {self.gamma}")
         print(f"Learning rate: {self.lr}")
         print(f"Weight decay: {self.weight_decay}")
         print("="*self._splitter_size)
@@ -155,7 +153,7 @@ class MMBertPreTrainer(nn.Module):
         print("Preparing validation set...")
         self.val_set.prepare_dataset()
         self.val_set.shuffle() # to avoid batches of only genotypes or only phenotypes
-        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        self.val_loader = DataLoader(self.val_set, batch_size=self.val_batch_size, shuffle=False)
         print("Initializing training...")
         
         start_time = time.time()
@@ -197,7 +195,7 @@ class MMBertPreTrainer(nn.Module):
             print(f"Early stopping counter: {self.early_stopping_counter}/{self.patience}")
             print("="*self._splitter_size)
             num_days = (time.time() - start_time) // (24*60*60)
-            print(f"Elapsed time: {num_days:02d}-{time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
+            print(f"Elapsed time: {int(num_days):02d}-{time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             if early_stop:
                 print(f"Early stopping at epoch {self.current_epoch+1} with validation loss {self.val_losses[-1]:.4f}")
                 if self.do_eval:
@@ -325,9 +323,10 @@ class MMBertPreTrainer(nn.Module):
             
             loss.backward() 
             self.optimizer.step() 
-            if batch_index % self.report_every == 0:
-                self._report_loss_results(batch_index, reporting_loss)
-                reporting_loss = 0 
+            if self.report_every:
+                if batch_index % self.report_every == 0:
+                    self._report_loss_results(batch_index, reporting_loss)
+                    reporting_loss = 0 
                 
             if batch_index % self.print_progress_every == 0:
                 time_elapsed = time.gmtime(time.time() - time_ref) 
@@ -414,7 +413,7 @@ class MMBertPreTrainer(nn.Module):
                 
                 pred_logits, token_pred = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
-                        
+                
                 ###### Phenotype loss ######
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
                 if ab_mask.any(): # if there are phenotypes in the batch
@@ -574,7 +573,7 @@ class MMBertPreTrainer(nn.Module):
         indices = ab_mask.any(dim=1).nonzero().squeeze(-1).tolist() # list of isolates where phenotypes are present
         for idx in indices: 
             iso_ab_mask = ab_mask[idx]
-            df_idx = batch_idx * self.batch_size + idx # index of the isolate in the combined dataset
+            df_idx = batch_idx * self.val_batch_size + idx # index of the isolate in the combined dataset
             
             # counts
             num_masked_tot = iso_ab_mask.sum().item()
@@ -604,7 +603,7 @@ class MMBertPreTrainer(nn.Module):
         indices = token_mask.any(dim=1).nonzero().squeeze(-1).tolist() # list of isolates where genotypes are present
         for idx in indices:
             iso_token_mask = token_mask[idx]    
-            df_idx = batch_idx * self.batch_size + idx # index of the isolate in the combined dataset
+            df_idx = batch_idx * self.val_batch_size + idx # index of the isolate in the combined dataset
             
             num_masked = iso_token_mask.sum().item()
             pred_tokens = token_pred[idx, iso_token_mask].argmax(dim=-1)
@@ -641,6 +640,7 @@ class MMBertPreTrainer(nn.Module):
             
             config={
                 "trainer_type": "pre-training",
+                "Device:" : f"{device.type} ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else device.type,
                 "exp_folder": self.exp_folder,
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
@@ -651,12 +651,17 @@ class MMBertPreTrainer(nn.Module):
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "weight_decay": self.weight_decay,
-                "mask_probs": self.mask_probs,
+                "mask_prob_geno:": self.mask_prob_geno,
+                "masking_method": self.train_set.masking_method,
+                "mask_prob_pheno:": self.mask_prob_pheno if self.mask_prob_pheno else None,
+                "num_known_ab": self.num_known_ab if self.num_known_ab else None,
+                "num_known_classes": self.num_known_classes if self.num_known_classes else None,
                 "max_seq_len": self.model.max_seq_len,
                 "vocab_size": len(self.vocab),
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "num_antibiotics": self.num_ab,
                 "antibiotics": self.antibiotics,
+                "antibiotic weights:": self.ab_weights if self.wl_strength else None,
                 "loss_fn": self.loss_fn,
                 "train_size": self.train_size,
                 "random_state": self.random_state,
@@ -800,6 +805,7 @@ class MMBertFineTuner():
         train_set,
         val_set,
         results_dir: Path,
+        ds_size: int = None,
         CV_mode: bool = False
     ):
         super(MMBertFineTuner, self).__init__()
@@ -820,8 +826,13 @@ class MMBertFineTuner():
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
         self.dataset_size = self.train_size + self.val_size
+        if ds_size:
+            self.dataset_size = ds_size
+        else:
+            self.dataset_size = self.train_size + self.val_size
         self.val_share, self.train_share = self.val_size / self.dataset_size, self.train_size / self.dataset_size
         self.batch_size = config_ft["batch_size"]
+        self.val_batch_size = self.batch_size * 64
         self.num_batches = round(self.train_size / self.batch_size)
         self.vocab = self.train_set.vocab
         self.ab_to_idx = self.train_set.ab_to_idx
@@ -836,30 +847,25 @@ class MMBertFineTuner():
         self.mask_prob_geno = self.train_set.mask_prob_geno
         self.mask_prob_pheno = self.train_set.mask_prob_pheno
         self.num_known_ab = self.train_set.num_known_ab
+        self.num_known_classes = self.train_set.num_known_classes
         
         self.loss_fn = config_ft["loss_fn"]
-        self.alpha, self.gamma = config_ft["alpha"], config_ft["gamma"]  ## hyperparameters for focal loss
+        self.gamma = config_ft["gamma"]
         self.wl_strength = config_ft["wl_strength"] 
+        if self.wl_strength:
+            self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
+            self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
+            self.alphas = [v for v in self.ab_weights.values()]
+        else:   
+            self.alphas = [0.5]*self.num_ab   ## equal class weights for all antibiotics
+            
         if self.loss_fn == 'bce':
-            if self.wl_strength:
-                self.ab_weights = config['data']['antibiotics']['ab_weights_'+self.wl_strength]
-                self.ab_weights = {ab: v for ab, v in self.ab_weights.items() if ab in self.antibiotics}
-                self.alphas = [v for v in self.ab_weights.values()]
-            else:
-                self.alphas = [0.5]*self.num_ab         ## equal class weights for all antibiotics
             self.ab_criterions = [WeightedBCEWithLogitsLoss(alpha=alpha).to(device) for alpha in self.alphas]
-        elif self.loss_fn == 'focal':
-            self.ab_criterions = [BinaryFocalWithLogitsLoss(self.alpha, self.gamma).to(device) for _ in range(self.num_ab)]
+        elif self.loss_fn == 'focal':       ## TODO: Add individual parameter values for each antibiotic
+            self.ab_criterions = [BinaryFocalWithLogitsLoss(alpha, self.gamma).to(device) for alpha in self.alphas]
         else:
             raise NotImplementedError("Only 'bce' and 'focal' functions are supported")
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        # self.optimizer = torch.optim.AdamW(
-        #     [
-        #         {'params': self.model.parameters()},
-        #         {'params': chain(*[ab_predictor.parameters() for ab_predictor in self.model.classification_layer])}     
-        #     ],
-        #     lr=self.lr, weight_decay=self.weight_decay
-        # )
         self.scheduler = None
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.9)
         # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
@@ -916,15 +922,17 @@ class MMBertFineTuner():
         else:
             print(f"No genotype masking")
         print(f"Masking method: {self.masking_method}")
-        if self.mask_prob_pheno:
+        if self.masking_method == 'random':
             print(f"Mask probability for prediction task (phenotype): {self.mask_prob_pheno:.0%}")
-        if self.num_known_ab:
+        elif self.masking_method == 'num_known_ab':
             print(f"Number of known antibiotics: {self.num_known_ab}")
+        elif self.masking_method == 'num_known_classes':
+            print(f"Number of known classes: {self.num_known_classes}")
         print(f"Number of epochs: {self.epochs}")
         print(f"Early stopping patience: {self.patience}")
         print(f"Loss function: {'BCE' if self.loss_fn == 'bce' else 'Focal'}")
         if self.loss_fn == 'focal':
-            print(f"Alpha: {self.alpha} | Gamma: {self.gamma}")
+            print(f"Gamma: {self.gamma}")
         print(f"Learning rate: {self.lr}")
         print(f"Weight decay: {self.weight_decay}")
         print("="*self._splitter_size)
@@ -935,7 +943,7 @@ class MMBertFineTuner():
             self.wandb_run = self._init_wandb()
         print("Initializing training...")
         self.val_set.prepare_dataset()
-        self.val_loader = DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False)
+        self.val_loader = DataLoader(self.val_set, batch_size=self.val_batch_size, shuffle=False)
         
         start_time = time.time()
         self.best_val_loss = float('inf') 
@@ -967,7 +975,7 @@ class MMBertFineTuner():
             if not self.CV_mode:
                 self._report_epoch_results()
             early_stop = self.early_stopping()
-            print(f"Early stopping counter: {self.early_stop_counter}/{self.patience}")
+            print(f"Early stopping counter: {self.early_stopping_counter}/{self.patience}")
             print("="*self._splitter_size)
             print(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))}")
             if early_stop:
@@ -985,6 +993,7 @@ class MMBertFineTuner():
                         "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
                         "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
                         "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
+                        "Class_metrics/final_val_auc_score": self.val_auc_scores[self.best_epoch],
                         "best_epoch": self.best_epoch+1
                     })
                 self.model.load_state_dict(self.best_model_state) 
@@ -1000,6 +1009,7 @@ class MMBertFineTuner():
                     "Class_metrics/final_val_sens": self.val_sensitivities[self.best_epoch],
                     "Class_metrics/final_val_spec": self.val_specificities[self.best_epoch],
                     "Class_metrics/final_val_F1": self.val_F1_scores[self.best_epoch],
+                    "Class_metrics/final_val_auc_score": self.val_auc_scores[self.best_epoch],
                     "best_epoch": self.current_epoch+1
                 })
         if self.save_model_:
@@ -1026,6 +1036,8 @@ class MMBertFineTuner():
             "spec": self.val_specificities[self.best_epoch],
             "prec": self.val_precisions[self.best_epoch],
             "F1": self.val_F1_scores[self.best_epoch],
+            "auc_score": self.val_auc_scores[self.best_epoch],
+            "roc": self.val_roc_results[self.best_epoch],
             "iso_stats": self.val_iso_stats[self.best_epoch],
             "ab_stats": self.val_ab_stats[self.best_epoch]
         }
@@ -1075,15 +1087,19 @@ class MMBertFineTuner():
     
     
     def early_stopping(self):
-        if self.val_losses[-1] < self.best_val_loss:
-            self.best_val_loss = self.val_losses[-1]
-            self.best_epoch = self.current_epoch
-            self.best_model_state = self.model.state_dict()
+        if self.current_epoch > 4: # excempt the first 5 epochs from early stopping
+            if self.val_losses[-1] < self.best_val_loss:
+                self.best_val_loss = self.val_losses[-1]
+                self.best_epoch = self.current_epoch
+                self.best_model_state = self.model.state_dict()
+                self.early_stopping_counter = 0
+                return False
+            else:
+                self.early_stopping_counter += 1
+                return True if self.early_stopping_counter >= self.patience else False
+        else:
             self.early_stopping_counter = 0
             return False
-        else:
-            self.early_stopping_counter += 1
-            return True if self.early_stopping_counter >= self.patience else False
         
             
     def evaluate(self, loader: DataLoader, ds_obj):
@@ -1096,13 +1112,18 @@ class MMBertFineTuner():
             ab_num_preds = np.zeros_like(ab_num) # tracks the number of predictions for each antibiotic & resistance
             ab_num_correct = np.zeros_like(ab_num) # tracks the number of correct predictions for each antibiotic & resistance
             ## General tracking ##
+            pred_sigmoids = torch.tensor([]).to(device)
+            target_resistances = torch.tensor([]).to(device)
             loss = 0
             for i, batch in enumerate(loader):                  
                 input, target_res, target_ids, token_types, attn_mask = batch
-                       
                 pred_logits = self.model(input, token_types, attn_mask) # get predictions for all antibiotics
+                
+                ###### ROC ######
+                pred_sigmoids = torch.cat((pred_sigmoids, torch.sigmoid(pred_logits)), dim=0) # (+batch_size, num_ab)
+                target_resistances = torch.cat((target_resistances, target_res), dim=0)
+                
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits)) # logits -> 0/1 (S/R)
-                        
                 ab_mask = target_res >= 0 # (batch_size, num_ab), True if antibiotic is masked, False otherwise
                 iso_stats = self._update_iso_stats(i, pred_res, target_res, target_ids, ab_mask, token_types, iso_stats) 
                 
@@ -1127,8 +1148,12 @@ class MMBertFineTuner():
                 loss += sum(losses) / len(losses) # average loss over antibiotics
                     
             avg_loss = loss.item() / len(loader)
-        
-            ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct)
+            pred_sigmoids = pred_sigmoids.cpu().numpy()
+            target_resistances = target_resistances.cpu().numpy()
+            roc_results = self._get_roc_results(pred_sigmoids, target_resistances)
+            
+            ab_stats = self._update_ab_eval_stats(ab_stats, ab_num, ab_num_preds, ab_num_correct, 
+                                                  pred_sigmoids, target_resistances)
             iso_stats = self._calculate_iso_stats(iso_stats)
         
             acc = ab_stats['num_correct'].sum() / ab_stats['num_masked_tot'].sum()
@@ -1148,6 +1173,8 @@ class MMBertFineTuner():
                 "F1": F1_score,
                 "ab_stats": ab_stats,
                 "iso_stats": iso_stats,
+                "roc_results": roc_results,
+                "auc_score": roc_results["auc_score"]
             }
         return results
             
@@ -1163,6 +1190,8 @@ class MMBertFineTuner():
         self.val_F1_scores = []
         self.val_ab_stats = []
         self.val_iso_stats = []
+        self.val_roc_results = []
+        self.val_auc_scores = []
         
         
     def _update_val_lists(self, results: dict):
@@ -1175,18 +1204,21 @@ class MMBertFineTuner():
         self.val_F1_scores.append(results["F1"])
         self.val_ab_stats.append(results["ab_stats"])
         self.val_iso_stats.append(results["iso_stats"])
+        self.val_roc_results.append(results["roc_results"])
+        self.val_auc_scores.append(results["auc_score"])
     
     
     def _init_eval_stats(self, ds_obj):
         ab_stats = pd.DataFrame(columns=[
             'antibiotic', 'num_masked_tot', 'num_masked_S', 'num_masked_R', 'num_pred_S', 'num_pred_R', 
-            'num_correct', 'num_correct_S', 'num_correct_R',
-            'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
+            'num_correct', 'num_correct_S', 'num_correct_R', 'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
         ])
         ab_stats['antibiotic'] = self.antibiotics
         ab_stats['num_masked_tot'], ab_stats['num_masked_S'], ab_stats['num_masked_R'] = 0, 0, 0
         ab_stats['num_pred_S'], ab_stats['num_pred_R'] = 0, 0
         ab_stats['num_correct'], ab_stats['num_correct_S'], ab_stats['num_correct_R'] = 0, 0, 0
+        ab_stats['auc_score'] = 0.0
+        ab_stats['roc_fpr'], ab_stats['roc_tpr'], ab_stats['roc_thresholds'] = None, None, None
         
         iso_stats = ds_obj.ds.copy()
         iso_stats['num_masked_ab'], iso_stats['num_masked_genes'] = 0, 0 
@@ -1198,8 +1230,24 @@ class MMBertFineTuner():
         return ab_stats, iso_stats
     
     
-    def _update_ab_eval_stats(self, ab_stats: pd.DataFrame, num, num_preds, num_correct):
+    def _update_ab_eval_stats(self, ab_stats: pd.DataFrame, num, num_preds, num_correct, 
+                              pred_sigmoids: np.ndarray, target_resistances: np.ndarray):
         for j in range(self.num_ab): 
+            target_resistances_ab, pred_sigmoids_ab = target_resistances[:, j], pred_sigmoids[:, j]
+            pred_sigmoids_ab = pred_sigmoids_ab[target_resistances_ab >= 0]
+            target_resistances_ab = target_resistances_ab[target_resistances_ab >= 0]
+            try:
+                if len(np.unique(target_resistances_ab)) == 1:
+                    auc_score_ab = np.nan
+                    raise ValueError(f"Only one class present for antibiotic {self.antibiotics[j]}. AUC score is undefined.")
+                
+                auc_score_ab = roc_auc_score(target_resistances_ab, pred_sigmoids_ab)
+                fpr, tpr, thresholds = roc_curve(target_resistances_ab, pred_sigmoids_ab)
+            except ValueError as e:
+                print(e)
+                auc_score_ab = np.nan              
+            ab_stats.at[j, 'roc_fpr'], ab_stats.at[j, 'roc_tpr'], ab_stats.at[j, 'roc_thresholds'] = fpr, tpr, thresholds   
+            ab_stats.loc[j, 'auc_score'] = auc_score_ab
             ab_stats.loc[j, 'num_masked_tot'] = num[j, :].sum()
             ab_stats.loc[j, 'num_masked_S'], ab_stats.loc[j, 'num_masked_R'] = num[j, 0], num[j, 1]
             ab_stats.loc[j, 'num_pred_S'], ab_stats.loc[j, 'num_pred_R'] = num_preds[j, 0], num_preds[j, 1]
@@ -1232,13 +1280,26 @@ class MMBertFineTuner():
         return [num_pred_S, num_pred_R]
     
     
+    def _get_roc_results(self, pred_sigmoids: np.ndarray, target_resistances: np.ndarray, drop_intermediate: bool = False):
+        pred_sigmoids_flat = pred_sigmoids[target_resistances >= 0]
+        target_resistances_flat = target_resistances[target_resistances >= 0]
+        assert pred_sigmoids_flat.shape == target_resistances_flat.shape, "Shapes do not match"
+        assert len(pred_sigmoids_flat.shape) == 1, "Only 1D arrays are supported"
+        
+        fpr, tpr, thresholds = roc_curve(target_resistances_flat, pred_sigmoids_flat, drop_intermediate=drop_intermediate)
+        auc_score = auc(fpr, tpr)
+        roc_results = {"fpr": fpr, "tpr": tpr, "thresholds": thresholds, "auc_score": auc_score}
+        
+        return roc_results
+    
+    
     def _update_iso_stats(self, batch_idx, pred_res: torch.Tensor, target_res: torch.Tensor, target_ids: torch.Tensor,
                           ab_mask: torch.Tensor, token_types:torch.tensor, iso_stats: pd.DataFrame):
         for i in range(pred_res.shape[0]): 
             iso_ab_mask = ab_mask[i]
             iso_token_types = token_types[i][target_ids[i] != -1] # token types masked tokens
             iso_target_ids = target_ids[i][target_ids[i] != -1] # token ids of the antibiotics and genes that are masked
-            df_idx = batch_idx * self.batch_size + i # index of the isolate in the combined dataset
+            df_idx = batch_idx * self.val_batch_size + i # index of the isolate in the combined dataset
             
             # counts
             num_masked_ab = iso_ab_mask.sum().item()
@@ -1281,7 +1342,6 @@ class MMBertFineTuner():
         iso_stats['specificity'] = iso_stats.apply(
             lambda row: row['correct_S']/row['num_masked_S'] if row['num_masked_S'] > 0 else np.nan, axis=1
         )
-        
         return iso_stats
         
      
@@ -1292,6 +1352,7 @@ class MMBertFineTuner():
             
             config={
                 "trainer_type": "fine-tuning",
+                "Device:" : f"{device.type} ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else device.type,
                 "exp_folder": self.exp_folder,
                 "epochs": self.epochs,
                 "batch_size": self.batch_size,
@@ -1302,6 +1363,7 @@ class MMBertFineTuner():
                 'ff_dim': self.model.ff_dim,
                 "lr": self.lr,
                 "loss_fn": self.loss_fn,
+                "ab_weights": self.ab_weights if self.wl_strength else None,
                 "weight_decay": self.weight_decay,
                 "masking_method": self.masking_method, 
                 "mask_prob_geno": self.mask_prob_geno,
@@ -1312,6 +1374,7 @@ class MMBertFineTuner():
                 "num_parameters": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 "num_antibiotics": self.num_ab,
                 "antibiotics": self.antibiotics,
+                "train_share": round(self.train_share, 2),
                 "train_size": self.train_size,
                 "random_state": self.random_state,
                 "CV_mode": self.CV_mode,
@@ -1332,6 +1395,7 @@ class MMBertFineTuner():
         self.wandb_run.define_metric("Class_metrics/val_sens", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Class_metrics/val_spec", summary="max", step_metric="epoch")
         self.wandb_run.define_metric("Class_metrics/val_F1", summary="max", step_metric="epoch")
+        self.wandb_run.define_metric("Class_metrics/val_auc_score", summary="max", step_metric="epoch")
         
         self.wandb_run.define_metric("Losses/final_val_loss")
         self.wandb_run.define_metric("Accuracies/final_val_acc")
@@ -1339,6 +1403,7 @@ class MMBertFineTuner():
         self.wandb_run.define_metric("Class_metrics/final_val_sens")
         self.wandb_run.define_metric("Class_metrics/final_val_spec")
         self.wandb_run.define_metric("Class_metrics/final_val_F1")
+        self.wandb_run.define_metric("Class_metrics/final_val_auc_score")
         
         self.wandb_run.define_metric("best_epoch", hidden=True)
 
@@ -1353,6 +1418,7 @@ class MMBertFineTuner():
             "Class_metrics/val_sens": self.val_sensitivities[-1],
             "Class_metrics/val_spec": self.val_specificities[-1],
             "Class_metrics/val_F1": self.val_F1_scores[-1],
+            "Class_metrics/val_auc_score": self.val_auc_scores[-1],
             "Accuracies/val_acc": self.val_accs[-1],
             "Accuracies/val_iso_acc": self.val_iso_accs[-1],
         }

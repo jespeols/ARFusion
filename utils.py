@@ -160,38 +160,23 @@ def export_results(results, savepath):
         pickle.dump(results, f)
     print(f"Results saved to {savepath}")
 
-def get_average_and_std_df(results_dict, with_metric_as_index=False):
-    losses = results_dict['losses']
-    accs = results_dict['accs']
-    iso_accs = results_dict['iso_accs']
-    sensitivities = results_dict['sensitivities']
-    specificities = results_dict['specificities']
-    f1_scores = results_dict['F1_scores']
-    
-    losses_avg = np.mean(losses)
-    losses_std = np.std(losses)
-    accs_avg = np.mean(accs)
-    accs_std = np.std(accs)
-    iso_accs_avg = np.mean(iso_accs)
-    iso_accs_std = np.std(iso_accs)
-    sens_avg = np.mean(sensitivities)
-    sens_std = np.std(sensitivities)
-    spec_avg = np.mean(specificities)
-    spec_std = np.std(specificities)
-    f1_avg = np.mean(f1_scores)
-    f1_std = np.std(f1_scores)
-    
-    df_CV = pd.DataFrame(data={
-        "metric": ["Loss", 'Accuracy', 'Isolate accuracy', 'Sensitivity', 'Specificity', 'F1'], 
-        "avg": [losses_avg, accs_avg, iso_accs_avg, sens_avg, spec_avg, f1_avg], 
-        "std": [losses_std, accs_std, iso_accs_std, sens_std, spec_std, f1_std]
-    })
-    if with_metric_as_index:
-        df_CV.set_index("metric", inplace=True)
+def get_average_and_std_df(results_dict, include_auc=True):   
+    metrics = {'loss': 'losses', 'accuracy': 'accs', 'isolate accuracy': 'iso_accs', 
+               'sensitivity': 'sensitivities', 'specificity': 'specificities', 'F1': 'F1_scores'}
+    if include_auc:
+        metrics.update({'auc_score': 'auc_scores'})
+    data_dict = {}
+    for metric, key in metrics.items():
+        list_ = results_dict[key]
+        avg = np.mean(list_)
+        std = np.std(list_)
+        data_dict.update({metric: [avg, std]})
+    df_CV = pd.DataFrame.from_dict(data_dict, orient='index', columns=['avg', 'std'])
+    df_CV.index.name = 'metric'
     return df_CV
 
 
-def get_ab_stats_df(results_dict, with_ab_as_index=False):
+def get_ab_stats_df(results_dict, with_ab_as_index=False, include_auc=True):
     ab_stats_list = results_dict['ab_stats']
     
     data_dict = {}
@@ -217,12 +202,13 @@ def get_ab_stats_df(results_dict, with_ab_as_index=False):
     })
     
     metrics = ['accuracy', 'sensitivity', 'specificity', "precision", 'F1']
+    if include_auc:
+        metrics.append('auc_score')
     for metric in metrics:
         arr = np.array([ab_stats[metric] for ab_stats in ab_stats_list])
         avg = np.nanmean(arr, axis=0)
         std = np.nanstd(arr, axis=0)
         data_dict.update({metric+"_avg": avg.tolist(), metric+"_std": std.tolist()})
-
     df_ab_CV = pd.DataFrame(data=data_dict)
     if with_ab_as_index:
         df_ab_CV.set_index("antibiotic", inplace=True)
@@ -233,8 +219,7 @@ def plot_metric_by_ab(
     df_CV_ab,
     metric,
     use_std = True,
-    sort_by_desc: str = 'metric',
-    sort_by_desc_S_share = False,
+    sort_by_desc: str = 'S_share',
     use_legend = True,
     legend_labels = None,
     legend_loc = None,
@@ -343,6 +328,7 @@ def load_and_create_ab_df(
     exp_folder: str = None,
     model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
     train_share: str = None,
+    include_auc = True,
 ):
     results_dict_list = []
     for model_name in model_names:
@@ -357,7 +343,7 @@ def load_and_create_ab_df(
             p = os.path.join(BASE_DIR, 'results', 'MM', s, 'CV_results.pkl')
         results_dict_list.append(pd.read_pickle(p))
         
-    df_CV_ab_list = [get_ab_stats_df(results_dict) for results_dict in results_dict_list]
+    df_CV_ab_list = [get_ab_stats_df(results_dict, include_auc=include_auc) for results_dict in results_dict_list]
     df_CV_ab = pd.concat(df_CV_ab_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('antibiotic', append=True).unstack(level=0)
     df_CV_ab = df_CV_ab.reindex(columns=model_names, level=1)
     reduce_cols = ['avg_num', 'std_num', 'S_share_median', 'R_share_median', 'S_share_std', 'R_share_std']
@@ -373,7 +359,9 @@ def load_and_create_abs_and_rel_diff_dfs(
     train_params: str,
     train_share: str = None,
     exp_folder: str = None,
-    model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'], 
+    model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
+    ref_model = 'No PT',  ## default could be model_names[0],
+    include_auc = True,
 ):
     results_dict_list = []
     if train_share:
@@ -393,15 +381,14 @@ def load_and_create_abs_and_rel_diff_dfs(
                 p = os.path.join(BASE_DIR, 'results', 'MM', f'FT_{model_name}_{train_params}', 'CV_results.pkl')
             results_dict_list.append(pd.read_pickle(p))
             
-    df_CV_list = [get_average_and_std_df(results_dict) for results_dict in results_dict_list]
-    df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('metric', append=True).unstack(level=0)
-    df_CV = df_CV.reindex(columns=model_names, level=1)
-    df_diff = df_CV.drop(('avg', 'No PT'), axis=1).drop(('std', 'No PT'), axis=1)
+    df_CV_list = [get_average_and_std_df(results_dict, include_auc=include_auc) for results_dict in results_dict_list]
+    df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).unstack(level=0)
+    df_diff = df_CV.drop(('avg', ref_model), axis=1).drop(('std', ref_model), axis=1)
     for i in range(df_diff.shape[0]):
-        df_diff.iloc[i, :].loc['avg'] = df_diff.iloc[i, :] - df_CV.loc[:, ('avg', 'No PT')].values[i]
+        df_diff.iloc[i, :].loc['avg'] = df_diff.iloc[i, :] - df_CV.loc[:, ('avg', ref_model)].values[i]
         num_folds = 5 # sample size
         var_1 = df_diff.iloc[i, :].loc['std'].values**2
-        var_2 = df_CV.loc[:, ('std', 'No PT')].values[i]**2
+        var_2 = df_CV.loc[:, ('std', ref_model)].values[i]**2
         df_diff.iloc[i, :].loc['std'] = np.sqrt((var_1 + var_2)/num_folds) # standard error of the difference of means
     return df_CV, df_diff
 
@@ -411,6 +398,7 @@ def load_and_create_train_share_df(
     train_params: str,
     exp_folder: str = None,
     train_shares = [0.01, 0.05, 0.1, 0.2, 0.3],
+    include_auc = True,
 ):
     model_names = [f'{model_prefix}_{share}' for share in train_shares]
     results_dict_list = []
@@ -424,8 +412,8 @@ def load_and_create_train_share_df(
         else:
             p = os.path.join(BASE_DIR, 'results', 'MM', s, 'CV_results.pkl')
         results_dict_list.append(pd.read_pickle(p))
-    df_CV_list = [get_average_and_std_df(results_dict) for results_dict in results_dict_list]
-    df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('metric', append=True).unstack(level=0)
+    df_CV_list = [get_average_and_std_df(results_dict, include_auc=include_auc) for results_dict in results_dict_list]
+    df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).unstack(level=0)
     df_CV = df_CV.reindex(columns=model_names, level=1)
     return df_CV 
 
@@ -487,7 +475,7 @@ def calculate_ab_level_differences(
 def plot_ab_level_differences(
     df_diff_ab,
     plot_metric,
-    figsize=(13, 6),
+    figsize=(13, 4),
     plot_title=None,
     colors=['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     ab_classes=None,

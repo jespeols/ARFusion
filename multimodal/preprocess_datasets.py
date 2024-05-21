@@ -4,6 +4,7 @@ import argparse
 import pandas as pd
 import os
 import sys
+import time
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
@@ -27,18 +28,23 @@ if __name__ == "__main__":
         config = yaml.safe_load(config_file)
     
     args = argparser.parse_args()
+    if not any([args.preprocess_TESSy, args.preprocess_NCBI, args.preprocess_both, args.construct_vocab]):
+        print("No action specified. Will prepare both TESSy and NCBI data and construct vocabulary.")
+        args.preprocess_both = True
+        args.construct_vocab = True
     if args.preprocess_both:
         print("Preparing both TESSy and NCBI data...\n")
         args.preprocess_TESSy = True
         args.preprocess_NCBI = True
     data_dict = config['data']
     if args.preprocess_NCBI:
+        NCBI_start = time.time()
         print("Preprocessing NCBI data...")
         ds_NCBI = preprocess_NCBI(
             path=data_dict['NCBI']['raw_path'],
             save_path=data_dict['NCBI']['save_path'],
             include_phenotype=data_dict['NCBI']['include_phenotype'],
-            ab_names_to_abbr=data_dict['antibiotics']['ab_names_to_abbr'],
+            ab_names_to_abbr=data_dict['antibiotics']['name_to_abbr'],
             exclude_antibiotics=data_dict['exclude_antibiotics'], 
             threshold_year=data_dict['NCBI']['threshold_year'],
             exclude_genotypes=data_dict['NCBI']['exclude_genotypes'],
@@ -46,7 +52,15 @@ if __name__ == "__main__":
             exclusion_chars=data_dict['NCBI']['exclusion_chars'],
             gene_count_threshold=data_dict['NCBI']['gene_count_threshold']
         )
+        NCBI_time = time.time() - NCBI_start
+        if NCBI_time > 60:
+            disp_time = f"{NCBI_time/60:.2f} minutes"
+        else:
+            disp_time = f"{NCBI_time:.2f} seconds"
+        print(f"Preprocessing NCBI completed in {disp_time}.")
+        print()
     if args.preprocess_TESSy:
+        TESSy_start = time.time()
         print("Preprocessing TESSy data...")
         ds_TESSy = preprocess_TESSy(
             path=data_dict['TESSy']['raw_path'],
@@ -56,15 +70,21 @@ if __name__ == "__main__":
             impute_age=data_dict['TESSy']['impute_age'],
             impute_gender=data_dict['TESSy']['impute_gender']
         )
+        TESSy_time = time.time() - TESSy_start
+        if TESSy_time > 60:
+            disp_time = f"{TESSy_time/60:.2f} minutes"
+        else:
+            disp_time = f"{TESSy_time:.2f} seconds"
+        print(f"Preprocessing TESSy completed in {disp_time}.")
     if any([args.preprocess_TESSy, args.preprocess_NCBI]):
-        print("Preprocessing complete.")
+        print("Preprocessing complete.\n")
         
     if args.construct_vocab:
         print("Constructing vocabulary...")
         if data_dict['exclude_antibiotics']:
-            antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_names'].keys()) - set(data_dict['exclude_antibiotics'])))
+            antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
         else:
-            antibiotics = sorted(list(data_dict['antibiotics']['abbr_to_names'].keys()))
+            antibiotics = sorted(list(data_dict['antibiotics']['abbr_to_name'].keys()))
         print(f"{len(antibiotics)} antibiotics: {antibiotics}")
         specials = config['specials']
         print("Loading preprocessed datasets...")
