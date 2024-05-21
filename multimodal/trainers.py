@@ -805,6 +805,7 @@ class MMBertFineTuner():
         train_set,
         val_set,
         results_dir: Path,
+        ds_size: int = None,
         CV_mode: bool = False
     ):
         super(MMBertFineTuner, self).__init__()
@@ -825,9 +826,13 @@ class MMBertFineTuner():
         self.train_set, self.train_size = train_set, len(train_set)
         self.val_set, self.val_size = val_set, len(val_set) 
         self.dataset_size = self.train_size + self.val_size
+        if ds_size:
+            self.dataset_size = ds_size
+        else:
+            self.dataset_size = self.train_size + self.val_size
         self.val_share, self.train_share = self.val_size / self.dataset_size, self.train_size / self.dataset_size
         self.batch_size = config_ft["batch_size"]
-        self.val_batch_size = self.batch_size * 16
+        self.val_batch_size = self.batch_size * 64
         self.num_batches = round(self.train_size / self.batch_size)
         self.vocab = self.train_set.vocab
         self.ab_to_idx = self.train_set.ab_to_idx
@@ -1206,8 +1211,7 @@ class MMBertFineTuner():
     def _init_eval_stats(self, ds_obj):
         ab_stats = pd.DataFrame(columns=[
             'antibiotic', 'num_masked_tot', 'num_masked_S', 'num_masked_R', 'num_pred_S', 'num_pred_R', 
-            'num_correct', 'num_correct_S', 'num_correct_R',
-            'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
+            'num_correct', 'num_correct_S', 'num_correct_R', 'accuracy', 'sensitivity', 'specificity', 'precision', 'F1'
         ])
         ab_stats['antibiotic'] = self.antibiotics
         ab_stats['num_masked_tot'], ab_stats['num_masked_S'], ab_stats['num_masked_R'] = 0, 0, 0
@@ -1338,7 +1342,6 @@ class MMBertFineTuner():
         iso_stats['specificity'] = iso_stats.apply(
             lambda row: row['correct_S']/row['num_masked_S'] if row['num_masked_S'] > 0 else np.nan, axis=1
         )
-        
         return iso_stats
         
      

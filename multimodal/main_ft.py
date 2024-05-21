@@ -34,6 +34,7 @@ def init_wandb(project_name: str, wandb_name: str, config: dict):
     wandb_run.define_metric("Class_metrics/val_sens", summary="max", step_metric="fold")
     wandb_run.define_metric("Class_metrics/val_spec", summary="max", step_metric="fold")
     wandb_run.define_metric("Class_metrics/val_F1", summary="max", step_metric="fold")
+    wandb_run.define_metric("Class_metrics/val_auc_score", summary="max", step_metric="fold")
     
     wandb_run.define_metric("Losses/avg_val_loss")
     wandb_run.define_metric("Accuracies/avg_val_acc")
@@ -41,7 +42,8 @@ def init_wandb(project_name: str, wandb_name: str, config: dict):
     wandb_run.define_metric("Class_metrics/avg_val_sens")
     wandb_run.define_metric("Class_metrics/avg_val_spec")
     wandb_run.define_metric("Class_metrics/avg_val_F1")
-        
+    wandb_run.define_metric("Class_metrics/avg_val_auc_score")
+
     return wandb_run
 
 
@@ -281,6 +283,7 @@ if __name__ == "__main__":
                 train_set=ds_ft_train,
                 val_set=ds_ft_val,
                 results_dir=results_dir,
+                ds_size=ds_MM.shape[0],
                 CV_mode=True if num_folds else False,
             )
             if not config_ft['no_pt']:
@@ -308,6 +311,7 @@ if __name__ == "__main__":
                     "mask_prob_geno": tuner.mask_prob_geno,
                     "mask_prob_pheno": tuner.mask_prob_pheno,
                     "num_known_ab": tuner.num_known_ab,
+                    "num_known_classes": tuner.num_known_classes,
                     "max_seq_len": tuner.model.max_seq_len,
                     "vocab_size": len(vocab),
                     "num_parameters": sum(p.numel() for p in tuner.model.parameters() if p.requires_grad),
