@@ -728,16 +728,7 @@ class BertTuner(nn.Module):
             input, target_res, attn_mask = batch     
             self.optimizer.zero_grad() # zero out gradients
             pred_logits = self.model(input, attn_mask) # get predictions for all antibiotics
-            
-            if batch_index == 1:
-                print("example batch:")
-                print(input)
-                print("first sequence:")
-                print(input[0])
-                print(self.train_set.vocab.lookup_tokens(input[0].tolist()))
-                print("first target_res:")
-                print(target_res[0])
-            
+        
             ab_mask = target_res != -1 # (batch_size, num_ab), indicates which antibiotics are present in the batch
             ab_indices = ab_mask.any(dim=0).nonzero().squeeze(-1).tolist() # list of indices of antibiotics present in the batch
             losses = list()
@@ -801,7 +792,7 @@ class BertTuner(nn.Module):
                 pred_res = torch.where(pred_logits > 0, torch.ones_like(pred_logits), torch.zeros_like(pred_logits))
                 ab_mask = target_res != -1 # (batch_size, num_ab)
                 iso_stats = self._update_iso_stats(batch_idx, pred_res, target_res, ab_mask, iso_stats)
-                batch_loss = list()
+                losses = list()
                 for j in range(self.num_ab): 
                     mask = ab_mask[:, j] 
                     if mask.any(): 
@@ -812,13 +803,13 @@ class BertTuner(nn.Module):
                         num[j, :] += [num_masked_S, num_masked_R]
                         
                         ab_loss = self.criterions[j](ab_pred_logits, ab_targets)
-                        batch_loss.append(ab_loss.item())
+                        losses.append(ab_loss)
                         
                         ab_pred_res = pred_res[mask, j] 
                         num_correct[j, :] += self._get_num_correct(ab_pred_res, ab_targets)    
                         num_preds[j, :] += self._get_num_preds(ab_pred_res)
-                loss += sum(batch_loss) / len(batch_loss) 
-            avg_loss = loss / len(loader) # average loss over batches
+                loss += sum(losses) / len(losses) 
+            avg_loss = loss.item() / len(loader) # average loss over batches
             
             pred_sigmoids = pred_sigmoids.cpu().numpy()
             target_resistances = target_resistances.cpu().numpy()
@@ -834,7 +825,7 @@ class BertTuner(nn.Module):
             prec = ab_stats['num_correct_R'].sum() / ab_stats['num_pred_R'].sum()
             F1_score = 2 * sens * prec / (sens + prec)
         if print_mode:
-            print(f"Loss: {loss:.4f} | Accuracy: {acc:.2%} | Isolate accuracy: {iso_acc:.2%}")
+            print(f"Loss: {avg_loss:.4f} | Accuracy: {acc:.2%} | Isolate accuracy: {iso_acc:.2%}")
             print("="*self._splitter_size)
         
         results = {
