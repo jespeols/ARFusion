@@ -6,6 +6,7 @@ import torch
 import os
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+import matplotlib.lines as mlines
 
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
@@ -218,21 +219,31 @@ def get_ab_stats_df(results_dict, with_ab_as_index=False, include_auc=True):
 def plot_metric_by_ab(
     df_CV_ab,
     metric,
+    select_ab_classes = None,
     use_std = True,
     sort_by_desc: str = 'S_share',
+    classes_legend = False,
     use_legend = True,
+    legend_handles = None,
     legend_labels = None,
     legend_loc = None,
+    n_legend_cols = 1,
     colors = ['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     title = None, 
     figsize = (12, 8), 
     bar_width = None,
-    save_path = None
+    save_path = None,
+    ylim = None,
+    use_spacing = False,
+    group_spacing = 0.02,
+    num_groups = 3,  # number of groups of bars, 2 or 3 supported
 ):
     _, ax = plt.subplots(figsize=figsize)
-    if sort_by_desc == 'metric':
-        df_CV_ab = df_CV_ab.sort_values(by=(metric+'_avg', 'No PT'), ascending=False)
-    elif sort_by_desc == 'S_share':
+    
+    if select_ab_classes:
+        df_CV_ab = df_CV_ab[df_CV_ab['ab_class'].isin(select_ab_classes)]
+        
+    if sort_by_desc == 'S_share':
         df_CV_ab = df_CV_ab.sort_values(by='S_share_median', ascending=False)
     elif sort_by_desc == 'R_share':
         df_CV_ab = df_CV_ab.sort_values(by='R_share_median', ascending=False)
@@ -258,20 +269,74 @@ def plot_metric_by_ab(
             ax.set_title(title) 
     else:
         ax.set_title(f'{metric} by antibiotic')
-    if sort_by_desc == 'metric':
-        ax.set_xlabel(f'Antibiotic (desc. {metric})')
+    
+        
+    if select_ab_classes:
+        ab_label = ', '.join(select_ab_classes)
     else:
-        ax.set_xlabel(f'Antibiotic (desc. {sort_by_desc})')
-    ax.set_ylabel(metric)
+        ab_label = 'Antibiotic'
+    if sort_by_desc == 'metric':
+        ax.set_xlabel(f'{ab_label} (desc. {metric})')
+    else:
+        ax.set_xlabel(f'{ab_label} (desc. {sort_by_desc})')
+        
+    # space out bars
+    if use_spacing:
+        positions = []
+        for patch in ax.patches:
+            positions.append(patch.get_x())
+        
+        num_x_vals = len(df_CV_ab.index)
+        num_bars = len(df_CV_ab[metric+'_avg'].columns)
+        new_positions = []
+        current_model = 0
+        if num_groups == 2:
+            for i, pos in enumerate(positions):
+                if current_model < num_bars/2:
+                    new_positions.append(pos - group_spacing)
+                else:
+                    new_positions.append(pos + group_spacing)
+                if (i+1) % num_x_vals == 0:
+                    current_model += 1
+        elif num_groups == 3:
+            for i, pos in enumerate(positions):
+                if current_model < num_bars/3:
+                    new_positions.append(pos - group_spacing)
+                elif current_model >= 2*num_bars/3:
+                    new_positions.append(pos + group_spacing)
+                else:
+                    new_positions.append(pos)
+                if (i+1) % num_x_vals == 0:
+                    current_model += 1
+        else:
+            raise ValueError('num_groups must be 2 or 3')
+    
+        for patch, new_pos in zip(ax.patches, new_positions):
+            patch.set_x(new_pos)
+        
     ax.set_yticks(np.arange(0, 1.1, 0.1))
+    if ylim:
+        ax.set_ylim(ylim)
+    ax.set_ylabel(metric.capitalize())
     model_names = df_CV_ab[metric+'_avg'].columns.tolist()
+    
+    class_antibiotics = config['data']['antibiotics']['classes']
+    if classes_legend:
+        class_strings = [', '.join(class_antibiotics[ab_class]) for ab_class in select_ab_classes]
+        labels = [f'{ab_class}: {class_strings[i]}' for i, ab_class in enumerate(select_ab_classes)]
+        ax.legend(handlelength=0, handletextpad=0, labels=labels, loc=legend_loc, framealpha=0, ncol=n_legend_cols)
+    
     if use_legend:
-        ax.legend(legend_labels if legend_labels else model_names, loc=legend_loc, framealpha=0)
+        if legend_handles:
+            ax.legend(legend_handles, legend_labels, loc=legend_loc, framealpha=0, ncols=n_legend_cols)
+        else:
+            ax.legend(legend_labels if legend_labels else model_names, loc=legend_loc, framealpha=0, ncols=n_legend_cols)
     if save_path:
         plt.savefig(save_path, bbox_inches='tight', dpi=300, transparent=True)
     plt.show()
 
 
+#### Dysfunctional
 def plot_metric_by_ab_with_distr(
     df_CV_ab,
     metric,
@@ -282,6 +347,7 @@ def plot_metric_by_ab_with_distr(
     legend_loc = None,
     colors = ['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     title = None, 
+    width = None,
     figsize = (12, 8), 
     save_path = None
 ):
@@ -290,7 +356,6 @@ def plot_metric_by_ab_with_distr(
     if sort_by_desc_S_share:
         df_CV_ab = df_CV_ab.sort_values(by='S_share_median', ascending=False)
     ind = np.arange(len(df_CV_ab.index))
-    width = 0.15
     if use_std:
         for i, model in enumerate(model_names):
             ax.bar(
@@ -323,6 +388,23 @@ def plot_metric_by_ab_with_distr(
     plt.show()
 
 
+def create_multimodel_ab_df(
+    df_CV_ab_list,
+    model_names,
+    reduce_cols = ['avg_num', 'std_num', 'S_share_median', 'R_share_median', 'S_share_std', 'R_share_std'],
+    ):
+    df_CV_ab = pd.concat(df_CV_ab_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('antibiotic', append=True).unstack(level=0)
+    df_CV_ab = df_CV_ab.reindex(columns=model_names, level=1)
+    reduce_cols = ['avg_num', 'std_num', 'S_share_median', 'R_share_median', 'S_share_std', 'R_share_std']
+    df_CV_ab_tmp = df_CV_ab.drop(reduce_cols, axis=1)
+    for i, col in enumerate(reduce_cols):
+        df_CV_ab_tmp.insert(i, col, df_CV_ab[col].agg('mean', axis=1))
+    class_map = config['data']['antibiotics']['abbr_to_class']
+    df_CV_ab_tmp.insert(0, 'ab_class', df_CV_ab_tmp.index.map(class_map))
+    return df_CV_ab_tmp
+
+
+
 def load_and_create_ab_df(
     train_params: str,
     exp_folder: str = None,
@@ -344,18 +426,35 @@ def load_and_create_ab_df(
         results_dict_list.append(pd.read_pickle(p))
         
     df_CV_ab_list = [get_ab_stats_df(results_dict, include_auc=include_auc) for results_dict in results_dict_list]
-    df_CV_ab = pd.concat(df_CV_ab_list, keys=model_names, names=['model']).reset_index(level=1, drop=True).set_index('antibiotic', append=True).unstack(level=0)
-    df_CV_ab = df_CV_ab.reindex(columns=model_names, level=1)
-    reduce_cols = ['avg_num', 'std_num', 'S_share_median', 'R_share_median', 'S_share_std', 'R_share_std']
-    df_CV_ab_tmp = df_CV_ab.drop(reduce_cols, axis=1)
-    for i, col in enumerate(reduce_cols):
-        df_CV_ab_tmp.insert(i, col, df_CV_ab[col].agg('mean', axis=1))
-    class_map = config['data']['antibiotics']['abbr_to_class']
-    df_CV_ab_tmp.insert(0, 'ab_class', df_CV_ab_tmp.index.map(class_map))
-    return df_CV_ab_tmp
+    df_CV_ab = create_multimodel_ab_df(df_CV_ab_list, model_names)
+    return df_CV_ab
 
 
-def load_and_create_abs_and_rel_diff_dfs(
+def create_combined_results_df(
+    df_CV_list,
+    model_names,
+):
+    df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).unstack(level=0)
+    return df_CV
+
+
+def create_abs_and_rel_diff_df(
+    df_CV_list,
+    model_names,
+    ref_model = 'No PT',
+):
+    df_CV = create_combined_results_df(df_CV_list, model_names)
+    df_diff = df_CV.drop(('avg', ref_model), axis=1).drop(('std', ref_model), axis=1)
+    for i in range(df_diff.shape[0]):
+        df_diff.iloc[i, :].loc['avg'] = df_diff.iloc[i, :] - df_CV.loc[:, ('avg', ref_model)].values[i]
+        num_folds = 5 # sample size
+        var_1 = df_diff.iloc[i, :].loc['std'].values**2
+        var_2 = df_CV.loc[:, ('std', ref_model)].values[i]**2
+        df_diff.iloc[i, :].loc['std'] = np.sqrt((var_1 + var_2)/num_folds) # standard error of the difference of means
+    return df_CV, df_diff
+
+
+def load_and_create_abs_and_rel_diff_df(
     train_params: str,
     train_share: str = None,
     exp_folder: str = None,
@@ -382,14 +481,7 @@ def load_and_create_abs_and_rel_diff_dfs(
             results_dict_list.append(pd.read_pickle(p))
             
     df_CV_list = [get_average_and_std_df(results_dict, include_auc=include_auc) for results_dict in results_dict_list]
-    df_CV = pd.concat(df_CV_list, keys=model_names, names=['model']).unstack(level=0)
-    df_diff = df_CV.drop(('avg', ref_model), axis=1).drop(('std', ref_model), axis=1)
-    for i in range(df_diff.shape[0]):
-        df_diff.iloc[i, :].loc['avg'] = df_diff.iloc[i, :] - df_CV.loc[:, ('avg', ref_model)].values[i]
-        num_folds = 5 # sample size
-        var_1 = df_diff.iloc[i, :].loc['std'].values**2
-        var_2 = df_CV.loc[:, ('std', ref_model)].values[i]**2
-        df_diff.iloc[i, :].loc['std'] = np.sqrt((var_1 + var_2)/num_folds) # standard error of the difference of means
+    df_CV, df_diff = create_abs_and_rel_diff_df(df_CV_list, model_names, ref_model=ref_model)
     return df_CV, df_diff
 
 
@@ -424,10 +516,11 @@ def plot_metric_vs_train_shares(
     metric,
     model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
     colors = ['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
+    use_legend = True,
     legend_loc = None,
     plot_title = None,
     figsize = (12, 8),
-    save_path = None
+    save_path = None,
 ):
     _, ax = plt.subplots(figsize=figsize)
     j = 0
@@ -435,21 +528,32 @@ def plot_metric_vs_train_shares(
         if i == 0:
             ax.errorbar(train_shares, df_CV.loc[metric, 'avg'], yerr=df_CV.loc[metric, 'std'], 
                         label=model_names[i], color=colors[i], ecolor='k', capsize=2, fmt='o')
-        elif i % 2 != 0: # odd
+        elif i % 2 != 0: # odd, RPT
             j += 0.5
             ax.errorbar([s+np.ceil(j)*0.4 for s in train_shares], df_CV.loc[metric, 'avg'], yerr=df_CV.loc[metric, 'std'],
                         label=model_names[i], color=colors[i], ecolor='k', capsize=2, fmt='o')
-        else: # even
+        else: # even, CPT
             j += 0.5
             ax.errorbar([s-np.ceil(j)*0.4 for s in train_shares], df_CV.loc[metric, 'avg'], yerr=df_CV.loc[metric, 'std'],
-                        label=model_names[i], color=colors[i], ecolor='k', capsize=2, fmt='o')
+                        label=model_names[i], color=colors[i], ecolor='k', capsize=2, fmt='^')
     ax.set_xlabel('Train share [% of total data]')
     ax.set_ylabel(metric)
     ax.set_xticks(train_shares)
-    if legend_loc:
-        ax.legend(loc=legend_loc, framealpha=0)
-    else:
-        ax.legend(framealpha=0)
+    
+    if use_legend: 
+        noPT = Rectangle((0,0),1,1,fc='slategray', edgecolor='k', linewidth=0.5)
+        easyPT = Rectangle((0,0),1,1,fc='forestgreen', edgecolor='k', linewidth=0.5)
+        mediumPT = Rectangle((0,0),1,1,fc='gold', edgecolor='k', linewidth=0.5)
+        hardPT = Rectangle((0,0),1,1,fc='red', edgecolor='k', linewidth=0.5)
+        cpt = mlines.Line2D([], [], color='k', marker='^', linestyle='None')
+        rpt = mlines.Line2D([], [], color='k', marker='o', linestyle='None')
+        ax.legend(
+            handles=[easyPT, mediumPT, hardPT, noPT, rpt, cpt],
+            labels=['Easy', 'Medium', 'Hard', 'No PT', 'Random PT', 'Class PT'],
+            ncols=2,
+            framealpha=0,
+        )
+
     if plot_title:
         ax.set_title(plot_title)
     if save_path:

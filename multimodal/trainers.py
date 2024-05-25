@@ -314,7 +314,7 @@ class MMBertPreTrainer(nn.Module):
                 
             if (target_ids != -1).any(): # if there are genotypes in the batch
                 ## Genotype loss ##
-                geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_ids) # DOUBLE-CHECK DIMENSIONS
+                geno_loss = self.geno_criterion(token_pred.transpose(-1, -2), target_ids)
                 epoch_geno_loss += geno_loss.item()
                 geno_batches += 1
                 loss += geno_loss
