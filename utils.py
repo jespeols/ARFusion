@@ -13,7 +13,9 @@ BASE_DIR = Path(__file__).resolve().parent
 
 with open(os.path.join(BASE_DIR, 'config_MM.yaml'), 'r') as f:
     config = yaml.safe_load(f)
-
+    
+data_dict = config['data']
+defined_antibiotics = sorted(list(set(data_dict['antibiotics']['abbr_to_name'].keys()) - set(data_dict['exclude_antibiotics'])))
 
 def get_split_indices(size_to_split, val_share, random_state: int = 42):
     indices = np.arange(size_to_split)
@@ -276,9 +278,10 @@ def plot_metric_by_ab(
     else:
         ab_label = 'Antibiotic'
     if sort_by_desc == 'metric':
-        ax.set_xlabel(f'{ab_label} (desc. {metric})')
+        ax.set_xlabel(f'{ab_label} (desc. {metric})', fontsize=12)
     else:
-        ax.set_xlabel(f'{ab_label} (desc. {sort_by_desc})')
+        ax.set_xlabel(f'{ab_label} (desc. {sort_by_desc})', fontsize=12)
+    ax.set_ylabel(metric.capitalize(), fontsize=12)
         
     # space out bars
     if use_spacing:
@@ -320,9 +323,11 @@ def plot_metric_by_ab(
     ax.set_ylabel(metric.capitalize())
     model_names = df_CV_ab[metric+'_avg'].columns.tolist()
     
+    ax.tick_params(axis='both', which='major', labelsize=12)
+    
     class_antibiotics = config['data']['antibiotics']['classes']
     if classes_legend:
-        class_strings = [', '.join(class_antibiotics[ab_class]) for ab_class in select_ab_classes]
+        class_strings = [', '.join([ab for ab in class_antibiotics[ab_class] if ab in defined_antibiotics]) for ab_class in select_ab_classes]
         labels = [f'{ab_class}: {class_strings[i]}' for i, ab_class in enumerate(select_ab_classes)]
         ax.legend(handlelength=0, handletextpad=0, labels=labels, loc=legend_loc, framealpha=0, ncol=n_legend_cols)
     
