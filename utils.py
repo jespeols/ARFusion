@@ -228,11 +228,11 @@ def plot_metric_by_ab(
     legend_labels = None,
     legend_loc = None,
     n_legend_cols = 1,
-    colors = ['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
+    colors = ['tab:blue', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     title = None, 
     figsize = (12, 8), 
     bar_width = None,
-    save_path = None,
+    savepath = None,
     ylim = None,
     use_spacing = False,
     group_spacing = 0.02,
@@ -331,8 +331,8 @@ def plot_metric_by_ab(
             ax.legend(legend_handles, legend_labels, loc=legend_loc, framealpha=0, ncols=n_legend_cols)
         else:
             ax.legend(legend_labels if legend_labels else model_names, loc=legend_loc, framealpha=0, ncols=n_legend_cols)
-    if save_path:
-        plt.savefig(save_path, bbox_inches='tight', dpi=300, transparent=True)
+    if savepath:
+        plt.savefig(savepath, bbox_inches='tight', dpi=300, transparent=True)
     plt.show()
 
 
@@ -345,11 +345,11 @@ def plot_metric_by_ab_with_distr(
     show_distr_std = False,
     legend_labels = None,
     legend_loc = None,
-    colors = ['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
+    colors = ['tab:blue', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     title = None, 
     width = None,
     figsize = (12, 8), 
-    save_path = None
+    savepath = None
 ):
     model_names = df_CV_ab[metric+'_avg'].columns.tolist()
     _, ax = plt.subplots(figsize=figsize)
@@ -383,8 +383,8 @@ def plot_metric_by_ab_with_distr(
     ax.set_xlabel('Antibiotic')
     ax.set_ylabel(metric)
     ax.legend(legend_labels if legend_labels else model_names, loc=legend_loc, framealpha=0)
-    if save_path:
-        plt.savefig(save_path, bbox_inches='tight', dpi=300)
+    if savepath:
+        plt.savefig(savepath, bbox_inches='tight', dpi=300)
     plt.show()
 
 
@@ -515,12 +515,12 @@ def plot_metric_vs_train_shares(
     df_CV_list,
     metric,
     model_names = ['No PT', 'Easy RPT', 'Easy CPT', 'Medium RPT', 'Medium CPT', 'Hard RPT', 'Hard CPT'],
-    colors = ['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
+    colors = ['tab:blue', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     use_legend = True,
     legend_loc = None,
     plot_title = None,
     figsize = (12, 8),
-    save_path = None,
+    savepath = None,
 ):
     _, ax = plt.subplots(figsize=figsize)
     j = 0
@@ -541,7 +541,7 @@ def plot_metric_vs_train_shares(
     ax.set_xticks(train_shares)
     
     if use_legend: 
-        noPT = Rectangle((0,0),1,1,fc='slategray', edgecolor='k', linewidth=0.5)
+        noPT = Rectangle((0,0),1,1,fc='tab:blue', edgecolor='k', linewidth=0.5)
         easyPT = Rectangle((0,0),1,1,fc='forestgreen', edgecolor='k', linewidth=0.5)
         mediumPT = Rectangle((0,0),1,1,fc='gold', edgecolor='k', linewidth=0.5)
         hardPT = Rectangle((0,0),1,1,fc='red', edgecolor='k', linewidth=0.5)
@@ -556,9 +556,9 @@ def plot_metric_vs_train_shares(
 
     if plot_title:
         ax.set_title(plot_title)
-    if save_path:
-        print(f'Saving plot to {save_path}')
-        plt.savefig(save_path, bbox_inches='tight', dpi=300, transparent=True)
+    if savepath:
+        print(f'Saving plot to {savepath}')
+        plt.savefig(savepath, bbox_inches='tight', dpi=300, transparent=True)
     plt.show()
     
     
@@ -581,7 +581,7 @@ def plot_ab_level_differences(
     plot_metric,
     figsize=(13, 4),
     plot_title=None,
-    colors=['slategray', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
+    colors=['tab:blue', 'forestgreen', 'darkgreen', 'gold', 'darkgoldenrod', 'red', 'darkred'],
     ab_classes=None,
     savepath=None
 ):
